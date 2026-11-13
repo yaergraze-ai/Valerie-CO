@@ -4,6 +4,8 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
+  KeyRound,
+  Lock,
   Mail,
   Smartphone,
 } from "lucide-react";
@@ -212,15 +214,32 @@ function GoogleAuthSection({
             }
           },
         });
-        ref.current.replaceChildren();
-        window.google!.accounts.id.renderButton(ref.current, {
-          theme: "outline",
-          size: "large",
-          text: mode === "register" ? "signup_with" : "continue_with",
-          shape: "pill",
-          width: 310,
-        });
+        const renderBtn = () => {
+          const host = ref.current;
+          if (!host) return;
+          const hostWidth = host.parentElement?.clientWidth || 364;
+          const btnWidth = Math.min(400, Math.max(240, Math.round(hostWidth)));
+          const btnKey = `${mode}:${btnWidth}`;
+          if (host.getAttribute("data-btn-key") === btnKey) return;
+          host.setAttribute("data-btn-key", btnKey);
+          host.replaceChildren();
+          window.google!.accounts.id.renderButton(host, {
+            theme: "outline",
+            size: "large",
+            text: mode === "register" ? "signup_with" : "continue_with",
+            shape: "pill",
+            width: btnWidth,
+          });
+        };
+        renderBtn();
         setSdkStatus("ready");
+        if (typeof ResizeObserver !== "undefined" && ref.current.parentElement) {
+          const ro = new ResizeObserver(() => renderBtn());
+          ro.observe(ref.current.parentElement);
+          lifecycle.signal.addEventListener("abort", () => ro.disconnect(), {
+            once: true,
+          });
+        }
       })
       .catch(() => {
         if (!lifecycle.signal.aborted) setSdkStatus("error");
@@ -232,7 +251,8 @@ function GoogleAuthSection({
     <div className="auth-google">
       <div
         ref={ref}
-        style={{ display: sdkStatus === "ready" ? "block" : "none" }}
+        className="auth-google-slot"
+        style={{ display: sdkStatus === "ready" ? "flex" : "none" }}
       />
       {sdkStatus !== "ready" && (
         <button
@@ -301,7 +321,9 @@ export function MemberEntry({
   const [otpSent, setOtpSent] = useState(false);
   const [otpTarget, setOtpTarget] = useState("");
   const [otpDisplayTarget, setOtpDisplayTarget] = useState("");
-  const [otpNameDraft, setOtpNameDraft] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [otpNeedsName, setOtpNeedsName] = useState(false);
   const [otpPreview, setOtpPreview] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -314,7 +336,6 @@ export function MemberEntry({
     setOtpSent(false);
     setOtpTarget("");
     setOtpDisplayTarget("");
-    setOtpNameDraft("");
     setOtpNeedsName(false);
     setOtpPreview("");
     setOtpCode("");
@@ -425,39 +446,43 @@ export function MemberEntry({
               </button>
             ))}
           </div>
-          <div className="auth-method-row">
-            <span>{t("Metode masuk:", "Sign-in method:")}</span>
-            <span
-              className="auth-channel-mini"
-              role="tablist"
-              aria-label={t("Metode verifikasi", "Authentication method")}
-            >
+
+          <div
+            className="auth-channel-tabs"
+            role="tablist"
+            aria-label={t("Jalur kontak", "Contact channel")}
+          >
+            {(
+              [
+                ["email", "Email", Mail],
+                ["whatsapp", "WhatsApp", Smartphone],
+              ] as const
+            ).map(([chKey, chLabel, Icon]) => (
               <button
+                key={chKey}
                 type="button"
                 role="tab"
-                aria-selected={authMethod === "password"}
-                className={authMethod === "password" ? "active" : ""}
-                onClick={() => changeMethod("password")}
+                aria-selected={channel === chKey}
+                className={channel === chKey ? "active" : ""}
+                onClick={() => changeChannel(chKey)}
               >
-                <span>{t("Kata sandi", "Password")}</span>
+                <Icon size={13} aria-hidden="true" />
+                <span>{chLabel}</span>
+                {channel === chKey && (
+                  <motion.span
+                    layoutId={`${pillGroupId}-channel`}
+                    className="auth-channel-line"
+                    transition={{ type: "spring", stiffness: 520, damping: 36 }}
+                  />
+                )}
               </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={authMethod === "otp"}
-                className={authMethod === "otp" ? "active" : ""}
-                onClick={() => changeMethod("otp")}
-              >
-                <span>{t("Kode OTP", "OTP Code")}</span>
-              </button>
-            </span>
+            ))}
           </div>
         </>
       )}
 
       <form
         className="form-stack"
-        key={`${mode}-${channel}-${authMethod}`}
         onSubmit={async (e) => {
           e.preventDefault();
           setError("");
@@ -523,16 +548,13 @@ export function MemberEntry({
           try {
             if (usingOtp) {
               if (!otpSent) {
-                if (creating) {
-                  setOtpNameDraft(String(f.get("name") || "").trim());
-                }
                 const target =
                   channel === "whatsapp" ? normalizedPhone : rawEmail;
                 const display = channel === "whatsapp" ? rawPhone : rawEmail;
                 await sendOtpForContact(target, display);
               } else {
                 const nameVal = String(
-                  f.get("name") || otpNameDraft || "",
+                  f.get("name") || nameDraft || "",
                 ).trim();
                 const ch = channel === "whatsapp" ? "phone" : "email";
                 const res = await verifyAuthOtp({
@@ -597,6 +619,8 @@ export function MemberEntry({
                   minLength={2}
                   maxLength={120}
                   autoComplete="name"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
                   placeholder={t("Nama Anda", "Your full name")}
                 />
               </label>
@@ -604,41 +628,11 @@ export function MemberEntry({
 
             {showContactField && (
               <div className="auth-field">
-                <div className="auth-field-head">
-                  <label htmlFor={`${pillGroupId}-contact`}>
-                    {channel === "whatsapp" && showMethodToggles
-                      ? t("Nomor WhatsApp", "WhatsApp number")
-                      : "Email"}
-                  </label>
-                  {showMethodToggles && (
-                    <span
-                      className="auth-channel-mini"
-                      role="tablist"
-                      aria-label={t("Metode kontak", "Contact channel")}
-                    >
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={channel === "email"}
-                        className={channel === "email" ? "active" : ""}
-                        onClick={() => changeChannel("email")}
-                      >
-                        <Mail size={11} aria-hidden="true" />
-                        <span>Email</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={channel === "whatsapp"}
-                        className={channel === "whatsapp" ? "active" : ""}
-                        onClick={() => changeChannel("whatsapp")}
-                      >
-                        <Smartphone size={11} aria-hidden="true" />
-                        <span>WhatsApp</span>
-                      </button>
-                    </span>
-                  )}
-                </div>
+                <label htmlFor={`${pillGroupId}-contact`}>
+                  {channel === "whatsapp" && showMethodToggles
+                    ? t("Nomor WhatsApp", "WhatsApp number")
+                    : "Email"}
+                </label>
                 {channel === "whatsapp" && showMethodToggles ? (
                   <span className="wa-input-wrap">
                     <span className="wa-prefix">WA +62</span>
@@ -649,6 +643,8 @@ export function MemberEntry({
                       inputMode="tel"
                       autoComplete="tel"
                       required
+                      value={phoneDraft}
+                      onChange={(e) => setPhoneDraft(e.target.value)}
                       placeholder="0812-3456-7890"
                     />
                   </span>
@@ -659,6 +655,8 @@ export function MemberEntry({
                     type="email"
                     autoComplete="email"
                     required
+                    value={emailDraft}
+                    onChange={(e) => setEmailDraft(e.target.value)}
                     placeholder="nama@email.com"
                   />
                 )}
@@ -713,6 +711,7 @@ export function MemberEntry({
                 <label>
                   {t("Kode OTP 6 digit", "6-digit OTP code")}
                   <input
+                    className="auth-otp-input"
                     name="otp"
                     type="text"
                     inputMode="numeric"
@@ -721,7 +720,7 @@ export function MemberEntry({
                     required
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="6 digit OTP"
+                    placeholder="• • • • • •"
                   />
                 </label>
               </>
@@ -845,10 +844,44 @@ export function MemberEntry({
               <div className="auth-divider">
                 <span>{t("atau", "or")}</span>
               </div>
-              <GoogleAuthSection
-                mode={mode === "register" ? "register" : "login"}
-                onDone={onDone}
-              />
+              <div className="auth-alt-stack">
+                <button
+                  type="button"
+                  className="auth-alt-btn"
+                  disabled={busy}
+                  onClick={() =>
+                    changeMethod(authMethod === "otp" ? "password" : "otp")
+                  }
+                >
+                  {authMethod === "otp" ? (
+                    <>
+                      <Lock size={15} aria-hidden="true" />
+                      <span>
+                        {t("Gunakan kata sandi", "Use password instead")}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound size={15} aria-hidden="true" />
+                      <span>
+                        {mode === "register"
+                          ? t(
+                              "Daftar dengan Kode OTP",
+                              "Sign up with OTP code",
+                            )
+                          : t(
+                              "Masuk dengan Kode OTP",
+                              "Sign in with OTP code",
+                            )}
+                      </span>
+                    </>
+                  )}
+                </button>
+                <GoogleAuthSection
+                  mode={mode === "register" ? "register" : "login"}
+                  onDone={onDone}
+                />
+              </div>
             </>
           )}
 
