@@ -202,88 +202,100 @@ export function Experience() {
         {t("Langsung ke konten", "Skip to content")}
       </a>
       <header className="reference-header">
-        <nav aria-label={t("Navigasi utama", "Primary navigation")}>
+        <nav
+          className="reference-nav"
+          aria-label={t("Navigasi utama", "Primary navigation")}
+        >
+          <div className="reference-nav-group reference-nav-left">
+            <button
+              className={`reference-nav-link ${view === "home" ? "active-nav" : ""}`}
+              aria-current={view === "home" ? "page" : undefined}
+              onClick={() => go("home")}
+            >
+              {t("BERANDA", "HOME")}
+            </button>
+            <button
+              className={`reference-nav-link ${view === "shop" && sort !== "new" ? "active-nav" : ""}`}
+              aria-current={view === "shop" && sort !== "new" ? "page" : undefined}
+              onClick={() => shop()}
+            >
+              {t("KOLEKSI", "COLLECTION")}
+            </button>
+          </div>
           <button
-            className={view === "home" ? "active-nav" : ""}
-            aria-current={view === "home" ? "page" : undefined}
+            className={`reference-wordmark ${view === "home" ? "active-wordmark" : ""}`}
+            aria-label={db.settings.name}
             onClick={() => go("home")}
           >
-            {t("BERANDA", "HOME")}
+            {db.settings.name}
           </button>
-          <button
-            className={view === "shop" && sort !== "new" ? "active-nav" : ""}
-            aria-current={view === "shop" && sort !== "new" ? "page" : undefined}
-            onClick={() => shop()}
-          >
-            {t("KOLEKSI", "COLLECTION")}
-          </button>
-          <button
-            className={view === "shop" && sort === "new" ? "active-nav" : ""}
-            aria-current={view === "shop" && sort === "new" ? "page" : undefined}
-            onClick={() => shop("All", "new")}
-          >
-            {t("TERBARU", "NEW IN")}
-          </button>
-          <button
-            className={overlay === "about" ? "active-nav" : ""}
-            onClick={() => setOverlay("about")}
-          >
-            {t("ATELIER", "ATELIER")}
-          </button>
+          <div className="reference-nav-group reference-nav-right">
+            <button
+              className={`reference-nav-link ${view === "shop" && sort === "new" ? "active-nav" : ""}`}
+              aria-current={view === "shop" && sort === "new" ? "page" : undefined}
+              onClick={() => shop("All", "new")}
+            >
+              {t("TERBARU", "NEW IN")}
+            </button>
+            <button
+              className={`reference-nav-link ${overlay === "about" ? "active-nav" : ""}`}
+              onClick={() => setOverlay("about")}
+            >
+              {t("ATELIER", "ATELIER")}
+            </button>
+          </div>
         </nav>
-        <button
-          className={`reference-wordmark ${view === "home" ? "active-wordmark" : ""}`}
-          aria-label={db.settings.name}
-          onClick={() => go("home")}
-        >
-          {db.settings.name}
-        </button>
         <div className="reference-actions">
-          <button
-            className="icon"
-            aria-label={t("Cari produk", "Search products")}
-            onClick={() => setOverlay("search")}
-          >
-            <Search size={15} aria-hidden="true" />
-          </button>
-          <button
-            className={`icon ${view === "wishlist" ? "active-icon" : ""}`}
-            aria-label={t("Favorit", "Wishlist")}
-            aria-current={view === "wishlist" ? "page" : undefined}
-            onClick={() => go("wishlist")}
-          >
-            <Heart size={15} aria-hidden="true" />
-            <span className="count">{db.favorites.length || ""}</span>
-          </button>
-          <button
-            className={`icon ${view === "member" ? "active-icon" : ""}`}
-            aria-label={t("Akun member", "Member account")}
-            aria-current={view === "member" ? "page" : undefined}
-            onClick={() => go("member")}
-          >
-            <User size={15} aria-hidden="true" />
-          </button>
-          <button
-            className="icon"
-            aria-label={t("Tas belanja", "Shopping bag")}
-            onClick={() => setOverlay("bag")}
-          >
-            <ShoppingBag size={15} aria-hidden="true" />
-            <span className="count">{bagCount || ""}</span>
-          </button>
-          {language}
-          <button
-            type="button"
-            className={`studio-quick-link ${view === "admin" ? "active" : ""}`}
-            aria-current={view === "admin" ? "page" : undefined}
-            onClick={() => go("admin")}
-            title={t(
-              "Valerie & CO Studio Admin",
-              "Valerie & CO Studio Admin",
-            )}
-          >
-            STUDIO
-          </button>
+          <div className="reference-action-icons">
+            <button
+              className="icon"
+              aria-label={t("Cari produk", "Search products")}
+              onClick={() => setOverlay("search")}
+            >
+              <Search size={16} aria-hidden="true" />
+            </button>
+            <button
+              className={`icon ${view === "wishlist" ? "active-icon" : ""}`}
+              aria-label={t("Favorit", "Wishlist")}
+              aria-current={view === "wishlist" ? "page" : undefined}
+              onClick={() => go("wishlist")}
+            >
+              <Heart size={16} aria-hidden="true" />
+              <span className="count">{db.favorites.length || ""}</span>
+            </button>
+            <button
+              className={`icon ${view === "member" ? "active-icon" : ""}`}
+              aria-label={t("Akun member", "Member account")}
+              aria-current={view === "member" ? "page" : undefined}
+              onClick={() => go("member")}
+            >
+              <User size={16} aria-hidden="true" />
+            </button>
+            <button
+              className="icon"
+              aria-label={t("Tas belanja", "Shopping bag")}
+              onClick={() => setOverlay("bag")}
+            >
+              <ShoppingBag size={16} aria-hidden="true" />
+              <span className="count">{bagCount || ""}</span>
+            </button>
+          </div>
+          <span className="reference-actions-sep" aria-hidden="true" />
+          <div className="reference-action-utils">
+            {language}
+            <button
+              type="button"
+              className={`studio-quick-link ${view === "admin" ? "active" : ""}`}
+              aria-current={view === "admin" ? "page" : undefined}
+              onClick={() => go("admin")}
+              title={t(
+                "Valerie & CO Studio Admin",
+                "Valerie & CO Studio Admin",
+              )}
+            >
+              STUDIO
+            </button>
+          </div>
         </div>
       </header>
       <header className="site-header">
