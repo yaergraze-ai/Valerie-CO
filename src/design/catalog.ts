@@ -1,0 +1,2288 @@
+export type Lang = "id" | "en";
+export type Copy = { en: string; id: string };
+
+export type ColorOption = {
+  name: string;
+  hex: string;
+  subtitle?: string;
+  image?: string;
+  filter?: string;
+};
+
+export type ProductReview = {
+  author: string;
+  rating: number;
+  date: string;
+  comment: Copy;
+};
+
+export type Item = {
+  id: string;
+  brand: string;
+  name: string;
+  category: string;
+  subCategory?: "Sneakers" | "Loafers" | "Boots" | "Heels" | "Flatshoes" | "Espadrilles" | "Monkstraps" | "Sandals";
+  price: number;
+  priceIdr?: number;
+  showcaseImage?: string;
+  images: string[];
+  colors: ColorOption[];
+  sizes: number[];
+  description: Copy;
+  details?: {
+    composition: Copy;
+    sole: Copy;
+    origin: string;
+    code?: string;
+  };
+  reviews?: ProductReview[];
+  stock: number;
+  active: boolean;
+  fresh?: boolean;
+};
+
+export const categoryCopy: Record<string, Copy> = {
+  All: { en: "All", id: "Semua" },
+  Sneakers: { en: "Sneakers", id: "Sneakers" },
+  Heels: { en: "Heels", id: "Heels" },
+  Boots: { en: "Boots", id: "Boots" },
+  Flatshoes: { en: "Flatshoes", id: "Flatshoes" },
+};
+
+export const subCategoryList = ["All", "Heels", "Boots", "Sneakers", "Flatshoes"];
+
+export const initialCatalog: Item[] = [
+  {
+    "id": "vco-zavira-espresso-ankle",
+    "brand": "Valerie & CO",
+    "name": "Zavira Espresso Ankle Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 395,
+    "priceIdr": 5850000,
+    "showcaseImage": "/shoes/02_Boots/03_zavira_espresso_ankle/03_zavira_espresso_ankle.webp",
+    "images": [
+      "/shoes/02_Boots/03_zavira_espresso_ankle/03_zavira_espresso_ankle.webp"
+    ],
+    "colors": [
+      {
+        "name": "Espresso Suede",
+        "hex": "#54382a",
+        "subtitle": "Zavira Espresso Ankle Boot",
+        "image": "/shoes/02_Boots/03_zavira_espresso_ankle/03_zavira_espresso_ankle.webp"
+      },
+      {
+        "name": "Dark Chocolate",
+        "hex": "#352218",
+        "subtitle": "Zavira Chocolate Ankle Boot",
+        "image": "/shoes/02_Boots/03_zavira_espresso_ankle/03_zavira_espresso_ankle.webp",
+        "filter": "brightness(0.84) contrast(1.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Architectural ankle boot sculpted in velvety espresso calfskin with an angled block heel and sleek inner zip.",
+      "id": "Boots pergelangan kaki berbahan kulit suede espresso mewah dengan hak blok arsitektural yang stabil dan ritsleting samping."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Italian Brushed Calfskin. Full lambskin lining.",
+        "id": "100% Kulit Anak Sapi Italia Halus. Lapisan dalam kulit domba lembut."
+      },
+      "sole": {
+        "en": "Stacked welt sole with anti-slip rubber pad.",
+        "id": "Sol kulit berlapis dengan tapak karet anti-selip."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-001"
+    },
+    "stock": 24,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-velora-blush-slouch-tall",
+    "brand": "Valerie & CO",
+    "name": "Velora Blush Slouch Tall Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 465,
+    "priceIdr": 6950000,
+    "showcaseImage": "/shoes/02_Boots/01_velora_blush_slouch_tall/01_velora_blush_slouch_tall.webp",
+    "images": [
+      "/shoes/02_Boots/01_velora_blush_slouch_tall/01_velora_blush_slouch_tall.webp"
+    ],
+    "colors": [
+      {
+        "name": "Petal Blush",
+        "hex": "#d9b6b0",
+        "subtitle": "Velora Blush Slouch Tall Boot",
+        "image": "/shoes/02_Boots/01_velora_blush_slouch_tall/01_velora_blush_slouch_tall.webp"
+      },
+      {
+        "name": "Warm Rosewood",
+        "hex": "#b58b84",
+        "subtitle": "Velora Rosewood Tall Boot",
+        "image": "/shoes/02_Boots/01_velora_blush_slouch_tall/01_velora_blush_slouch_tall.webp",
+        "filter": "brightness(0.92) saturate(1.1)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Knee-high draped boot crafted in supple blush nappa leather with effortless gathered volume and stiletto lift.",
+      "id": "Boots tinggi selutut dengan siluet kerut lembut dari kulit nappa blush lentur dan hak ramping yang anggun."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Soft Lambskin Nappa. Breathable calf leather interior.",
+        "id": "100% Kulit Nappa Domba Lentur. Interior kulit alami yang sejuk."
+      },
+      "sole": {
+        "en": "Buffed leather outsole with micro rubber heel tap.",
+        "id": "Outsole kulit gosok dengan ujung hak karet mikro."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-002"
+    },
+    "stock": 18,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-lunera-petal-lace-tall",
+    "brand": "Valerie & CO",
+    "name": "Lunera Petal Lace Tall Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 485,
+    "priceIdr": 7250000,
+    "showcaseImage": "/shoes/02_Boots/02_lunera_petal_lace_tall/02_lunera_petal_lace_tall.webp",
+    "images": [
+      "/shoes/02_Boots/02_lunera_petal_lace_tall/02_lunera_petal_lace_tall.webp"
+    ],
+    "colors": [
+      {
+        "name": "Dusty Petal",
+        "hex": "#dfc7c4",
+        "subtitle": "Lunera Petal Lace Tall Boot",
+        "image": "/shoes/02_Boots/02_lunera_petal_lace_tall/02_lunera_petal_lace_tall.webp"
+      },
+      {
+        "name": "Alabaster Mist",
+        "hex": "#ede5e2",
+        "subtitle": "Lunera Alabaster Tall Boot",
+        "image": "/shoes/02_Boots/02_lunera_petal_lace_tall/02_lunera_petal_lace_tall.webp",
+        "filter": "brightness(1.04) contrast(0.98)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Couture lace-up tall boot pairing blush tonal eyelets with an elongated pointed toe and slender sculpted heel.",
+      "id": "Boots tinggi bertali depan nuansa petal lembut dengan ujung runcing klasik dan hak ramping berkarakter."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Full-Grain Calfskin & Satin Waxed Laces.",
+        "id": "100% Kulit Calfskin Premium & Tali Satin Lilin Halus."
+      },
+      "sole": {
+        "en": "Blake-stitched leather sole with grip insert.",
+        "id": "Sol jahitan Blake dengan sisipan karet cengkeram."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-003"
+    },
+    "stock": 15,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-morlix-cocoa-slouch",
+    "brand": "Valerie & CO",
+    "name": "Morlix Cocoa Slouch Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 435,
+    "priceIdr": 6450000,
+    "showcaseImage": "/shoes/02_Boots/04_morlix_cocoa_slouch/04_morlix_cocoa_slouch.webp",
+    "images": [
+      "/shoes/02_Boots/04_morlix_cocoa_slouch/04_morlix_cocoa_slouch.webp"
+    ],
+    "colors": [
+      {
+        "name": "Roasted Cocoa",
+        "hex": "#76513c",
+        "subtitle": "Morlix Cocoa Slouch Boot",
+        "image": "/shoes/02_Boots/04_morlix_cocoa_slouch/04_morlix_cocoa_slouch.webp"
+      },
+      {
+        "name": "Caramel Suede",
+        "hex": "#9c7054",
+        "subtitle": "Morlix Caramel Slouch Boot",
+        "image": "/shoes/02_Boots/04_morlix_cocoa_slouch/04_morlix_cocoa_slouch.webp",
+        "filter": "brightness(1.06) sepia(0.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Mid-calf slouch silhouette finished in rich cocoa nubuck with soft structural folds and a balanced kitten block.",
+      "id": "Boots betis bertekstur nubuck cokelat kakao dengan lipatan artistik alami dan hak blok rendah yang nyaman."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Water-Repellent Italian Nubuck.",
+        "id": "100% Kulit Nubuck Italia Tahan Percikan Air."
+      },
+      "sole": {
+        "en": "Cushioned leather footbed on lugged welt sole.",
+        "id": "Alas kaki kulit empuk di atas sol welt berprofil."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-004"
+    },
+    "stock": 19,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-kivora-chestnut-riding",
+    "brand": "Valerie & CO",
+    "name": "Kivora Chestnut Riding Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 450,
+    "priceIdr": 6750000,
+    "showcaseImage": "/shoes/02_Boots/05_kivora_chestnut_riding/05_kivora_chestnut_riding.webp",
+    "images": [
+      "/shoes/02_Boots/05_kivora_chestnut_riding/05_kivora_chestnut_riding.webp"
+    ],
+    "colors": [
+      {
+        "name": "Warm Chestnut",
+        "hex": "#7d4b2a",
+        "subtitle": "Kivora Chestnut Riding Boot",
+        "image": "/shoes/02_Boots/05_kivora_chestnut_riding/05_kivora_chestnut_riding.webp"
+      },
+      {
+        "name": "Saddle Cognac",
+        "hex": "#9a623c",
+        "subtitle": "Kivora Cognac Riding Boot",
+        "image": "/shoes/02_Boots/05_kivora_chestnut_riding/05_kivora_chestnut_riding.webp",
+        "filter": "brightness(1.08) saturate(1.05)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Equestrian knee-high riding boot in burnished chestnut calf leather with clean collar stitchwork and low stacked heel.",
+      "id": "Boots berkuda tinggi selutut berbahan kulit chestnut mengilap dengan jahitan rapi khas atelier dan hak rendah."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Vegetable-Tanned Calfskin Leather.",
+        "id": "100% Kulit Calfskin Samak Nabati Alami."
+      },
+      "sole": {
+        "en": "Goodyear-inspired stacked rubber & leather outsole.",
+        "id": "Outsole kombinasi kulit dan karet tahan lama."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-005"
+    },
+    "stock": 16,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-orvella-taupe-buckle",
+    "brand": "Valerie & CO",
+    "name": "Orvella Taupe Buckle Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 410,
+    "priceIdr": 6150000,
+    "showcaseImage": "/shoes/02_Boots/06_orvella_taupe_buckle/06_orvella_taupe_buckle.webp",
+    "images": [
+      "/shoes/02_Boots/06_orvella_taupe_buckle/06_orvella_taupe_buckle.webp"
+    ],
+    "colors": [
+      {
+        "name": "Warm Taupe",
+        "hex": "#9c8d7f",
+        "subtitle": "Orvella Taupe Buckle Boot",
+        "image": "/shoes/02_Boots/06_orvella_taupe_buckle/06_orvella_taupe_buckle.webp"
+      },
+      {
+        "name": "Stone Greige",
+        "hex": "#b5aaa0",
+        "subtitle": "Orvella Stone Buckle Boot",
+        "image": "/shoes/02_Boots/06_orvella_taupe_buckle/06_orvella_taupe_buckle.webp",
+        "filter": "brightness(1.05) contrast(0.98)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Streamlined mid-ankle boot in neutral taupe accented by brushed brass strap hardware and a grounded square toe.",
+      "id": "Boots pergelangan kaki warna taupe netral dengan detail sabuk gesper kuningan matte dan ujung kotak modern."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Smooth Grain Calfskin & Brushed Brass Hardware.",
+        "id": "100% Kulit Calfskin Halus & Aksen Gesper Kuningan Matte."
+      },
+      "sole": {
+        "en": "Traction rubber sole with stacked wood veneer heel.",
+        "id": "Sol karet anti-selip dengan hak lapis motif kayu."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-006"
+    },
+    "stock": 20,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-elvora-ivory-block",
+    "brand": "Valerie & CO",
+    "name": "Elvora Ivory Block Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 420,
+    "priceIdr": 6250000,
+    "showcaseImage": "/shoes/02_Boots/07_elvora_ivory_block/07_elvora_ivory_block.webp",
+    "images": [
+      "/shoes/02_Boots/07_elvora_ivory_block/07_elvora_ivory_block.webp"
+    ],
+    "colors": [
+      {
+        "name": "Alabaster Ivory",
+        "hex": "#ece7df",
+        "subtitle": "Elvora Ivory Block Boot",
+        "image": "/shoes/02_Boots/07_elvora_ivory_block/07_elvora_ivory_block.webp"
+      },
+      {
+        "name": "Soft Ecru",
+        "hex": "#d9cfc2",
+        "subtitle": "Elvora Ecru Block Boot",
+        "image": "/shoes/02_Boots/07_elvora_ivory_block/07_elvora_ivory_block.webp",
+        "filter": "brightness(0.94) sepia(0.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Luminous ivory leather boot featuring clean couture panels and a geometric flared block heel for day-to-evening poise.",
+      "id": "Boots kulit warna gading berkilau lembut dengan potongan minimalis dan hak blok melebar yang stabil."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Nappa Calf Leather. Padded memory insole.",
+        "id": "100% Kulit Nappa Lembut. Insole busa memori nyaman."
+      },
+      "sole": {
+        "en": "Tonal painted leather sole with front tread.",
+        "id": "Sol kulit bernuansa senada dengan tapak anti-selip."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-007"
+    },
+    "stock": 22,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-avenza-sand-western",
+    "brand": "Valerie & CO",
+    "name": "Avenza Sand Western Boot",
+    "category": "Boots",
+    "subCategory": "Boots",
+    "price": 440,
+    "priceIdr": 6550000,
+    "showcaseImage": "/shoes/02_Boots/08_avenza_sand_western/08_avenza_sand_western.webp",
+    "images": [
+      "/shoes/02_Boots/08_avenza_sand_western/08_avenza_sand_western.webp"
+    ],
+    "colors": [
+      {
+        "name": "Dune Sand",
+        "hex": "#cbb79c",
+        "subtitle": "Avenza Sand Western Boot",
+        "image": "/shoes/02_Boots/08_avenza_sand_western/08_avenza_sand_western.webp"
+      },
+      {
+        "name": "Toasted Oat",
+        "hex": "#b0997b",
+        "subtitle": "Avenza Oat Western Boot",
+        "image": "/shoes/02_Boots/08_avenza_sand_western/08_avenza_sand_western.webp",
+        "filter": "brightness(0.91) contrast(1.06)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Refined western-inspired boot in soft sand suede featuring tonal flame stitchwork, pull tabs, and a Cuban slant heel.",
+      "id": "Boots siluet western modern berbahan suede pasir halus dengan sulaman tonal, pull-tab samping, dan hak miring klasik."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Split Kid Suede. Soft pigskin interior.",
+        "id": "100% Kulit Suede Kid Pilihan. Lapisan dalam lembut."
+      },
+      "sole": {
+        "en": "Beveled leather welt sole with non-slip tip.",
+        "id": "Sol kulit bevel dengan pelindung ujung karet."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-BT-008"
+    },
+    "stock": 17,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-velora-blush-chunky",
+    "brand": "Valerie & CO",
+    "name": "Velora Blush Chunky",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 320,
+    "priceIdr": 4850000,
+    "showcaseImage": "/shoes/01_Sneakers/01_velora_blush_chunky/01_velora_blush_chunky.webp",
+    "images": [
+      "/shoes/01_Sneakers/01_velora_blush_chunky/01_velora_blush_chunky.webp"
+    ],
+    "colors": [
+      {
+        "name": "Blush Chalk",
+        "hex": "#f0d6dc",
+        "subtitle": "Velora Blush Chunky",
+        "image": "/shoes/01_Sneakers/01_velora_blush_chunky/01_velora_blush_chunky.webp"
+      },
+      {
+        "name": "Pearl Mist",
+        "hex": "#eae4e6",
+        "subtitle": "Velora Pearl Chunky",
+        "image": "/shoes/01_Sneakers/01_velora_blush_chunky/01_velora_blush_chunky.webp",
+        "filter": "saturate(0.4) brightness(1.02)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Sculpted platform sneaker layering powder-blush leather, breathable mesh panels, and an exaggerated dual-density cloud sole.",
+      "id": "Sneakers platform berlapis kulit blush pastel, panel mesh breathable, dan sol tebal dual-density super ringan."
+    },
+    "details": {
+      "composition": {
+        "en": "Italian Calfskin, Suede Overlays & Technical Mesh.",
+        "id": "Kulit Calfskin Italia, Lapisan Suede & Mesh Teknis."
+      },
+      "sole": {
+        "en": "Sculpted high-rebound EVA midsole with rubber tread.",
+        "id": "Midsole EVA pantulan tinggi dengan tapak karet tahan aus."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-009"
+    },
+    "stock": 26,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-lunara-blush-air-runner",
+    "brand": "Valerie & CO",
+    "name": "Lunara Blush Air Runner",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 310,
+    "priceIdr": 4650000,
+    "showcaseImage": "/shoes/01_Sneakers/02_lunara_blush_air_runner/02_lunara_blush_air_runner.webp",
+    "images": [
+      "/shoes/01_Sneakers/02_lunara_blush_air_runner/02_lunara_blush_air_runner.webp"
+    ],
+    "colors": [
+      {
+        "name": "Rosewash Pink",
+        "hex": "#ecccd3",
+        "subtitle": "Lunara Blush Air Runner",
+        "image": "/shoes/01_Sneakers/02_lunara_blush_air_runner/02_lunara_blush_air_runner.webp"
+      },
+      {
+        "name": "Ivory Blush",
+        "hex": "#f3eae8",
+        "subtitle": "Lunara Ivory Air Runner",
+        "image": "/shoes/01_Sneakers/02_lunara_blush_air_runner/02_lunara_blush_air_runner.webp",
+        "filter": "saturate(0.55) brightness(1.03)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Featherlight athletic runner in pastel rose suede and open-weave mesh engineered over an air-cushioned heel chamber.",
+      "id": "Sneakers runner ringan berbahan suede rose pastel dan rajut berpori dengan bantalan udara empuk di tumit."
+    },
+    "details": {
+      "composition": {
+        "en": "Technical Knit Mesh & Brushed Pastel Suede.",
+        "id": "Mesh Rajut Teknis & Suede Pastel Halus."
+      },
+      "sole": {
+        "en": "Air-cushion chamber heel with translucent rubber grip.",
+        "id": "Tumit bantalan udara dengan tapak karet transparan."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-010"
+    },
+    "stock": 23,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-kivora-white-gray-motion",
+    "brand": "Valerie & CO",
+    "name": "Kivora White Gray Motion",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 295,
+    "priceIdr": 4450000,
+    "showcaseImage": "/shoes/01_Sneakers/03_kivora_white_gray_motion/03_kivora_white_gray_motion.webp",
+    "images": [
+      "/shoes/01_Sneakers/03_kivora_white_gray_motion/03_kivora_white_gray_motion.webp"
+    ],
+    "colors": [
+      {
+        "name": "Optic White / Dove",
+        "hex": "#d9dde0",
+        "subtitle": "Kivora White Gray Motion",
+        "image": "/shoes/01_Sneakers/03_kivora_white_gray_motion/03_kivora_white_gray_motion.webp"
+      },
+      {
+        "name": "Platinum Slate",
+        "hex": "#9ca3af",
+        "subtitle": "Kivora Platinum Motion",
+        "image": "/shoes/01_Sneakers/03_kivora_white_gray_motion/03_kivora_white_gray_motion.webp",
+        "filter": "brightness(0.92) contrast(1.06)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43
+    ],
+    "description": {
+      "en": "Architectural monochrome trainer built in crisp optical white leather and dove gray technical ribs for seamless all-day motion.",
+      "id": "Sneakers modern nuansa putih optik dan abu merpati dengan garis dinamis yang ringan dan serbaguna."
+    },
+    "details": {
+      "composition": {
+        "en": "Nappa Calfskin & Microfiber Support Cage.",
+        "id": "Kulit Nappa Calfskin & Rangka Penopang Microfiber."
+      },
+      "sole": {
+        "en": "Articulated flex-groove Phylon outsole.",
+        "id": "Sol Phylon fleksibel mengikuti gerak kaki."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-011"
+    },
+    "stock": 28,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-avenza-cream-gold-runner",
+    "brand": "Valerie & CO",
+    "name": "Avenza Cream Gold Runner",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 335,
+    "priceIdr": 5050000,
+    "showcaseImage": "/shoes/01_Sneakers/04_avenza_cream_gold_runner/04_avenza_cream_gold_runner.webp",
+    "images": [
+      "/shoes/01_Sneakers/04_avenza_cream_gold_runner/04_avenza_cream_gold_runner.webp"
+    ],
+    "colors": [
+      {
+        "name": "Cream / Champagne",
+        "hex": "#e6dcc8",
+        "subtitle": "Avenza Cream Gold Runner",
+        "image": "/shoes/01_Sneakers/04_avenza_cream_gold_runner/04_avenza_cream_gold_runner.webp"
+      },
+      {
+        "name": "Warm Linen",
+        "hex": "#d6c8ad",
+        "subtitle": "Avenza Linen Gold Runner",
+        "image": "/shoes/01_Sneakers/04_avenza_cream_gold_runner/04_avenza_cream_gold_runner.webp",
+        "filter": "brightness(0.94) sepia(0.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Elevated retro-luxury runner in creamy calfskin with champagne metallic trim and tonal cream lacing.",
+      "id": "Sneakers runner mewah bernuansa krim dengan aksen sampanye metalik lembut dan tali senada."
+    },
+    "details": {
+      "composition": {
+        "en": "LWG Certified Cream Calfskin & Metallic Leather Trim.",
+        "id": "Kulit Calfskin Krim Bersertifikat & Aksen Metalik Sampanye."
+      },
+      "sole": {
+        "en": "Honeycomb rubber compound outsole.",
+        "id": "Sol karet motif sarang lebah berdaya cengkeram tinggi."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-012"
+    },
+    "stock": 20,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-rosella-coral-run",
+    "brand": "Valerie & CO",
+    "name": "Rosella Coral Run",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 290,
+    "priceIdr": 4350000,
+    "showcaseImage": "/shoes/01_Sneakers/05_rosella_coral_run/05_rosella_coral_run.webp",
+    "images": [
+      "/shoes/01_Sneakers/05_rosella_coral_run/05_rosella_coral_run.webp"
+    ],
+    "colors": [
+      {
+        "name": "Soft Coral",
+        "hex": "#f0a89a",
+        "subtitle": "Rosella Coral Run",
+        "image": "/shoes/01_Sneakers/05_rosella_coral_run/05_rosella_coral_run.webp"
+      },
+      {
+        "name": "Peach Sand",
+        "hex": "#ebc2b3",
+        "subtitle": "Rosella Peach Run",
+        "image": "/shoes/01_Sneakers/05_rosella_coral_run/05_rosella_coral_run.webp",
+        "filter": "brightness(1.03) saturate(0.82)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Sunlit coral and chalk leather runner designed with responsive forefoot cushioning and sculptural heel stabilizer.",
+      "id": "Sneakers lari bergaya resor dalam perpaduan warna coral hangat dan putih kapur dengan bantalan responsif."
+    },
+    "details": {
+      "composition": {
+        "en": "Breathable Air-Mesh & Nubuck Mudguard.",
+        "id": "Air-Mesh Sejuk & Pelindung Ujung Nubuck Halus."
+      },
+      "sole": {
+        "en": "Dual-density featherweight foam unit.",
+        "id": "Sol busa ganda ultra ringan dan nyaman seharian."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-013"
+    },
+    "stock": 21,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-orvella-rose-wave",
+    "brand": "Valerie & CO",
+    "name": "Orvella Rose Wave",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 315,
+    "priceIdr": 4750000,
+    "showcaseImage": "/shoes/01_Sneakers/06_orvella_rose_wave/06_orvella_rose_wave.webp",
+    "images": [
+      "/shoes/01_Sneakers/06_orvella_rose_wave/06_orvella_rose_wave.webp"
+    ],
+    "colors": [
+      {
+        "name": "Dusty Rose",
+        "hex": "#df9ea8",
+        "subtitle": "Orvella Rose Wave",
+        "image": "/shoes/01_Sneakers/06_orvella_rose_wave/06_orvella_rose_wave.webp"
+      },
+      {
+        "name": "Cloud Pink",
+        "hex": "#edd1d6",
+        "subtitle": "Orvella Cloud Rose Wave",
+        "image": "/shoes/01_Sneakers/06_orvella_rose_wave/06_orvella_rose_wave.webp",
+        "filter": "brightness(1.05) saturate(0.75)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Fluid wave-paneled sneaker harmonizing muted rose leather piping against an organic curved platform sole.",
+      "id": "Sneakers dengan panel bergelombang khas atelier dalam nuansa rose lembut dan sol platform organik ergonomis."
+    },
+    "details": {
+      "composition": {
+        "en": "Supple Tumbled Leather & Recycled Knit Lining.",
+        "id": "Kulit Tumbled Lembut & Lapisan Rajut Nyaman."
+      },
+      "sole": {
+        "en": "Wave-molded EVA wedge & rubber outsole.",
+        "id": "Sol wedge EVA cetakan gelombang dengan alas karet."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-014"
+    },
+    "stock": 19,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-elvora-aqua-knit",
+    "brand": "Valerie & CO",
+    "name": "Elvora Aqua Knit",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 285,
+    "priceIdr": 4250000,
+    "showcaseImage": "/shoes/01_Sneakers/07_elvora_aqua_knit/07_elvora_aqua_knit.webp",
+    "images": [
+      "/shoes/01_Sneakers/07_elvora_aqua_knit/07_elvora_aqua_knit.webp"
+    ],
+    "colors": [
+      {
+        "name": "Glacier Aqua",
+        "hex": "#9fd6d6",
+        "subtitle": "Elvora Aqua Knit",
+        "image": "/shoes/01_Sneakers/07_elvora_aqua_knit/07_elvora_aqua_knit.webp"
+      },
+      {
+        "name": "Seafoam Mist",
+        "hex": "#bfe3e2",
+        "subtitle": "Elvora Seafoam Knit",
+        "image": "/shoes/01_Sneakers/07_elvora_aqua_knit/07_elvora_aqua_knit.webp",
+        "filter": "brightness(1.04) saturate(0.85)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Sock-fit sculpted knit trainer in refreshing glacier aqua with engineered rib tension and a carved translucent sole.",
+      "id": "Sneakers rajut pas di kaki warna biru aqua glasier yang segar dengan rajutan elastis dan sol ukiran ringan."
+    },
+    "details": {
+      "composition": {
+        "en": "3D-Engineered Merino-Touch Knit & Heel Counter.",
+        "id": "Rajut 3D Halus & Penopang Tumit Eksternal."
+      },
+      "sole": {
+        "en": "Grooved flexible EVA sole with grip pods.",
+        "id": "Sol EVA fleksibel beralur dengan titik traksi karet."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-015"
+    },
+    "stock": 24,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-zavira-dusty-trek",
+    "brand": "Valerie & CO",
+    "name": "Zavira Dusty Trek",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 345,
+    "priceIdr": 5250000,
+    "showcaseImage": "/shoes/01_Sneakers/08_zavira_dusty_trek/08_zavira_dusty_trek.webp",
+    "images": [
+      "/shoes/01_Sneakers/08_zavira_dusty_trek/08_zavira_dusty_trek.webp"
+    ],
+    "colors": [
+      {
+        "name": "Dusty Slate / Clay",
+        "hex": "#9c9493",
+        "subtitle": "Zavira Dusty Trek",
+        "image": "/shoes/01_Sneakers/08_zavira_dusty_trek/08_zavira_dusty_trek.webp"
+      },
+      {
+        "name": "Obsidian Stone",
+        "hex": "#5a5554",
+        "subtitle": "Zavira Stone Trek",
+        "image": "/shoes/01_Sneakers/08_zavira_dusty_trek/08_zavira_dusty_trek.webp",
+        "filter": "brightness(0.86) contrast(1.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43
+    ],
+    "description": {
+      "en": "Elevated trail-inspired luxury sneaker built with weather-resistant suede, cord eyelets, and an articulated lug sole.",
+      "id": "Sneakers terinspirasi trail berbahan suede tahan cuaca, tali pengunci ergonomis, dan sol bergerigi modern."
+    },
+    "details": {
+      "composition": {
+        "en": "Treated Calf Suede, Ripstop Fabric & Speed Laces.",
+        "id": "Suede Calfskin Terlapis, Bahan Ripstop & Tali Cepat."
+      },
+      "sole": {
+        "en": "Multi-directional rugged luxury trail lug outsole.",
+        "id": "Sol lug multi-arah berdaya cengkeram kuat."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-016"
+    },
+    "stock": 17,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-morlix-urban-trail",
+    "brand": "Valerie & CO",
+    "name": "Morlix Urban Trail",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 340,
+    "priceIdr": 5150000,
+    "showcaseImage": "/shoes/01_Sneakers/09_morlix_urban_trail/09_morlix_urban_trail.webp",
+    "images": [
+      "/shoes/01_Sneakers/09_morlix_urban_trail/09_morlix_urban_trail.webp"
+    ],
+    "colors": [
+      {
+        "name": "Ash Grey / Taupe",
+        "hex": "#8e8c88",
+        "subtitle": "Morlix Urban Trail",
+        "image": "/shoes/01_Sneakers/09_morlix_urban_trail/09_morlix_urban_trail.webp"
+      },
+      {
+        "name": "Charcoal Mist",
+        "hex": "#5c5b59",
+        "subtitle": "Morlix Charcoal Trail",
+        "image": "/shoes/01_Sneakers/09_morlix_urban_trail/09_morlix_urban_trail.webp",
+        "filter": "brightness(0.87) contrast(1.07)"
+      }
+    ],
+    "sizes": [
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43
+    ],
+    "description": {
+      "en": "Technical city-trek runner uniting sculpted tonal paneling, padded tongue comfort, and high-durability trail outsole.",
+      "id": "Sneakers urban trail dengan panel berlapis tonal yang kokoh, lidah empuk, serta sol luar berkarakter."
+    },
+    "details": {
+      "composition": {
+        "en": "Ballistic Mesh & Split Nubuck Overlays.",
+        "id": "Mesh Balistik Tangguh & Lapisan Nubuck Belah."
+      },
+      "sole": {
+        "en": "Shock-absorbing chassis with high-traction lugs.",
+        "id": "Sasis peredam kejut dengan tapak cengkeram tangguh."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-017"
+    },
+    "stock": 18,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-novara-cream-slip-on",
+    "brand": "Valerie & CO",
+    "name": "Novara Cream Slip-On",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 265,
+    "priceIdr": 3950000,
+    "showcaseImage": "/shoes/01_Sneakers/10_novara_cream_slip_on/10_novara_cream_slip_on.webp",
+    "images": [
+      "/shoes/01_Sneakers/10_novara_cream_slip_on/10_novara_cream_slip_on.webp"
+    ],
+    "colors": [
+      {
+        "name": "Buttermilk Cream",
+        "hex": "#ece5d5",
+        "subtitle": "Novara Cream Slip-On",
+        "image": "/shoes/01_Sneakers/10_novara_cream_slip_on/10_novara_cream_slip_on.webp"
+      },
+      {
+        "name": "Warm Oat",
+        "hex": "#d6cab5",
+        "subtitle": "Novara Oat Slip-On",
+        "image": "/shoes/01_Sneakers/10_novara_cream_slip_on/10_novara_cream_slip_on.webp",
+        "filter": "brightness(0.93) sepia(0.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Laceless travel sneaker crafted from butter-soft cream leather with elasticated collar entry and low cupsole.",
+      "id": "Sneakers slip-on tanpa tali dari kulit krim selembut mentega dengan bukaan elastis dan sol cupsole minimalis."
+    },
+    "details": {
+      "composition": {
+        "en": "Supple Lambskin Upper & Breathable Textile Lining.",
+        "id": "Kulit Domba Lentur & Lapisan Tekstil Sirkulasi Udara."
+      },
+      "sole": {
+        "en": "Hand-stitched cream vulcanized cupsole.",
+        "id": "Cupsole karet krem fleksibel jahitan tangan."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-018"
+    },
+    "stock": 25,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-zavira-burgundy-court",
+    "brand": "Valerie & CO",
+    "name": "Zavira Burgundy Court",
+    "category": "Sneakers",
+    "subCategory": "Sneakers",
+    "price": 305,
+    "priceIdr": 4550000,
+    "showcaseImage": "/shoes/01_Sneakers/11_zavira_burgundy_court_alternatif/11_zavira_burgundy_court_alternatif.webp",
+    "images": [
+      "/shoes/01_Sneakers/11_zavira_burgundy_court_alternatif/11_zavira_burgundy_court_alternatif.webp"
+    ],
+    "colors": [
+      {
+        "name": "Deep Burgundy / White",
+        "hex": "#6a1c28",
+        "subtitle": "Zavira Burgundy Court",
+        "image": "/shoes/01_Sneakers/11_zavira_burgundy_court_alternatif/11_zavira_burgundy_court_alternatif.webp"
+      },
+      {
+        "name": "Noir Bordeaux",
+        "hex": "#431018",
+        "subtitle": "Zavira Noir Bordeaux Court",
+        "image": "/shoes/01_Sneakers/11_zavira_burgundy_court_alternatif/11_zavira_burgundy_court_alternatif.webp",
+        "filter": "brightness(0.86) contrast(1.08)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Heritage court sneaker reimagined in rich burgundy suede accents over cream tumbled leather and gum-toned edge grip.",
+      "id": "Sneakers court klasik dengan aksen suede burgundy tua berpadu kulit krem dan sol samping berkarakter."
+    },
+    "details": {
+      "composition": {
+        "en": "Tumbled Calfskin & Velvety Burgundy Suede Heel Tab.",
+        "id": "Kulit Calfskin Tumbled & Tumit Suede Burgundy Mewah."
+      },
+      "sole": {
+        "en": "Low-profile stitched rubber court cupsole.",
+        "id": "Sol cupsole karet rendah dengan jahitan keliling."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-SNK-019"
+    },
+    "stock": 22,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-rosella-petal-bow-mule",
+    "brand": "Valerie & CO",
+    "name": "Rosella Petal Bow Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 330,
+    "priceIdr": 4950000,
+    "showcaseImage": "/shoes/03_Heels/01_rosella_petal_bow_mule/01_rosella_petal_bow_mule.webp",
+    "images": [
+      "/shoes/03_Heels/01_rosella_petal_bow_mule/01_rosella_petal_bow_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Petal Pink",
+        "hex": "#e8bcc6",
+        "subtitle": "Rosella Petal Bow Mule",
+        "image": "/shoes/03_Heels/01_rosella_petal_bow_mule/01_rosella_petal_bow_mule.webp"
+      },
+      {
+        "name": "Porcelain Blush",
+        "hex": "#f2d9df",
+        "subtitle": "Rosella Porcelain Bow Mule",
+        "image": "/shoes/03_Heels/01_rosella_petal_bow_mule/01_rosella_petal_bow_mule.webp",
+        "filter": "brightness(1.04) saturate(0.82)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Poetic pointed-toe mule topped with an architectural folded bow in petal satin-calfskin and a tapered 75mm heel.",
+      "id": "Heels mule ujung runcing dengan pita lipat arsitektural berbahan satin-kulit petal lembut dan hak 75mm seimbang."
+    },
+    "details": {
+      "composition": {
+        "en": "Duchesse Satin & Italian Kidskin Lining.",
+        "id": "Satin Duchesse Halus & Lapisan Kulit Kid Italia."
+      },
+      "sole": {
+        "en": "Leather outsole with anti-slip embossed forepart.",
+        "id": "Sol kulit halus dengan telapak depan anti-selip."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-020"
+    },
+    "stock": 20,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-zeriva-cocoa-gloss-mule",
+    "brand": "Valerie & CO",
+    "name": "Zeriva Cocoa Gloss Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 345,
+    "priceIdr": 5150000,
+    "showcaseImage": "/shoes/03_Heels/02_zeriva_cocoa_gloss_mule/02_zeriva_cocoa_gloss_mule.webp",
+    "images": [
+      "/shoes/03_Heels/02_zeriva_cocoa_gloss_mule/02_zeriva_cocoa_gloss_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Cocoa Patent",
+        "hex": "#5a3525",
+        "subtitle": "Zeriva Cocoa Gloss Mule",
+        "image": "/shoes/03_Heels/02_zeriva_cocoa_gloss_mule/02_zeriva_cocoa_gloss_mule.webp"
+      },
+      {
+        "name": "Mocha Mirror",
+        "hex": "#764c38",
+        "subtitle": "Zeriva Mocha Gloss Mule",
+        "image": "/shoes/03_Heels/02_zeriva_cocoa_gloss_mule/02_zeriva_cocoa_gloss_mule.webp",
+        "filter": "brightness(1.08) contrast(0.98)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Mirror-gloss cocoa patent mule featuring an elongated V-vamp cut and curved architectural heel.",
+      "id": "Mule berhak dengan kilap paten cokelat kakao, potongan vamp V elegan, dan siluet hak melengkung modern."
+    },
+    "details": {
+      "composition": {
+        "en": "Patent Calfskin & Quilted Footbed Cushion.",
+        "id": "Kulit Paten Mengilap & Alas Kaki Empuk Berlapis."
+      },
+      "sole": {
+        "en": "Hand-painted leather outsole.",
+        "id": "Sol kulit dengan sentuhan akhir cat tangan."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-021"
+    },
+    "stock": 18,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-novara-mocha-wave-mule",
+    "brand": "Valerie & CO",
+    "name": "Novara Mocha Wave Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 325,
+    "priceIdr": 4850000,
+    "showcaseImage": "/shoes/03_Heels/03_novara_mocha_wave_mule/03_novara_mocha_wave_mule.webp",
+    "images": [
+      "/shoes/03_Heels/03_novara_mocha_wave_mule/03_novara_mocha_wave_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Mocha Glaze",
+        "hex": "#7a533c",
+        "subtitle": "Novara Mocha Wave Mule",
+        "image": "/shoes/03_Heels/03_novara_mocha_wave_mule/03_novara_mocha_wave_mule.webp"
+      },
+      {
+        "name": "Cinnamon Silk",
+        "hex": "#9b6f53",
+        "subtitle": "Novara Cinnamon Wave Mule",
+        "image": "/shoes/03_Heels/03_novara_mocha_wave_mule/03_novara_mocha_wave_mule.webp",
+        "filter": "brightness(1.06) saturate(1.06)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Sculptural wave-strap mocha heel designed to flatter the instep while anchoring every stride on an hourglass heel.",
+      "id": "Heels mule warna moka dengan strap bergelombang yang membingkai punggung kaki secara anggun di atas hak jam pasir."
+    },
+    "details": {
+      "composition": {
+        "en": "Spazzolato Leather & Memory Foam Insole.",
+        "id": "Kulit Spazzolato Halus & Bantalan Memory Foam."
+      },
+      "sole": {
+        "en": "Buffed leather sole with protective rubber tip.",
+        "id": "Sol kulit dengan ujung karet pelindung."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-022"
+    },
+    "stock": 21,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-orvella-cocoa-croc-point",
+    "brand": "Valerie & CO",
+    "name": "Orvella Cocoa Croc Point",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 365,
+    "priceIdr": 5450000,
+    "showcaseImage": "/shoes/03_Heels/04_orvella_cocoa_croc_point/04_orvella_cocoa_croc_point.webp",
+    "images": [
+      "/shoes/03_Heels/04_orvella_cocoa_croc_point/04_orvella_cocoa_croc_point.webp"
+    ],
+    "colors": [
+      {
+        "name": "Cocoa Embossed Croc",
+        "hex": "#4d2f21",
+        "subtitle": "Orvella Cocoa Croc Point",
+        "image": "/shoes/03_Heels/04_orvella_cocoa_croc_point/04_orvella_cocoa_croc_point.webp"
+      },
+      {
+        "name": "Espresso Emboss",
+        "hex": "#331e14",
+        "subtitle": "Orvella Espresso Croc Point",
+        "image": "/shoes/03_Heels/04_orvella_cocoa_croc_point/04_orvella_cocoa_croc_point.webp",
+        "filter": "brightness(0.84) contrast(1.08)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Statement crocodile-embossed pointed heel in deep cocoa brown finished with an ultra-crisp blade stiletto.",
+      "id": "Sepatu hak tinggi ujung runcing bertekstur croco-emboss warna cokelat kakao pekat dan hak stiletto presisi."
+    },
+    "details": {
+      "composition": {
+        "en": "Croc-Embossed Italian Calfskin. Goatskin Lining.",
+        "id": "Kulit Calfskin Motif Croco Italia. Lapisan Kulit Lembut."
+      },
+      "sole": {
+        "en": "Leather outsole with beveled waist arch.",
+        "id": "Sol kulit ramping dengan lengkungan penyangga."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-023"
+    },
+    "stock": 16,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-varelle-oxblood-bow-mule",
+    "brand": "Valerie & CO",
+    "name": "Varelle Oxblood Bow Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 350,
+    "priceIdr": 5250000,
+    "showcaseImage": "/shoes/03_Heels/05_varelle_oxblood_bow_mule/05_varelle_oxblood_bow_mule.webp",
+    "images": [
+      "/shoes/03_Heels/05_varelle_oxblood_bow_mule/05_varelle_oxblood_bow_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Oxblood Lacquer",
+        "hex": "#5a141c",
+        "subtitle": "Varelle Oxblood Bow Mule",
+        "image": "/shoes/03_Heels/05_varelle_oxblood_bow_mule/05_varelle_oxblood_bow_mule.webp"
+      },
+      {
+        "name": "Merlot Sheen",
+        "hex": "#76202a",
+        "subtitle": "Varelle Merlot Bow Mule",
+        "image": "/shoes/03_Heels/05_varelle_oxblood_bow_mule/05_varelle_oxblood_bow_mule.webp",
+        "filter": "brightness(1.09) contrast(0.98)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Evening oxblood mule crowned with a structured ribbon knot over a sleek pointed last and flared stiletto heel.",
+      "id": "Mule malam warna oxblood mewah berhiaskan simpulan pita terstruktur di atas siluet runcing dan hak elegan."
+    },
+    "details": {
+      "composition": {
+        "en": "Glazed Kidskin & Silk Grosgrain Bow Detail.",
+        "id": "Kulit Kid Kilap Lembut & Detail Pita Grosgrain Sutra."
+      },
+      "sole": {
+        "en": "Brushed oak-leather outsole.",
+        "id": "Sol kulit oak gosok berkualitas butik."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-024"
+    },
+    "stock": 19,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-zavira-ruby-lace-sling",
+    "brand": "Valerie & CO",
+    "name": "Zavira Ruby Lace Slingback",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 380,
+    "priceIdr": 5650000,
+    "showcaseImage": "/shoes/03_Heels/06_zavira_ruby_lace_sling/06_zavira_ruby_lace_sling.webp",
+    "images": [
+      "/shoes/03_Heels/06_zavira_ruby_lace_sling/06_zavira_ruby_lace_sling.webp"
+    ],
+    "colors": [
+      {
+        "name": "Ruby Crimson",
+        "hex": "#8e1c28",
+        "subtitle": "Zavira Ruby Lace Slingback",
+        "image": "/shoes/03_Heels/06_zavira_ruby_lace_sling/06_zavira_ruby_lace_sling.webp"
+      },
+      {
+        "name": "Garnet Velvet",
+        "hex": "#68131d",
+        "subtitle": "Zavira Garnet Slingback",
+        "image": "/shoes/03_Heels/06_zavira_ruby_lace_sling/06_zavira_ruby_lace_sling.webp",
+        "filter": "brightness(0.86) contrast(1.08)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Delicate ruby floral lace slingback framed in glossy piping with an elasticated heel strap for poise from gallery to gala.",
+      "id": "Slingback berhak dengan brokat bunga ruby lembut, lis paten mengilap, dan tali tumit elastis yang nyaman."
+    },
+    "details": {
+      "composition": {
+        "en": "Couture Floral Lace, Mesh Lining & Patent Trim.",
+        "id": "Brokat Bunga Couture, Lapisan Tule & Lis Paten."
+      },
+      "sole": {
+        "en": "Cushioned kidskin footbed & leather sole.",
+        "id": "Alas kulit empuk dan outsole kulit penuh."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-025"
+    },
+    "stock": 15,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-kivora-olive-suede-mule",
+    "brand": "Valerie & CO",
+    "name": "Kivora Olive Suede Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 335,
+    "priceIdr": 5050000,
+    "showcaseImage": "/shoes/03_Heels/07_kivora_olive_suede_mule/07_kivora_olive_suede_mule.webp",
+    "images": [
+      "/shoes/03_Heels/07_kivora_olive_suede_mule/07_kivora_olive_suede_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Moss Olive Suede",
+        "hex": "#5b6647",
+        "subtitle": "Kivora Olive Suede Mule",
+        "image": "/shoes/03_Heels/07_kivora_olive_suede_mule/07_kivora_olive_suede_mule.webp"
+      },
+      {
+        "name": "Warm Sage Suede",
+        "hex": "#768260",
+        "subtitle": "Kivora Sage Suede Mule",
+        "image": "/shoes/03_Heels/07_kivora_olive_suede_mule/07_kivora_olive_suede_mule.webp",
+        "filter": "brightness(1.09) saturate(0.92)"
+      }
+    ],
+    "sizes": [
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Tactile olive suede heel mule highlighted by an asymmetric cutaway throat and wrapped 70mm block stiletto.",
+      "id": "Heels mule berbahan suede hijau zaitun lembut dengan potongan asimetris di punggung kaki dan hak 70mm yang nyaman."
+    },
+    "details": {
+      "composition": {
+        "en": "Italian Velour Suede. Breathable Leather Footbed.",
+        "id": "Kulit Suede Velour Italia. Alas Kaki Bernapas."
+      },
+      "sole": {
+        "en": "Flexible grained leather & rubber insert sole.",
+        "id": "Sol kulit lentur dengan sisipan karet anti-selip."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-026"
+    },
+    "stock": 22,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-lunera-ivory-woven-mule",
+    "brand": "Valerie & CO",
+    "name": "Lunera Ivory Woven Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 355,
+    "priceIdr": 5350000,
+    "showcaseImage": "/shoes/03_Heels/08_lunera_ivory_woven_mule/08_lunera_ivory_woven_mule.webp",
+    "images": [
+      "/shoes/03_Heels/08_lunera_ivory_woven_mule/08_lunera_ivory_woven_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Ivory Cream",
+        "hex": "#eee9df",
+        "subtitle": "Lunera Ivory Woven Mule",
+        "image": "/shoes/03_Heels/08_lunera_ivory_woven_mule/08_lunera_ivory_woven_mule.webp"
+      },
+      {
+        "name": "Champagne Sand",
+        "hex": "#ddd3c1",
+        "subtitle": "Lunera Sand Woven Mule",
+        "image": "/shoes/03_Heels/08_lunera_ivory_woven_mule/08_lunera_ivory_woven_mule.webp",
+        "filter": "brightness(0.95) sepia(0.08)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Artisanal hand-woven ivory leather mule on a modern squared toe last and sculpted mid heel.",
+      "id": "Mule kulit anyam tangan warna gading dengan siluet ujung kotak modern dan hak sedang yang sangat stabil."
+    },
+    "details": {
+      "composition": {
+        "en": "Hand-Braided Nappa Lambskin Strips.",
+        "id": "Anyaman Kulit Domba Nappa Buatan Tangan."
+      },
+      "sole": {
+        "en": "Tonal stacked heel with durable leather outsole.",
+        "id": "Hak lapis senada dengan outsole kulit tahan lama."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-027"
+    },
+    "stock": 19,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-morlix-bordeaux-strap-sling",
+    "brand": "Valerie & CO",
+    "name": "Morlix Bordeaux Strap Sling",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 370,
+    "priceIdr": 5550000,
+    "showcaseImage": "/shoes/03_Heels/09_morlix_bordeaux_strap_sling/09_morlix_bordeaux_strap_sling.webp",
+    "images": [
+      "/shoes/03_Heels/09_morlix_bordeaux_strap_sling/09_morlix_bordeaux_strap_sling.webp"
+    ],
+    "colors": [
+      {
+        "name": "Deep Bordeaux",
+        "hex": "#5d1822",
+        "subtitle": "Morlix Bordeaux Strap Sling",
+        "image": "/shoes/03_Heels/09_morlix_bordeaux_strap_sling/09_morlix_bordeaux_strap_sling.webp"
+      },
+      {
+        "name": "Burgundy Noir",
+        "hex": "#401017",
+        "subtitle": "Morlix Burgundy Noir Sling",
+        "image": "/shoes/03_Heels/09_morlix_bordeaux_strap_sling/09_morlix_bordeaux_strap_sling.webp",
+        "filter": "brightness(0.85) contrast(1.07)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Graphic crisscross ankle-strap slingback in deep bordeaux leather balanced over an hourglass stiletto.",
+      "id": "Heels slingback bertali silang warna bordeaux pekat dengan gesper mikro dan hak ramping seimbang."
+    },
+    "details": {
+      "composition": {
+        "en": "Polished Calfskin & Custom Gold Micro-Buckle.",
+        "id": "Kulit Calfskin Poles & Gesper Mikro Emas Khusus."
+      },
+      "sole": {
+        "en": "Full leather outsole with anti-slip arch pad.",
+        "id": "Outsole kulit penuh dengan bantalan telapak lembut."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-028"
+    },
+    "stock": 17,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-elvora-wine-mirror-pump",
+    "brand": "Valerie & CO",
+    "name": "Elvora Wine Mirror Pump",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 390,
+    "priceIdr": 5850000,
+    "showcaseImage": "/shoes/03_Heels/10_elvora_wine_mirror_pump/10_elvora_wine_mirror_pump.webp",
+    "images": [
+      "/shoes/03_Heels/10_elvora_wine_mirror_pump/10_elvora_wine_mirror_pump.webp"
+    ],
+    "colors": [
+      {
+        "name": "Mirror Wine",
+        "hex": "#671722",
+        "subtitle": "Elvora Wine Mirror Pump",
+        "image": "/shoes/03_Heels/10_elvora_wine_mirror_pump/10_elvora_wine_mirror_pump.webp"
+      },
+      {
+        "name": "Rich Crimson",
+        "hex": "#82202d",
+        "subtitle": "Elvora Crimson Pump",
+        "image": "/shoes/03_Heels/10_elvora_wine_mirror_pump/10_elvora_wine_mirror_pump.webp",
+        "filter": "brightness(1.08) saturate(1.05)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Architectural court pump in high-shine mirror-patent wine leather sculpted with a razor-sharp point and balanced 85mm heel.",
+      "id": "Pumps klasik warna wine berkilau tinggi dengan ujung lancip tegas dan hak 85mm yang dirancang nyaman dipakai lama."
+    },
+    "details": {
+      "composition": {
+        "en": "High-Shine Vernis Calfskin. Double-Padded Footbed.",
+        "id": "Kulit Vernis Mengilap. Alas Kaki Bantalan Ganda."
+      },
+      "sole": {
+        "en": "Signature leather sole with anti-skid diamond emboss.",
+        "id": "Sol kulit berpola berlian anti-selip khas butik."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-029"
+    },
+    "stock": 16,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-avenza-noir-edge-mule",
+    "brand": "Valerie & CO",
+    "name": "Avenza Noir Edge Mule",
+    "category": "Heels",
+    "subCategory": "Heels",
+    "price": 360,
+    "priceIdr": 5350000,
+    "showcaseImage": "/shoes/03_Heels/11_avenza_noir_edge_mule/11_avenza_noir_edge_mule.webp",
+    "images": [
+      "/shoes/03_Heels/11_avenza_noir_edge_mule/11_avenza_noir_edge_mule.webp"
+    ],
+    "colors": [
+      {
+        "name": "Jet Noir",
+        "hex": "#1b1b1d",
+        "subtitle": "Avenza Noir Edge Mule",
+        "image": "/shoes/03_Heels/11_avenza_noir_edge_mule/11_avenza_noir_edge_mule.webp"
+      },
+      {
+        "name": "Graphite Matte",
+        "hex": "#38383d",
+        "subtitle": "Avenza Graphite Mule",
+        "image": "/shoes/03_Heels/11_avenza_noir_edge_mule/11_avenza_noir_edge_mule.webp",
+        "filter": "brightness(1.18) contrast(0.94)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Essential noir minimalist mule defined by an architectural angular edge, deep throat line, and sculptural flared heel.",
+      "id": "Mule hitam minimalis berkarakter tegas dengan potongan geometris bersih dan hak miring arsitektural."
+    },
+    "details": {
+      "composition": {
+        "en": "Full-Grain Matte Noir Calfskin.",
+        "id": "Kulit Calfskin Hitam Matte Full-Grain."
+      },
+      "sole": {
+        "en": "Reinforced leather sole with whisper heel tip.",
+        "id": "Sol kulit diperkuat dengan ujung hak senyap."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-HL-030"
+    },
+    "stock": 23,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-velora-butter-bow-slingback",
+    "brand": "Valerie & CO",
+    "name": "Velora Butter Bow Slingback",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 255,
+    "priceIdr": 3850000,
+    "showcaseImage": "/shoes/04_Flatshoes/01_velora_butter_bow_slingback/01_velora_butter_bow_slingback.webp",
+    "images": [
+      "/shoes/04_Flatshoes/01_velora_butter_bow_slingback/01_velora_butter_bow_slingback.webp"
+    ],
+    "colors": [
+      {
+        "name": "Buttercream",
+        "hex": "#efe1b4",
+        "subtitle": "Velora Butter Bow Slingback",
+        "image": "/shoes/04_Flatshoes/01_velora_butter_bow_slingback/01_velora_butter_bow_slingback.webp"
+      },
+      {
+        "name": "Soft Ivory",
+        "hex": "#f3ebd4",
+        "subtitle": "Velora Ivory Bow Slingback",
+        "image": "/shoes/04_Flatshoes/01_velora_butter_bow_slingback/01_velora_butter_bow_slingback.webp",
+        "filter": "saturate(0.7) brightness(1.03)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Supple buttercream flat slingback accented by a signature knot bow and cushioned low dress heel.",
+      "id": "Flatshoes slingback warna krem mentega lembut dengan aksen pita manis dan sol datar empuk untuk aktivitas harian."
+    },
+    "details": {
+      "composition": {
+        "en": "100% Glove-Soft Kidskin Leather.",
+        "id": "100% Kulit Kidskin Selembut Sarung Tangan."
+      },
+      "sole": {
+        "en": "Flexible crepe-rubber sole with 15mm stack heel.",
+        "id": "Sol karet crepe lentur dengan hak rendah 15mm."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-031"
+    },
+    "stock": 25,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-lunera-blush-sling-flat",
+    "brand": "Valerie & CO",
+    "name": "Lunera Blush Sling Flat",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 245,
+    "priceIdr": 3650000,
+    "showcaseImage": "/shoes/04_Flatshoes/02_lunera_blush_sling_flat/02_lunera_blush_sling_flat.webp",
+    "images": [
+      "/shoes/04_Flatshoes/02_lunera_blush_sling_flat/02_lunera_blush_sling_flat.webp"
+    ],
+    "colors": [
+      {
+        "name": "Ballet Blush",
+        "hex": "#ebced4",
+        "subtitle": "Lunera Blush Sling Flat",
+        "image": "/shoes/04_Flatshoes/02_lunera_blush_sling_flat/02_lunera_blush_sling_flat.webp"
+      },
+      {
+        "name": "Rose Milk",
+        "hex": "#e2bbc4",
+        "subtitle": "Lunera Rose Milk Sling Flat",
+        "image": "/shoes/04_Flatshoes/02_lunera_blush_sling_flat/02_lunera_blush_sling_flat.webp",
+        "filter": "saturate(1.15) brightness(0.97)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Featherweight pointed blush slingback flat tailored with an elastic back strap and zero-break-in padded footbed.",
+      "id": "Slingback flat ujung lancip warna blush balet dengan tali tumit elastis dan alas ekstra empuk tanpa lecet."
+    },
+    "details": {
+      "composition": {
+        "en": "Italian Blush Calfskin & Anatomical Cushion Insole.",
+        "id": "Kulit Calfskin Blush Italia & Insole Anatomis Empuk."
+      },
+      "sole": {
+        "en": "Low-profile non-slip leather composite sole.",
+        "id": "Sol komposit kulit anti-selip berprofil tipis."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-032"
+    },
+    "stock": 24,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-kivora-olive-ribbon-ballet",
+    "brand": "Valerie & CO",
+    "name": "Kivora Olive Ribbon Ballet",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 235,
+    "priceIdr": 3450000,
+    "showcaseImage": "/shoes/04_Flatshoes/03_kivora_olive_ribbon_ballet/03_kivora_olive_ribbon_ballet.webp",
+    "images": [
+      "/shoes/04_Flatshoes/03_kivora_olive_ribbon_ballet/03_kivora_olive_ribbon_ballet.webp"
+    ],
+    "colors": [
+      {
+        "name": "Olive Moss",
+        "hex": "#68704e",
+        "subtitle": "Kivora Olive Ribbon Ballet",
+        "image": "/shoes/04_Flatshoes/03_kivora_olive_ribbon_ballet/03_kivora_olive_ribbon_ballet.webp"
+      },
+      {
+        "name": "Pistachio Sage",
+        "hex": "#8e9673",
+        "subtitle": "Kivora Sage Ribbon Ballet",
+        "image": "/shoes/04_Flatshoes/03_kivora_olive_ribbon_ballet/03_kivora_olive_ribbon_ballet.webp",
+        "filter": "brightness(1.1) saturate(0.9)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Soft ballet flat in earthy olive suede trimmed with elasticated grosgrain piping and a delicate front bow tie.",
+      "id": "Sepatu balet datar berbahan suede zaitun berserat halus dengan lis grosgrain elastis dan pita manis di bagian depan."
+    },
+    "details": {
+      "composition": {
+        "en": "Velvet Kid Suede & Grosgrain Trim.",
+        "id": "Suede Beludru Pilihan & Lis Pita Grosgrain."
+      },
+      "sole": {
+        "en": "Sacchetto-stitched flexible glove sole.",
+        "id": "Sol jahitan Sacchetto super lentur mengikuti kaki."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-033"
+    },
+    "stock": 22,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-avenza-lemon-double-strap",
+    "brand": "Valerie & CO",
+    "name": "Avenza Lemon Double Strap",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 265,
+    "priceIdr": 3950000,
+    "showcaseImage": "/shoes/04_Flatshoes/04_avenza_lemon_double_strap/04_avenza_lemon_double_strap.webp",
+    "images": [
+      "/shoes/04_Flatshoes/04_avenza_lemon_double_strap/04_avenza_lemon_double_strap.webp"
+    ],
+    "colors": [
+      {
+        "name": "Pastel Lemon",
+        "hex": "#ece29d",
+        "subtitle": "Avenza Lemon Double Strap",
+        "image": "/shoes/04_Flatshoes/04_avenza_lemon_double_strap/04_avenza_lemon_double_strap.webp"
+      },
+      {
+        "name": "Sunlit Cream",
+        "hex": "#f1eacb",
+        "subtitle": "Avenza Cream Double Strap",
+        "image": "/shoes/04_Flatshoes/04_avenza_lemon_double_strap/04_avenza_lemon_double_strap.webp",
+        "filter": "saturate(0.65) brightness(1.03)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Mary-Jane flat featuring dual adjustable buckles across the instep in luminous pastel lemon leather.",
+      "id": "Flatshoes Mary Jane dengan dua tali gesper elegan di punggung kaki berwarna kuning lemon pastel yang cerah."
+    },
+    "details": {
+      "composition": {
+        "en": "Soft Nappa Calfskin & Brushed Gold Buckles.",
+        "id": "Kulit Nappa Halus & Gesper Ganda Emas Matte."
+      },
+      "sole": {
+        "en": "Padded arch insole on flexible rubber sole.",
+        "id": "Alas berpenyangga lengkung kaki dengan sol karet lentur."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-034"
+    },
+    "stock": 19,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-rosella-lace-mary-jane",
+    "brand": "Valerie & CO",
+    "name": "Rosella Lace Mary Jane",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 275,
+    "priceIdr": 4150000,
+    "showcaseImage": "/shoes/04_Flatshoes/05_rosella_lace_mary_jane/05_rosella_lace_mary_jane.webp",
+    "images": [
+      "/shoes/04_Flatshoes/05_rosella_lace_mary_jane/05_rosella_lace_mary_jane.webp"
+    ],
+    "colors": [
+      {
+        "name": "Chantilly Ivory",
+        "hex": "#eae4dc",
+        "subtitle": "Rosella Lace Mary Jane",
+        "image": "/shoes/04_Flatshoes/05_rosella_lace_mary_jane/05_rosella_lace_mary_jane.webp"
+      },
+      {
+        "name": "Pearl Silk",
+        "hex": "#dfd6cb",
+        "subtitle": "Rosella Pearl Mary Jane",
+        "image": "/shoes/04_Flatshoes/05_rosella_lace_mary_jane/05_rosella_lace_mary_jane.webp",
+        "filter": "brightness(0.95) sepia(0.06)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Airy French-lace Mary Jane flat bordered with tonal piping and a slender buckle strap for romantic lightness.",
+      "id": "Mary Jane flat berbahan renda halus nan ringan dengan bingkai kulit tipis dan tali gesper ramping yang romantis."
+    },
+    "details": {
+      "composition": {
+        "en": "Embroidered Breathable Mesh Lace & Kidskin Strap.",
+        "id": "Renda Bordir Bernapas & Tali Kulit Kid Halus."
+      },
+      "sole": {
+        "en": "Soft padded suede sock & thin leather sole.",
+        "id": "Lapisan alas empuk dan outsole kulit tipis."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-035"
+    },
+    "stock": 20,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-orvella-custard-square-toe",
+    "brand": "Valerie & CO",
+    "name": "Orvella Custard Square-Toe",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 250,
+    "priceIdr": 3750000,
+    "showcaseImage": "/shoes/04_Flatshoes/06_orvella_custard_square_toe/06_orvella_custard_square_toe.webp",
+    "images": [
+      "/shoes/04_Flatshoes/06_orvella_custard_square_toe/06_orvella_custard_square_toe.webp"
+    ],
+    "colors": [
+      {
+        "name": "Custard Cream",
+        "hex": "#ecdab1",
+        "subtitle": "Orvella Custard Square-Toe",
+        "image": "/shoes/04_Flatshoes/06_orvella_custard_square_toe/06_orvella_custard_square_toe.webp"
+      },
+      {
+        "name": "Vanilla Latte",
+        "hex": "#deca9c",
+        "subtitle": "Orvella Latte Square-Toe",
+        "image": "/shoes/04_Flatshoes/06_orvella_custard_square_toe/06_orvella_custard_square_toe.webp",
+        "filter": "brightness(0.94) contrast(1.04)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Sculpted square-toe ballerina crafted in rich custard nappa with soft ruched elastic sides for glove-like security.",
+      "id": "Sepatu balerina ujung kotak dalam kulit nappa custard yang lembut dengan tepian elastis memeluk kaki."
+    },
+    "details": {
+      "composition": {
+        "en": "Full-Grain Lambskin Nappa.",
+        "id": "Kulit Domba Nappa Full-Grain Lentur."
+      },
+      "sole": {
+        "en": "Cushioned pod rubber sole with low dress stack.",
+        "id": "Sol karet empuk bersegmen dengan hak tipis rapi."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-036"
+    },
+    "stock": 23,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-zavira-bordeaux-ballet",
+    "brand": "Valerie & CO",
+    "name": "Zavira Bordeaux Ballet",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 260,
+    "priceIdr": 3850000,
+    "showcaseImage": "/shoes/04_Flatshoes/07_zavira_bordeaux_ballet/07_zavira_bordeaux_ballet.webp",
+    "images": [
+      "/shoes/04_Flatshoes/07_zavira_bordeaux_ballet/07_zavira_bordeaux_ballet.webp"
+    ],
+    "colors": [
+      {
+        "name": "Bordeaux Velvet",
+        "hex": "#5a1a24",
+        "subtitle": "Zavira Bordeaux Ballet",
+        "image": "/shoes/04_Flatshoes/07_zavira_bordeaux_ballet/07_zavira_bordeaux_ballet.webp"
+      },
+      {
+        "name": "Deep Mulberry",
+        "hex": "#3d1118",
+        "subtitle": "Zavira Mulberry Ballet",
+        "image": "/shoes/04_Flatshoes/07_zavira_bordeaux_ballet/07_zavira_bordeaux_ballet.webp",
+        "filter": "brightness(0.84) contrast(1.08)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42
+    ],
+    "description": {
+      "en": "Classic bordeaux atelier ballet flat trimmed with tonal satin binding and an anatomical cushioned arch bed.",
+      "id": "Flatshoes balet klasik warna bordeaux mewah dengan lis pita satin senada dan alas berpenyangga lengkung kaki."
+    },
+    "details": {
+      "composition": {
+        "en": "Glazed Calfskin & Satin Collar Trim.",
+        "id": "Kulit Calfskin Kilap Halus & Lis Kerah Satin."
+      },
+      "sole": {
+        "en": "Supple ribbed rubber-leather composite sole.",
+        "id": "Sol komposit kulit-karet beralur super fleksibel."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-037"
+    },
+    "stock": 21,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-elvora-sage-slingback",
+    "brand": "Valerie & CO",
+    "name": "Elvora Sage Slingback",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 255,
+    "priceIdr": 3850000,
+    "showcaseImage": "/shoes/04_Flatshoes/08_elvora_sage_slingback/08_elvora_sage_slingback.webp",
+    "images": [
+      "/shoes/04_Flatshoes/08_elvora_sage_slingback/08_elvora_sage_slingback.webp"
+    ],
+    "colors": [
+      {
+        "name": "Serene Sage",
+        "hex": "#9eb29d",
+        "subtitle": "Elvora Sage Slingback",
+        "image": "/shoes/04_Flatshoes/08_elvora_sage_slingback/08_elvora_sage_slingback.webp"
+      },
+      {
+        "name": "Celadon Mint",
+        "hex": "#b8c7b6",
+        "subtitle": "Elvora Celadon Slingback",
+        "image": "/shoes/04_Flatshoes/08_elvora_sage_slingback/08_elvora_sage_slingback.webp",
+        "filter": "brightness(1.05) saturate(0.88)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Poised pointy-toe flat slingback in calm sage calfskin featuring delicate side cutouts and effortless buckle closure.",
+      "id": "Slingback datar berujung runcing dalam warna hijau sage menenangkan dengan bukaan samping dan gesper minimalis."
+    },
+    "details": {
+      "composition": {
+        "en": "Italian Grained Kidskin. Padded Leather Footbed.",
+        "id": "Kulit Kid Italia Halus. Alas Kulit Berbantalan."
+      },
+      "sole": {
+        "en": "Light-tread dress outsole.",
+        "id": "Sol tipis elegan dengan tapak anti-licin."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-038"
+    },
+    "stock": 18,
+    "active": true,
+    "fresh": true
+  },
+  {
+    "id": "vco-morlix-nude-cross-strap",
+    "brand": "Valerie & CO",
+    "name": "Morlix Nude Cross-Strap",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 245,
+    "priceIdr": 3650000,
+    "showcaseImage": "/shoes/04_Flatshoes/09_morlix_nude_cross_strap/09_morlix_nude_cross_strap.webp",
+    "images": [
+      "/shoes/04_Flatshoes/09_morlix_nude_cross_strap/09_morlix_nude_cross_strap.webp"
+    ],
+    "colors": [
+      {
+        "name": "Warm Nude",
+        "hex": "#dec3af",
+        "subtitle": "Morlix Nude Cross-Strap",
+        "image": "/shoes/04_Flatshoes/09_morlix_nude_cross_strap/09_morlix_nude_cross_strap.webp"
+      },
+      {
+        "name": "Honey Almond",
+        "hex": "#caa991",
+        "subtitle": "Morlix Almond Cross-Strap",
+        "image": "/shoes/04_Flatshoes/09_morlix_nude_cross_strap/09_morlix_nude_cross_strap.webp",
+        "filter": "brightness(0.93) contrast(1.04)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Leg-lengthening warm nude ballerina secured by slender crisscrossed elastic straps for effortless everyday grace.",
+      "id": "Flatshoes balerina warna nude hangat dengan tali silang ramping memanjang yang menjaga kaki tetap mantap."
+    },
+    "details": {
+      "composition": {
+        "en": "Soft Goat Leather & High-Recovery Elastic Straps.",
+        "id": "Kulit Kambing Halus & Tali Elastis Silang Presisi."
+      },
+      "sole": {
+        "en": "Ultra-flexible rubber sole with suede lining.",
+        "id": "Sol karet ekstra lentur dengan lapisan alas empuk."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-039"
+    },
+    "stock": 26,
+    "active": true,
+    "fresh": false
+  },
+  {
+    "id": "vco-novara-rose-ballet",
+    "brand": "Valerie & CO",
+    "name": "Novara Rose Ballet",
+    "category": "Flatshoes",
+    "subCategory": "Flatshoes",
+    "price": 230,
+    "priceIdr": 3450000,
+    "showcaseImage": "/shoes/04_Flatshoes/10_novara_rose_ballet/10_novara_rose_ballet.webp",
+    "images": [
+      "/shoes/04_Flatshoes/10_novara_rose_ballet/10_novara_rose_ballet.webp"
+    ],
+    "colors": [
+      {
+        "name": "Tea Rose",
+        "hex": "#e1aeb8",
+        "subtitle": "Novara Rose Ballet",
+        "image": "/shoes/04_Flatshoes/10_novara_rose_ballet/10_novara_rose_ballet.webp"
+      },
+      {
+        "name": "Petal Blossom",
+        "hex": "#ecc9cf",
+        "subtitle": "Novara Blossom Ballet",
+        "image": "/shoes/04_Flatshoes/10_novara_rose_ballet/10_novara_rose_ballet.webp",
+        "filter": "brightness(1.05) saturate(0.85)"
+      }
+    ],
+    "sizes": [
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41
+    ],
+    "description": {
+      "en": "Supple pleated-toe rose ballet flat designed to fold effortlessly into your carry-on without compromising posture support.",
+      "id": "Flatshoes balet warna tea rose berujung lipit halus yang ringan dibawa bepergian namun tetap menopang telapak dengan baik."
+    },
+    "details": {
+      "composition": {
+        "en": "Butter-Soft Matte Kidskin & Quilted Cushion Sock.",
+        "id": "Kulit Kid Matte Selembut Mentega & Alas Berlapis Busa."
+      },
+      "sole": {
+        "en": "Flex-groove travel rubber sole.",
+        "id": "Sol karet fleksibel nyaman untuk perjalanan jauh."
+      },
+      "origin": "Crafted in Valerie & CO Atelier",
+      "code": "VCO-FL-040"
+    },
+    "stock": 27,
+    "active": true,
+    "fresh": true
+  }
+];
