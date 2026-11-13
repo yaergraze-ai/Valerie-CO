@@ -4497,7 +4497,7 @@ function PasswordForm({ onChanged }: { onChanged?: () => void }) {
   const [newPwd, setNewPwd] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const strength =
-    (newPwd.length >= 10 ? 1 : 0) +
+    (newPwd.length >= 8 ? 1 : 0) +
     (/[A-Z]/.test(newPwd) && /[a-z]/.test(newPwd) ? 1 : 0) +
     (/\d/.test(newPwd) ? 1 : 0) +
     (/[^A-Za-z0-9]/.test(newPwd) ? 1 : 0);
@@ -4508,7 +4508,7 @@ function PasswordForm({ onChanged }: { onChanged?: () => void }) {
         ? t("Kuat", "Strong")
         : strength >= 2
           ? t("Cukup", "Moderate")
-          : t("Minimal 10 karakter", "Min 10 characters");
+          : t("Minimal 8 karakter", "Min 8 characters");
   return (
     <form
       className="form-stack"
@@ -4562,7 +4562,7 @@ function PasswordForm({ onChanged }: { onChanged?: () => void }) {
           <input
             name="password"
             type={showPwd ? "text" : "password"}
-            minLength={10}
+            minLength={8}
             maxLength={256}
             autoComplete="new-password"
             value={newPwd}
@@ -4597,7 +4597,7 @@ function PasswordForm({ onChanged }: { onChanged?: () => void }) {
         <input
           name="confirm"
           type={showPwd ? "text" : "password"}
-          minLength={10}
+          minLength={8}
           maxLength={256}
           autoComplete="new-password"
           required

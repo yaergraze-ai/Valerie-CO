@@ -95,10 +95,10 @@ function translateAuthError(
       "Format nomor WhatsApp tidak valid. Gunakan angka 9–15 digit (mis. 08123456789).",
       "Invalid WhatsApp number format. Use 9–15 digits (e.g. 08123456789).",
     );
-  if (m.includes("password must be at least 10"))
+  if (m.includes("password must be at least 8"))
     return t(
-      "Kata sandi minimal 10 karakter.",
-      "Password must be at least 10 characters.",
+      "Kata sandi minimal 8 karakter.",
+      "Password must be at least 8 characters.",
     );
   if (m.includes("invalid setup token"))
     return t(
@@ -346,7 +346,7 @@ export function MemberEntry({
   const showNameField = creating
     ? !(usingOtp && otpSent)
     : usingOtp && otpSent && otpNeedsName;
-  const minPasswordLen = 10;
+  const minPasswordLen = 8;
 
   const sendOtpForContact = async (target: string, display: string) => {
     const ch = channel === "whatsapp" ? "phone" : "email";

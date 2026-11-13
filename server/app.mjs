@@ -54,6 +54,13 @@ const str = (v, max = 200) => {
     fail(400, "Invalid text field");
   return v.trim();
 };
+const MIN_PASSWORD_LEN = 8;
+const validPassword = (v) => {
+  const password = str(v, 256);
+  if (password.length < MIN_PASSWORD_LEN)
+    fail(400, `Password must be at least ${MIN_PASSWORD_LEN} characters`);
+  return password;
+};
 const email = (v) => {
   const e = str(v, 254).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) fail(400, "Invalid email");
@@ -293,7 +300,7 @@ export function createApp({
     if (
       envAdminEmail &&
       envAdminPassword &&
-      envAdminPassword.length >= 10 &&
+      envAdminPassword.length >= MIN_PASSWORD_LEN &&
       !(await db.hasAdmin())
     ) {
       const adminId = randomUUID();
@@ -775,9 +782,7 @@ export function createApp({
         return;
       }
       if (path === "/api/auth/reset") {
-        const password = str(body.password, 256);
-        if (password.length < 10)
-          fail(400, "Password must be at least 10 characters");
+        const password = validPassword(body.password);
         const resetOk = await db.resetPasswordWithToken(
           hashToken(str(body.token, 128)),
           Date.now(),
@@ -901,8 +906,7 @@ export function createApp({
           if (!user || !checkPassword(password, user.password))
             fail(401, "Credentials or password is incorrect");
         } else {
-          if (password.length < 10)
-            fail(400, "Password must be at least 10 characters");
+          validPassword(password);
           if (path === "/api/auth/setup") {
             if (!setupToken || body.setupToken !== setupToken)
               fail(403, "Invalid setup token");
@@ -956,9 +960,7 @@ export function createApp({
         const old = await db.getUserById(u.id);
         if (!checkPassword(str(body.current, 256), old.password))
           fail(400, "Current password is incorrect");
-        const password = str(body.password, 256);
-        if (password.length < 10)
-          fail(400, "Password must be at least 10 characters");
+        const password = validPassword(body.password);
         await db.updatePasswordAndClearSessions(u.id, hashPassword(password));
         await session(setCookie, u);
         send(200, { ok: true });

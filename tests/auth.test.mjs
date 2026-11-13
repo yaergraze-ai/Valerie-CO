@@ -359,4 +359,31 @@ test("passwordless WhatsApp and Email OTP sign-in, lockout, duplicate phone guar
     body: JSON.stringify({ channel: "whatsapp", phone: "081234567890" }),
   });
   assert.equal(brokenWa.status, 502);
+
+  // 5. Minimum password length is 8 characters (7 fails, 8 succeeds)
+  const shortReg = await req("auth/register", {
+    name: "Short Pass",
+    email: "short@example.com",
+    password: "1234567",
+  });
+  assert.equal(shortReg.status, 400);
+  const eightReg = await req("auth/register", {
+    name: "Eight Pass",
+    email: "eight@example.com",
+    password: "12345678",
+  });
+  assert.equal(eightReg.status, 200);
+  assert.ok(eightReg.cookie);
+  const shortPwdChange = await req(
+    "auth/password",
+    { current: "12345678", password: "abcdefg" },
+    eightReg.cookie,
+  );
+  assert.equal(shortPwdChange.status, 400);
+  const eightPwdChange = await req(
+    "auth/password",
+    { current: "12345678", password: "abcdefgh" },
+    eightReg.cookie,
+  );
+  assert.equal(eightPwdChange.status, 200);
 });
