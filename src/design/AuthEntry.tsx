@@ -120,6 +120,36 @@ function translateAuthError(
       "Terlalu banyak percobaan login. Tunggu 1 menit lalu coba lagi.",
       "Too many sign-in attempts. Wait a minute and try again.",
     );
+  if (m.includes("too many wrong codes"))
+    return t(
+      "Terlalu banyak kode OTP salah. Silakan kirim ulang kode baru.",
+      "Too many wrong OTP codes. Request a new code.",
+    );
+  if (m.includes("verification code expired"))
+    return t(
+      "Kode OTP kedaluwarsa atau belum diminta. Silakan kirim ulang kode baru.",
+      "OTP code expired or not requested. Request a new code.",
+    );
+  if (m.includes("invalid verification code"))
+    return t(
+      "Kode OTP tidak cocok. Periksa kembali kode 6 digit Anda.",
+      "Invalid OTP code. Check your 6-digit code and try again.",
+    );
+  if (m.includes("whatsapp otp gateway"))
+    return t(
+      "Gateway WhatsApp OTP (FONNTE_TOKEN) belum dikonfigurasi pada server.",
+      "WhatsApp OTP gateway (FONNTE_TOKEN) is not configured on the server.",
+    );
+  if (m.includes("email otp service"))
+    return t(
+      "Layanan Email OTP (SMTP) belum dikonfigurasi pada server.",
+      "Email OTP service (SMTP) is not configured on the server.",
+    );
+  if (m.includes("failed to send"))
+    return t(
+      "Gagal mengirim kode OTP. Pastikan nomor/email dan konfigurasi pengirim sudah benar.",
+      "Failed to deliver OTP code. Verify your contact and gateway configuration.",
+    );
   return raw;
 }
 
@@ -254,32 +284,99 @@ export function MemberEntry({
   onDone: () => void;
   admin?: boolean;
 }) {
-  const { t, authenticate, needsAdmin, serverMode } = useStore();
+  const {
+    t,
+    authenticate,
+    requestAuthOtp,
+    verifyAuthOtp,
+    needsAdmin,
+    serverMode,
+  } = useStore();
   const pillGroupId = useId();
   const [mode, setMode] = useState<
     "login" | "register" | "setup" | "forgot" | "reset"
   >(admin && needsAdmin ? "setup" : "login");
   const [channel, setChannel] = useState<"email" | "whatsapp">("email");
+  const [authMethod, setAuthMethod] = useState<"password" | "otp">("password");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpTarget, setOtpTarget] = useState("");
+  const [otpDisplayTarget, setOtpDisplayTarget] = useState("");
+  const [otpNameDraft, setOtpNameDraft] = useState("");
+  const [otpNeedsName, setOtpNeedsName] = useState(false);
+  const [otpPreview, setOtpPreview] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const resetOtpState = () => {
+    setOtpSent(false);
+    setOtpTarget("");
+    setOtpDisplayTarget("");
+    setOtpNameDraft("");
+    setOtpNeedsName(false);
+    setOtpPreview("");
+    setOtpCode("");
+  };
   const changeMode = (next: typeof mode) => {
     setMode(next);
+    resetOtpState();
     setError("");
     setMessage("");
   };
   const changeChannel = (next: "email" | "whatsapp") => {
     setChannel(next);
+    resetOtpState();
+    setError("");
+    setMessage("");
+  };
+  const changeMethod = (next: "password" | "otp") => {
+    setAuthMethod(next);
+    resetOtpState();
     setError("");
     setMessage("");
   };
 
   const creating = mode === "register" || mode === "setup";
-  const passwordNeeded = mode !== "forgot";
   const showMethodToggles = !admin && (mode === "login" || mode === "register");
+  const usingOtp = showMethodToggles && authMethod === "otp";
+  const passwordNeeded = mode !== "forgot" && !usingOtp;
+  const showContactField = mode !== "reset" && !(usingOtp && otpSent);
+  const showNameField = creating
+    ? !(usingOtp && otpSent)
+    : usingOtp && otpSent && otpNeedsName;
   const minPasswordLen = 10;
+
+  const sendOtpForContact = async (target: string, display: string) => {
+    const ch = channel === "whatsapp" ? "phone" : "email";
+    const res = await requestAuthOtp({
+      channel: ch,
+      email: ch === "email" ? target : undefined,
+      phone: ch === "phone" ? target : undefined,
+    });
+    setOtpTarget(target);
+    setOtpDisplayTarget(display);
+    setOtpSent(true);
+    setOtpPreview(res.previewCode || "");
+    setOtpCode("");
+    setMessage(
+      res.sent
+        ? channel === "whatsapp"
+          ? t(
+              "Kode OTP 6 digit telah dikirim ke WhatsApp Anda.",
+              "A 6-digit OTP was sent to your WhatsApp.",
+            )
+          : t(
+              "Kode OTP 6 digit telah dikirim ke email Anda.",
+              "A 6-digit OTP was sent to your email.",
+            )
+        : t(
+            "Masukkan kode OTP 6 digit di bawah.",
+            "Enter the 6-digit OTP code below.",
+          ),
+    );
+  };
 
   return (
     <div className={`member-entry auth-entry ${creating ? "is-creating" : ""}`}>
@@ -297,41 +394,70 @@ export function MemberEntry({
       </h3>
 
       {showMethodToggles && (
-        <div
-          className="auth-segmented"
-          role="tablist"
-          aria-label={t("Mode autentikasi", "Authentication mode")}
-        >
-          {(
-            [
-              ["login", t("Masuk", "Sign in")],
-              ["register", t("Daftar", "Register")],
-            ] as const
-          ).map(([mKey, mLabel]) => (
-            <button
-              key={mKey}
-              type="button"
-              role="tab"
-              aria-selected={mode === mKey}
-              className={mode === mKey ? "active" : ""}
-              onClick={() => changeMode(mKey)}
+        <>
+          <div
+            className="auth-segmented"
+            role="tablist"
+            aria-label={t("Mode autentikasi", "Authentication mode")}
+          >
+            {(
+              [
+                ["login", t("Masuk", "Sign in")],
+                ["register", t("Daftar", "Register")],
+              ] as const
+            ).map(([mKey, mLabel]) => (
+              <button
+                key={mKey}
+                type="button"
+                role="tab"
+                aria-selected={mode === mKey}
+                className={mode === mKey ? "active" : ""}
+                onClick={() => changeMode(mKey)}
+              >
+                {mode === mKey && (
+                  <motion.span
+                    layoutId={`${pillGroupId}-mode`}
+                    className="auth-pill-indicator"
+                    transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                  />
+                )}
+                <span>{mLabel}</span>
+              </button>
+            ))}
+          </div>
+          <div className="auth-method-row">
+            <span>{t("Metode masuk:", "Sign-in method:")}</span>
+            <span
+              className="auth-channel-mini"
+              role="tablist"
+              aria-label={t("Metode verifikasi", "Authentication method")}
             >
-              {mode === mKey && (
-                <motion.span
-                  layoutId={`${pillGroupId}-mode`}
-                  className="auth-pill-indicator"
-                  transition={{ type: "spring", stiffness: 480, damping: 34 }}
-                />
-              )}
-              <span>{mLabel}</span>
-            </button>
-          ))}
-        </div>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={authMethod === "password"}
+                className={authMethod === "password" ? "active" : ""}
+                onClick={() => changeMethod("password")}
+              >
+                <span>{t("Kata sandi", "Password")}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={authMethod === "otp"}
+                className={authMethod === "otp" ? "active" : ""}
+                onClick={() => changeMethod("otp")}
+              >
+                <span>{t("Kode OTP", "OTP Code")}</span>
+              </button>
+            </span>
+          </div>
+        </>
       )}
 
       <form
         className="form-stack"
-        key={`${mode}-${channel}`}
+        key={`${mode}-${channel}-${authMethod}`}
         onSubmit={async (e) => {
           e.preventDefault();
           setError("");
@@ -354,20 +480,22 @@ export function MemberEntry({
               ? normalizeWhatsappInput(rawPhone)
               : "";
 
-          if (showMethodToggles && channel === "whatsapp") {
-            const digits = normalizedPhone.replace(/\D/g, "");
-            if (digits.length < 10 || digits.length > 15) {
-              setError(
-                t(
-                  "Masukkan nomor WhatsApp yang valid (contoh: 081234567890).",
-                  "Enter a valid WhatsApp number (e.g. 081234567890).",
-                ),
-              );
-              return;
+          if (!usingOtp || !otpSent) {
+            if (showMethodToggles && channel === "whatsapp") {
+              const digits = normalizedPhone.replace(/\D/g, "");
+              if (digits.length < 10 || digits.length > 15) {
+                setError(
+                  t(
+                    "Masukkan nomor WhatsApp yang valid (contoh: 081234567890).",
+                    "Enter a valid WhatsApp number (e.g. 081234567890).",
+                  ),
+                );
+                return;
+              }
             }
           }
 
-          if (creating && password.length < minPasswordLen) {
+          if (!usingOtp && creating && password.length < minPasswordLen) {
             setError(
               t(
                 `Kata sandi minimal ${minPasswordLen} karakter.`,
@@ -377,7 +505,11 @@ export function MemberEntry({
             return;
           }
 
-          if ((creating || mode === "reset") && password !== f.get("confirm")) {
+          if (
+            !usingOtp &&
+            (creating || mode === "reset") &&
+            password !== f.get("confirm")
+          ) {
             setError(
               t(
                 "Konfirmasi kata sandi tidak cocok.",
@@ -389,7 +521,40 @@ export function MemberEntry({
 
           setBusy(true);
           try {
-            if (mode === "forgot") {
+            if (usingOtp) {
+              if (!otpSent) {
+                if (creating) {
+                  setOtpNameDraft(String(f.get("name") || "").trim());
+                }
+                const target =
+                  channel === "whatsapp" ? normalizedPhone : rawEmail;
+                const display = channel === "whatsapp" ? rawPhone : rawEmail;
+                await sendOtpForContact(target, display);
+              } else {
+                const nameVal = String(
+                  f.get("name") || otpNameDraft || "",
+                ).trim();
+                const ch = channel === "whatsapp" ? "phone" : "email";
+                const res = await verifyAuthOtp({
+                  channel: ch,
+                  email: ch === "email" ? otpTarget : undefined,
+                  phone: ch === "phone" ? otpTarget : undefined,
+                  code: otpCode.trim(),
+                  name: nameVal || undefined,
+                });
+                if (res && "needsName" in res && res.needsName) {
+                  setOtpNeedsName(true);
+                  setMessage(
+                    t(
+                      "Kontak baru terdeteksi — masukkan nama lengkap Anda lalu klik Verifikasi lagi.",
+                      "New contact detected — enter your full name and click Verify again.",
+                    ),
+                  );
+                  return;
+                }
+                onDone();
+              }
+            } else if (mode === "forgot") {
               await api("auth/forgot", { email: rawEmail });
               setMessage(
                 t(
@@ -423,7 +588,7 @@ export function MemberEntry({
           }
         }}
       >
-            {creating && (
+            {showNameField && (
               <label>
                 {t("Nama lengkap", "Full name")}
                 <input
@@ -437,7 +602,7 @@ export function MemberEntry({
               </label>
             )}
 
-            {mode !== "reset" && (
+            {showContactField && (
               <div className="auth-field">
                 <div className="auth-field-head">
                   <label htmlFor={`${pillGroupId}-contact`}>
@@ -498,6 +663,68 @@ export function MemberEntry({
                   />
                 )}
               </div>
+            )}
+
+            {usingOtp && otpSent && (
+              <>
+                <div className="auth-otp-target">
+                  <span>
+                    {channel === "whatsapp" ? "WhatsApp" : "Email"} ·{" "}
+                    <strong>{otpDisplayTarget}</strong>
+                  </span>
+                  <span className="auth-otp-links">
+                    <button
+                      type="button"
+                      className="text-link auth-forgot-inline"
+                      disabled={busy}
+                      onClick={async () => {
+                        setError("");
+                        setBusy(true);
+                        try {
+                          await sendOtpForContact(otpTarget, otpDisplayTarget);
+                        } catch (err) {
+                          setError(translateAuthError((err as Error).message, t));
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      {t("Kirim ulang", "Resend")}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-link auth-forgot-inline"
+                      disabled={busy}
+                      onClick={() => {
+                        resetOtpState();
+                        setError("");
+                        setMessage("");
+                      }}
+                    >
+                      {t("Ubah", "Edit")}
+                    </button>
+                  </span>
+                </div>
+                {otpPreview && (
+                  <small className="otp-preview-code">
+                    {t("Kode OTP:", "Code:")} <b>{otpPreview}</b>
+                  </small>
+                )}
+                <label>
+                  {t("Kode OTP 6 digit", "6-digit OTP code")}
+                  <input
+                    name="otp"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    required
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    placeholder="6 digit OTP"
+                  />
+                </label>
+              </>
             )}
 
             {passwordNeeded && (
@@ -598,13 +825,17 @@ export function MemberEntry({
             <button className="button dark full" type="submit" disabled={busy}>
               {busy
                 ? t("Memproses…", "Please wait…")
-                : mode === "login"
-                  ? t("Masuk sekarang", "Sign in")
-                  : mode === "forgot"
-                    ? t("Kirim kode pemulihan", "Send recovery code")
-                    : mode === "reset"
-                      ? t("Simpan kata sandi baru", "Save new password")
-                      : t("Daftar sekarang", "Create account")}
+                : usingOtp
+                  ? otpSent
+                    ? t("Verifikasi & lanjutkan", "Verify & continue")
+                    : t("Kirim kode OTP", "Send OTP code")
+                  : mode === "login"
+                    ? t("Masuk sekarang", "Sign in")
+                    : mode === "forgot"
+                      ? t("Kirim kode pemulihan", "Send recovery code")
+                      : mode === "reset"
+                        ? t("Simpan kata sandi baru", "Save new password")
+                        : t("Daftar sekarang", "Create account")}
               <ArrowRight size={15} />
             </button>
           </form>

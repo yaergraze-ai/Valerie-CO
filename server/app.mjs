@@ -4,7 +4,7 @@ import {
   paymentState,
   idrQuote,
 } from "./midtrans.mjs";
-import { verifyGoogle, resetMailer } from "./auth-services.mjs";
+import { verifyGoogle, resetMailer, whatsappMailer } from "./auth-services.mjs";
 import { createSqliteStore } from "./db-sqlite.mjs";
 import { createSupabaseStore } from "./db-supabase.mjs";
 import { salesTotals } from "./sales.mjs";
@@ -196,6 +196,11 @@ export function createApp({
   googleClientId = process.env.GOOGLE_CLIENT_ID,
   verifyGoogleToken = verifyGoogle,
   sendReset = resetMailer(),
+  sendWhatsapp = whatsappMailer(),
+  allowOtpPreview =
+    process.env.NODE_ENV !== "production" &&
+    process.env.VERCEL_ENV !== "production" &&
+    process.env.VERCEL_ENV !== "preview",
   midtransKey = process.env.MIDTRANS_SERVER_KEY,
   paymentProduction = process.env.MIDTRANS_PRODUCTION === "true",
   gateway = midtransClient(midtransKey, paymentProduction),
@@ -342,6 +347,63 @@ export function createApp({
       `solere_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${secureCookie ? "; Secure" : ""}`,
     );
   };
+  const deliverOtp = async ({ key, channel, destination, headline }) => {
+    if (channel === "email" && !sendReset && !allowOtpPreview)
+      fail(503, "Email OTP service (SMTP) is not configured.");
+    if (channel === "phone" && !sendWhatsapp && !allowOtpPreview)
+      fail(503, "WhatsApp OTP gateway (FONNTE_TOKEN) is not configured.");
+    const code = String(randomInt(100000, 1000000));
+    const now = Date.now();
+    await db.upsertVerificationCode(key, hashToken(code), now + 600000, now);
+    let sent = false;
+    try {
+      if (channel === "email" && sendReset) {
+        await sendReset(destination, code, {
+          subject: `Valerie & CO — ${headline}`,
+          text: `Kode OTP Valerie & CO Anda: ${code}\nBerlaku 10 menit. Jangan bagikan kode ini kepada siapa pun.`,
+        });
+        sent = true;
+      } else if (channel === "phone" && sendWhatsapp) {
+        await sendWhatsapp(
+          destination,
+          `*Valerie & CO* — ${headline}\n\nKode OTP Anda: *${code}*\nBerlaku selama 10 menit.\nJangan bagikan kode ini kepada siapa pun.`,
+        );
+        sent = true;
+      }
+    } catch {
+      await db.deleteVerificationCode(key).catch(() => {});
+      fail(
+        502,
+        `Failed to send ${channel === "email" ? "email" : "WhatsApp"} OTP`,
+      );
+    }
+    return {
+      ok: true,
+      channel,
+      sent,
+      ...(allowOtpPreview && !sent ? { previewCode: code } : {}),
+    };
+  };
+  const verifyOtpCode = async (
+    key,
+    rawCode,
+    { deleteOnSuccess = true } = {},
+  ) => {
+    const code = str(rawCode, 12).replace(/\s+/g, "");
+    const row = await db.getVerificationCode(key, Date.now());
+    if (!row) fail(400, "Verification code expired or not requested");
+    if (row.attempts >= 5) fail(429, "Too many wrong codes. Request a new code.");
+    const candidateHash = Buffer.from(hashToken(code), "hex");
+    const storedHash = Buffer.from(row.code_hash, "hex");
+    if (
+      candidateHash.length !== storedHash.length ||
+      !timingSafeEqual(candidateHash, storedHash)
+    ) {
+      await db.incrementVerificationAttempts(key);
+      fail(400, "Invalid verification code");
+    }
+    if (deleteOnSuccess) await db.deleteVerificationCode(key);
+  };
   const state = async (u) => {
     const [
       allOrders,
@@ -434,6 +496,8 @@ export function createApp({
           googleClientId: googleClientId || null,
           nonce,
           recovery: !!sendReset,
+          emailOtp: !!sendReset,
+          whatsappOtp: !!sendWhatsapp,
         });
         return;
       }
@@ -724,6 +788,96 @@ export function createApp({
         return;
       }
       if (
+        path === "/api/auth/otp/request" ||
+        path === "/api/auth/otp/verify"
+      ) {
+        const channel =
+          body.channel === "phone" || body.channel === "whatsapp"
+            ? "phone"
+            : "email";
+        const target =
+          channel === "phone"
+            ? normalizePhone(body.phone || "") ||
+              fail(400, "WhatsApp number is required")
+            : email(body.email);
+        const key = `auth:${channel}:${target}`;
+        if (path === "/api/auth/otp/request") {
+          send(
+            200,
+            await deliverOtp({
+              key,
+              channel,
+              destination: target,
+              headline: "Kode masuk OTP",
+            }),
+          );
+          return;
+        }
+        await verifyOtpCode(key, body.code, { deleteOnSuccess: false });
+        let user = null;
+        if (channel === "phone") {
+          const matched = await db.findMemberByPhone(target);
+          user = matched ? await db.getUserById(matched.id) : null;
+        } else {
+          user = await db.getUserByEmail(target);
+        }
+        if (user) {
+          await db.deleteVerificationCode(key);
+          const existingMember = await db.getMember(user.id);
+          if (existingMember) {
+            const verifyField =
+              channel === "email" && !existingMember.emailVerified
+                ? { emailVerified: true }
+                : channel === "phone" && !existingMember.phoneVerified
+                  ? { phoneVerified: true }
+                  : null;
+            if (verifyField) {
+              await db.putMember({ ...existingMember, ...verifyField });
+            }
+          }
+          await session(setCookie, user);
+          send(200, await state(user));
+          return;
+        }
+        const trimmedName =
+          typeof body.name === "string" ? body.name.trim() : "";
+        if (!trimmedName) {
+          send(200, { needsName: true, channel });
+          return;
+        }
+        const memberName = str(trimmedName, 120);
+        await db.deleteVerificationCode(key);
+        const memberEmail =
+          channel === "phone"
+            ? `wa.${target.slice(1)}@wa.valerieco.id`
+            : target;
+        if (channel === "phone" && (await db.findMemberByPhone(target)))
+          fail(409, "WhatsApp number is already registered");
+        if (await db.getUserByEmail(memberEmail))
+          fail(409, "Email is already registered");
+        user = { id: randomUUID(), email: memberEmail, role: "member" };
+        await db.createUserWithMember(
+          {
+            id: user.id,
+            email: memberEmail,
+            password: hashPassword(randomBytes(48).toString("hex")),
+            role: "member",
+          },
+          {
+            id: user.id,
+            email: memberEmail,
+            name: memberName,
+            phone: channel === "phone" ? target : "",
+            emailVerified: channel === "email",
+            phoneVerified: channel === "phone",
+            addresses: [],
+          },
+        );
+        await session(setCookie, user);
+        send(200, await state(user));
+        return;
+      }
+      if (
         ["/api/auth/login", "/api/auth/register", "/api/auth/setup"].includes(
           path,
         )
@@ -823,46 +977,26 @@ export function createApp({
             m.email.endsWith("@wa.solere.local"))
         )
           fail(400, "Add a valid email address first");
-        const code = String(randomInt(100000, 1000000));
         const key = `v:${channel}:${u.id}`;
-        const now = Date.now();
-        await db.upsertVerificationCode(key, hashToken(code), now + 600000, now);
-        let sent = false;
-        if (channel === "email" && sendReset) {
-          await sendReset(m.email, code, {
-            subject: "Valerie & CO — Kode verifikasi email",
-            text: `Kode verifikasi Valerie & CO Anda: ${code}\nBerlaku 10 menit.`,
-          });
-          sent = true;
-        }
-        send(200, {
-          ok: true,
-          channel,
-          sent,
-          ...(process.env.NODE_ENV !== "production" && !sent
-            ? { previewCode: code }
-            : {}),
-        });
+        send(
+          200,
+          await deliverOtp({
+            key,
+            channel,
+            destination: channel === "phone" ? m.phone : m.email,
+            headline:
+              channel === "phone"
+                ? "Kode verifikasi WhatsApp"
+                : "Kode verifikasi email",
+          }),
+        );
         return;
       }
       if (path === "/api/member/verify/confirm") {
         requireUser();
         const channel = body.channel === "phone" ? "phone" : "email";
-        const code = str(body.code, 12).replace(/\s+/g, "");
         const key = `v:${channel}:${u.id}`;
-        const row = await db.getVerificationCode(key, Date.now());
-        if (!row) fail(400, "Verification code expired or not requested");
-        if (row.attempts >= 5) fail(429, "Too many wrong codes. Request a new code.");
-        const candidateHash = Buffer.from(hashToken(code), "hex");
-        const storedHash = Buffer.from(row.code_hash, "hex");
-        if (
-          candidateHash.length !== storedHash.length ||
-          !timingSafeEqual(candidateHash, storedHash)
-        ) {
-          await db.incrementVerificationAttempts(key);
-          fail(400, "Invalid verification code");
-        }
-        await db.deleteVerificationCode(key);
+        await verifyOtpCode(key, body.code);
         const m = await db.getMember(u.id);
         await db.putMember({
           ...m,
@@ -1027,6 +1161,11 @@ export function createApp({
                 : m.security;
             const nextPhone = normalizePhone(data.phone || "");
             const phoneChanged = nextPhone !== (m.phone || "");
+            if (phoneChanged && nextPhone) {
+              const conflict = await db.findMemberByPhone(nextPhone);
+              if (conflict && conflict.id !== u.id)
+                fail(409, "WhatsApp number is already registered");
+            }
             virtualMember = {
               ...m,
               name: str(data.name, 120),

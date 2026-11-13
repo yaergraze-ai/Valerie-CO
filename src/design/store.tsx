@@ -835,6 +835,25 @@ function useStoreState() {
   ) => {
     receive(await api(`auth/${mode}`, data));
   };
+  const requestAuthOtp = async (data: {
+    channel: "email" | "phone";
+    email?: string;
+    phone?: string;
+  }): Promise<{ ok: boolean; channel: string; sent: boolean; previewCode?: string }> => {
+    return api("auth/otp/request", data);
+  };
+  const verifyAuthOtp = async (data: {
+    channel: "email" | "phone";
+    email?: string;
+    phone?: string;
+    code: string;
+    name?: string;
+  }) => {
+    const res = await api("auth/otp/verify", data);
+    if (res?.needsName) return res as { needsName: true; channel: string };
+    receive(res);
+    return res;
+  };
   const requestVerification = async (channel: "email" | "phone") => {
     return api("member/verify/request", { channel });
   };
@@ -878,6 +897,8 @@ function useStoreState() {
     needsAdmin,
     pending,
     authenticate,
+    requestAuthOtp,
+    verifyAuthOtp,
     requestVerification,
     confirmVerification,
     logout,

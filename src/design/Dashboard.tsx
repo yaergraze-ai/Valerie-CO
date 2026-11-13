@@ -3528,10 +3528,14 @@ function ProfilePanel() {
         setVerifying(channel);
         notify(
           res.sent
-            ? "Kode OTP 6 digit telah dikirim ke email Anda"
+            ? channel === "phone"
+              ? "Kode OTP 6 digit telah dikirim ke WhatsApp Anda"
+              : "Kode OTP 6 digit telah dikirim ke email Anda"
             : "Kode OTP verifikasi siap dimasukkan",
           res.sent
-            ? "A 6-digit verification code has been sent"
+            ? channel === "phone"
+              ? "A 6-digit verification code was sent to your WhatsApp"
+              : "A 6-digit verification code was sent to your email"
             : "Enter your 6-digit verification code",
         );
       } else {
