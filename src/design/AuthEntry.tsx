@@ -102,6 +102,11 @@ function translateAuthError(
       "Kata sandi minimal 8 karakter.",
       "Password must be at least 8 characters.",
     );
+  if (m.includes("name must be at least 2"))
+    return t(
+      "Nama lengkap minimal 2 karakter.",
+      "Full name must be at least 2 characters.",
+    );
   if (m.includes("invalid setup token"))
     return t(
       "Kode aktivasi Studio Admin tidak valid.",
@@ -309,6 +314,8 @@ export function MemberEntry({
     authenticate,
     requestAuthOtp,
     verifyAuthOtp,
+    requestRegisterOtp,
+    verifyRegisterOtp,
     needsAdmin,
     serverMode,
   } = useStore();
@@ -319,11 +326,14 @@ export function MemberEntry({
   const [channel, setChannel] = useState<"email" | "whatsapp">("email");
   const [authMethod, setAuthMethod] = useState<"password" | "otp">("password");
   const [otpSent, setOtpSent] = useState(false);
+  const [registerOtpSent, setRegisterOtpSent] = useState(false);
   const [otpTarget, setOtpTarget] = useState("");
   const [otpDisplayTarget, setOtpDisplayTarget] = useState("");
   const [nameDraft, setNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
   const [phoneDraft, setPhoneDraft] = useState("");
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [confirmDraft, setConfirmDraft] = useState("");
   const [otpNeedsName, setOtpNeedsName] = useState(false);
   const [otpPreview, setOtpPreview] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -334,6 +344,7 @@ export function MemberEntry({
 
   const resetOtpState = () => {
     setOtpSent(false);
+    setRegisterOtpSent(false);
     setOtpTarget("");
     setOtpDisplayTarget("");
     setOtpNeedsName(false);
@@ -342,6 +353,9 @@ export function MemberEntry({
   };
   const changeMode = (next: typeof mode) => {
     setMode(next);
+    setAuthMethod("password");
+    setPasswordDraft("");
+    setConfirmDraft("");
     resetOtpState();
     setError("");
     setMessage("");
@@ -361,24 +375,25 @@ export function MemberEntry({
 
   const creating = mode === "register" || mode === "setup";
   const showMethodToggles = !admin && (mode === "login" || mode === "register");
-  const usingOtp = showMethodToggles && authMethod === "otp";
-  const passwordNeeded = mode !== "forgot" && !usingOtp;
-  const showContactField = mode !== "reset" && !(usingOtp && otpSent);
+  const verifyingRegister = showMethodToggles && mode === "register" && registerOtpSent;
+  const usingLoginOtp = showMethodToggles && mode === "login" && authMethod === "otp";
+  const inOtpStep2 = verifyingRegister || (usingLoginOtp && otpSent);
+  const showChannelTabs = showMethodToggles && !inOtpStep2;
+  const passwordNeeded = mode !== "forgot" && !verifyingRegister && !usingLoginOtp;
+  const showContactField = mode !== "reset" && !inOtpStep2;
   const showNameField = creating
-    ? !(usingOtp && otpSent)
-    : usingOtp && otpSent && otpNeedsName;
+    ? !verifyingRegister
+    : usingLoginOtp && otpSent && otpNeedsName;
+  const showAltActions = showMethodToggles && !inOtpStep2;
   const minPasswordLen = 8;
 
-  const sendOtpForContact = async (target: string, display: string) => {
-    const ch = channel === "whatsapp" ? "phone" : "email";
-    const res = await requestAuthOtp({
-      channel: ch,
-      email: ch === "email" ? target : undefined,
-      phone: ch === "phone" ? target : undefined,
-    });
+  const applyOtpChallenge = (
+    target: string,
+    display: string,
+    res: { sent: boolean; previewCode?: string },
+  ) => {
     setOtpTarget(target);
     setOtpDisplayTarget(display);
-    setOtpSent(true);
     setOtpPreview(res.previewCode || "");
     setOtpCode("");
     setMessage(
@@ -399,19 +414,49 @@ export function MemberEntry({
     );
   };
 
+  const sendOtpForContact = async (target: string, display: string) => {
+    const ch = channel === "whatsapp" ? "phone" : "email";
+    const res = await requestAuthOtp({
+      channel: ch,
+      email: ch === "email" ? target : undefined,
+      phone: ch === "phone" ? target : undefined,
+    });
+    setOtpSent(true);
+    applyOtpChallenge(target, display, res);
+  };
+
+  const sendRegisterOtp = async (target: string, display: string) => {
+    const ch = channel === "whatsapp" ? "phone" : "email";
+    const res = await requestRegisterOtp({
+      name: nameDraft.trim(),
+      channel: ch,
+      email: ch === "email" ? target : undefined,
+      phone: ch === "phone" ? target : undefined,
+      password: passwordDraft,
+    });
+    setRegisterOtpSent(true);
+    applyOtpChallenge(target, display, res);
+  };
+
   return (
     <div className={`member-entry auth-entry ${creating ? "is-creating" : ""}`}>
       <span className="eyebrow">
-        {admin ? "VALERIE & CO STUDIO" : "VALERIE & CO MEMBERS"}
+        {admin
+          ? "VALERIE & CO STUDIO"
+          : verifyingRegister
+            ? t("VERIFIKASI AKUN", "ACCOUNT VERIFICATION")
+            : "VALERIE & CO MEMBERS"}
       </span>
       <h3>
-        {mode === "login"
-          ? t("Masuk ke akun.", "Welcome back.")
-          : mode === "register"
-            ? t("Buat akun baru.", "Create account.")
-            : mode === "setup"
-              ? t("Siapkan studio Anda.", "Set up your studio.")
-              : t("Pulihkan akun.", "Recover account.")}
+        {verifyingRegister
+          ? t("Verifikasi kode OTP.", "Verify OTP code.")
+          : mode === "login"
+            ? t("Masuk ke akun.", "Welcome back.")
+            : mode === "register"
+              ? t("Buat akun baru.", "Create account.")
+              : mode === "setup"
+                ? t("Siapkan studio Anda.", "Set up your studio.")
+                : t("Pulihkan akun.", "Recover account.")}
       </h3>
 
       {showMethodToggles && (
@@ -447,37 +492,39 @@ export function MemberEntry({
             ))}
           </div>
 
-          <div
-            className="auth-channel-tabs"
-            role="tablist"
-            aria-label={t("Jalur kontak", "Contact channel")}
-          >
-            {(
-              [
-                ["email", "Email", Mail],
-                ["whatsapp", "WhatsApp", Smartphone],
-              ] as const
-            ).map(([chKey, chLabel, Icon]) => (
-              <button
-                key={chKey}
-                type="button"
-                role="tab"
-                aria-selected={channel === chKey}
-                className={channel === chKey ? "active" : ""}
-                onClick={() => changeChannel(chKey)}
-              >
-                <Icon size={13} aria-hidden="true" />
-                <span>{chLabel}</span>
-                {channel === chKey && (
-                  <motion.span
-                    layoutId={`${pillGroupId}-channel`}
-                    className="auth-channel-line"
-                    transition={{ type: "spring", stiffness: 520, damping: 36 }}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
+          {showChannelTabs && (
+            <div
+              className="auth-channel-tabs"
+              role="tablist"
+              aria-label={t("Jalur kontak", "Contact channel")}
+            >
+              {(
+                [
+                  ["email", "Email", Mail],
+                  ["whatsapp", "WhatsApp", Smartphone],
+                ] as const
+              ).map(([chKey, chLabel, Icon]) => (
+                <button
+                  key={chKey}
+                  type="button"
+                  role="tab"
+                  aria-selected={channel === chKey}
+                  className={channel === chKey ? "active" : ""}
+                  onClick={() => changeChannel(chKey)}
+                >
+                  <Icon size={13} aria-hidden="true" />
+                  <span>{chLabel}</span>
+                  {channel === chKey && (
+                    <motion.span
+                      layoutId={`${pillGroupId}-channel`}
+                      className="auth-channel-line"
+                      transition={{ type: "spring", stiffness: 520, damping: 36 }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -497,15 +544,23 @@ export function MemberEntry({
             return;
           }
           const f = new FormData(e.currentTarget);
-          const password = String(f.get("password") || "");
-          const rawPhone = String(f.get("phone") || "").trim();
-          const rawEmail = String(f.get("email") || "").trim();
+          const password =
+            creating || mode === "reset" || mode === "login"
+              ? passwordDraft || String(f.get("password") || "")
+              : String(f.get("password") || "");
+          const confirmValue = confirmDraft || String(f.get("confirm") || "");
+          const rawPhone = (
+            phoneDraft || String(f.get("phone") || "")
+          ).trim();
+          const rawEmail = (
+            emailDraft || String(f.get("email") || "")
+          ).trim();
           const normalizedPhone =
             showMethodToggles && channel === "whatsapp"
               ? normalizeWhatsappInput(rawPhone)
               : "";
 
-          if (!usingOtp || !otpSent) {
+          if (!inOtpStep2) {
             if (showMethodToggles && channel === "whatsapp") {
               const digits = normalizedPhone.replace(/\D/g, "");
               if (digits.length < 10 || digits.length > 15) {
@@ -520,7 +575,7 @@ export function MemberEntry({
             }
           }
 
-          if (!usingOtp && creating && password.length < minPasswordLen) {
+          if (creating && !verifyingRegister && password.length < minPasswordLen) {
             setError(
               t(
                 `Kata sandi minimal ${minPasswordLen} karakter.`,
@@ -531,9 +586,8 @@ export function MemberEntry({
           }
 
           if (
-            !usingOtp &&
-            (creating || mode === "reset") &&
-            password !== f.get("confirm")
+            (creating && !verifyingRegister || mode === "reset") &&
+            password !== confirmValue
           ) {
             setError(
               t(
@@ -546,7 +600,34 @@ export function MemberEntry({
 
           setBusy(true);
           try {
-            if (usingOtp) {
+            if (verifyingRegister) {
+              const ch = channel === "whatsapp" ? "phone" : "email";
+              await verifyRegisterOtp({
+                name: nameDraft.trim(),
+                channel: ch,
+                email: ch === "email" ? otpTarget : undefined,
+                phone: ch === "phone" ? otpTarget : undefined,
+                password,
+                code: otpCode.trim(),
+              });
+              setPasswordDraft("");
+              setConfirmDraft("");
+              resetOtpState();
+              onDone();
+            } else if (showMethodToggles && mode === "register") {
+              if (nameDraft.trim().length < 2) {
+                setError(
+                  t(
+                    "Nama lengkap minimal 2 karakter.",
+                    "Full name must be at least 2 characters.",
+                  ),
+                );
+                return;
+              }
+              const target = channel === "whatsapp" ? normalizedPhone : rawEmail;
+              const display = channel === "whatsapp" ? rawPhone : rawEmail;
+              await sendRegisterOtp(target, display);
+            } else if (usingLoginOtp) {
               if (!otpSent) {
                 const target =
                   channel === "whatsapp" ? normalizedPhone : rawEmail;
@@ -574,6 +655,7 @@ export function MemberEntry({
                   );
                   return;
                 }
+                resetOtpState();
                 onDone();
               }
             } else if (mode === "forgot") {
@@ -601,6 +683,8 @@ export function MemberEntry({
                 password,
                 setupToken: String(f.get("token") || "").trim(),
               });
+              setPasswordDraft("");
+              setConfirmDraft("");
               onDone();
             }
           } catch (err) {
@@ -663,7 +747,7 @@ export function MemberEntry({
               </div>
             )}
 
-            {usingOtp && otpSent && (
+            {inOtpStep2 && (
               <>
                 <div className="auth-otp-target">
                   <span>
@@ -679,7 +763,11 @@ export function MemberEntry({
                         setError("");
                         setBusy(true);
                         try {
-                          await sendOtpForContact(otpTarget, otpDisplayTarget);
+                          if (verifyingRegister) {
+                            await sendRegisterOtp(otpTarget, otpDisplayTarget);
+                          } else {
+                            await sendOtpForContact(otpTarget, otpDisplayTarget);
+                          }
                         } catch (err) {
                           setError(translateAuthError((err as Error).message, t));
                         } finally {
@@ -716,6 +804,7 @@ export function MemberEntry({
                     type="text"
                     inputMode="numeric"
                     autoComplete="one-time-code"
+                    autoFocus
                     maxLength={6}
                     required
                     value={otpCode}
@@ -758,6 +847,8 @@ export function MemberEntry({
                       autoComplete={
                         mode === "login" ? "current-password" : "new-password"
                       }
+                      value={passwordDraft}
+                      onChange={(e) => setPasswordDraft(e.target.value)}
                       placeholder={
                         creating || mode === "reset"
                           ? t(`Min. ${minPasswordLen} kar.`, `Min. ${minPasswordLen} chars`)
@@ -794,6 +885,8 @@ export function MemberEntry({
                       minLength={minPasswordLen}
                       maxLength={256}
                       autoComplete="new-password"
+                      value={confirmDraft}
+                      onChange={(e) => setConfirmDraft(e.target.value)}
                       placeholder={t("Ulangi sandi", "Repeat")}
                     />
                   </div>
@@ -824,59 +917,55 @@ export function MemberEntry({
             <button className="button dark full" type="submit" disabled={busy}>
               {busy
                 ? t("Memproses…", "Please wait…")
-                : usingOtp
-                  ? otpSent
-                    ? t("Verifikasi & lanjutkan", "Verify & continue")
-                    : t("Kirim kode OTP", "Send OTP code")
-                  : mode === "login"
-                    ? t("Masuk sekarang", "Sign in")
-                    : mode === "forgot"
-                      ? t("Kirim kode pemulihan", "Send recovery code")
-                      : mode === "reset"
-                        ? t("Simpan kata sandi baru", "Save new password")
-                        : t("Daftar sekarang", "Create account")}
+                : verifyingRegister
+                  ? t("Verifikasi & buat akun", "Verify & create account")
+                  : usingLoginOtp
+                    ? otpSent
+                      ? t("Verifikasi & lanjutkan", "Verify & continue")
+                      : t("Kirim kode OTP", "Send OTP code")
+                    : mode === "login"
+                      ? t("Masuk sekarang", "Sign in")
+                      : mode === "forgot"
+                        ? t("Kirim kode pemulihan", "Send recovery code")
+                        : mode === "reset"
+                          ? t("Simpan kata sandi baru", "Save new password")
+                          : t("Daftar sekarang", "Create account")}
               <ArrowRight size={15} />
             </button>
           </form>
 
-          {showMethodToggles && (
+          {showAltActions && (
             <>
               <div className="auth-divider">
                 <span>{t("atau", "or")}</span>
               </div>
               <div className="auth-alt-stack">
-                <button
-                  type="button"
-                  className="auth-alt-btn"
-                  disabled={busy}
-                  onClick={() =>
-                    changeMethod(authMethod === "otp" ? "password" : "otp")
-                  }
-                >
-                  {authMethod === "otp" ? (
-                    <>
-                      <Lock size={15} aria-hidden="true" />
-                      <span>
-                        {t("Gunakan kata sandi", "Use password instead")}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <KeyRound size={15} aria-hidden="true" />
-                      <span>
-                        {mode === "register"
-                          ? t(
-                              "Daftar dengan Kode OTP",
-                              "Sign up with OTP code",
-                            )
-                          : t(
-                              "Masuk dengan Kode OTP",
-                              "Sign in with OTP code",
-                            )}
-                      </span>
-                    </>
-                  )}
-                </button>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    className="auth-alt-btn"
+                    disabled={busy}
+                    onClick={() =>
+                      changeMethod(authMethod === "otp" ? "password" : "otp")
+                    }
+                  >
+                    {authMethod === "otp" ? (
+                      <>
+                        <Lock size={15} aria-hidden="true" />
+                        <span>
+                          {t("Gunakan kata sandi", "Use password instead")}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound size={15} aria-hidden="true" />
+                        <span>
+                          {t("Masuk dengan Kode OTP", "Sign in with OTP code")}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
                 <GoogleAuthSection
                   mode={mode === "register" ? "register" : "login"}
                   onDone={onDone}

@@ -854,6 +854,25 @@ function useStoreState() {
     receive(res);
     return res;
   };
+  const requestRegisterOtp = async (data: {
+    name: string;
+    channel: "email" | "phone";
+    email?: string;
+    phone?: string;
+    password: string;
+  }): Promise<{ ok: boolean; channel: string; sent: boolean; previewCode?: string }> => {
+    return api("auth/register/request", data);
+  };
+  const verifyRegisterOtp = async (data: {
+    name: string;
+    channel: "email" | "phone";
+    email?: string;
+    phone?: string;
+    password: string;
+    code: string;
+  }) => {
+    receive(await api("auth/register/verify", data));
+  };
   const requestVerification = async (channel: "email" | "phone") => {
     return api("member/verify/request", { channel });
   };
@@ -899,6 +918,8 @@ function useStoreState() {
     authenticate,
     requestAuthOtp,
     verifyAuthOtp,
+    requestRegisterOtp,
+    verifyRegisterOtp,
     requestVerification,
     confirmVerification,
     logout,

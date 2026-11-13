@@ -386,4 +386,98 @@ test("passwordless WhatsApp and Email OTP sign-in, lockout, duplicate phone guar
     eightReg.cookie,
   );
   assert.equal(eightPwdChange.status, 200);
+
+  // 6. Password registration with mandatory OTP verification (Email & WhatsApp)
+  const regBadLen = await req("auth/register/request", {
+    name: "Nadia Putri",
+    channel: "email",
+    email: "nadia@example.com",
+    password: "short",
+  });
+  assert.equal(regBadLen.status, 400);
+
+  const regEmailDup = await req("auth/register/request", {
+    name: "Nadia Putri",
+    channel: "email",
+    email: "eight@example.com",
+    password: "password123",
+  });
+  assert.equal(regEmailDup.status, 409);
+
+  const regEmailReq = await req("auth/register/request", {
+    name: "Nadia Putri",
+    channel: "email",
+    email: "nadia@example.com",
+    password: "password123",
+  });
+  assert.equal(regEmailReq.status, 200);
+  assert.equal(regEmailReq.data.sent, true);
+  const regEmailCode = emailSent.at(-1)[1];
+  assert.match(regEmailCode, /^\d{6}$/);
+
+  const regEmailWrong = await req("auth/register/verify", {
+    name: "Nadia Putri",
+    channel: "email",
+    email: "nadia@example.com",
+    password: "password123",
+    code: regEmailCode === "000000" ? "111111" : "000000",
+  });
+  assert.equal(regEmailWrong.status, 400);
+
+  const preVerifyLogin = await req("auth/login", {
+    email: "nadia@example.com",
+    password: "password123",
+  });
+  assert.equal(preVerifyLogin.status, 401);
+
+  const regEmailOk = await req("auth/register/verify", {
+    name: "Nadia Putri",
+    channel: "email",
+    email: "nadia@example.com",
+    password: "password123",
+    code: regEmailCode,
+  });
+  assert.equal(regEmailOk.status, 200);
+  assert.ok(regEmailOk.cookie);
+  const regEmailMember = regEmailOk.data.members.find(
+    (m) => m.id === regEmailOk.data.currentUser.id,
+  );
+  assert.equal(regEmailMember.emailVerified, true);
+  assert.equal(regEmailMember.phoneVerified, false);
+
+  const regEmailLogin = await req("auth/login", {
+    email: "nadia@example.com",
+    password: "password123",
+  });
+  assert.equal(regEmailLogin.status, 200);
+
+  const regWaReq = await req("auth/register/request", {
+    name: "Bagas Pratama",
+    channel: "whatsapp",
+    phone: "081987654321",
+    password: "password123",
+  });
+  assert.equal(regWaReq.status, 200);
+  assert.equal(regWaReq.data.sent, true);
+  const regWaCode = waSent.at(-1).message.match(/\*(\d{6})\*/)[1];
+  const regWaOk = await req("auth/register/verify", {
+    name: "Bagas Pratama",
+    channel: "whatsapp",
+    phone: "081987654321",
+    password: "password123",
+    code: regWaCode,
+  });
+  assert.equal(regWaOk.status, 200);
+  const regWaMember = regWaOk.data.members.find(
+    (m) => m.id === regWaOk.data.currentUser.id,
+  );
+  assert.equal(regWaMember.phone, "+6281987654321");
+  assert.equal(regWaMember.phoneVerified, true);
+  assert.equal(regWaMember.emailVerified, false);
+
+  const regWaLogin = await req("auth/login", {
+    phone: "081987654321",
+    password: "password123",
+  });
+  assert.equal(regWaLogin.status, 200);
 });

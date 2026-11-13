@@ -882,6 +882,76 @@ export function createApp({
         send(200, await state(user));
         return;
       }
+      const validRegistrationName = (rawName) => {
+        const name = str(rawName, 120);
+        if (name.length < 2) fail(400, "Name must be at least 2 characters");
+        return name;
+      };
+      const resolveRegistrationTarget = async (payload) => {
+        const usePhone =
+          payload.channel === "phone" ||
+          payload.channel === "whatsapp" ||
+          (!String(payload.email || "").trim() &&
+            Boolean(String(payload.phone || "").trim()));
+        const phone = normalizePhone(payload.phone || "");
+        const memberEmail = usePhone
+          ? phone
+            ? `wa.${phone.slice(1)}@wa.valerieco.id`
+            : fail(400, "WhatsApp number is required")
+          : email(payload.email);
+        const channel = usePhone ? "phone" : "email";
+        const destination = usePhone ? phone : memberEmail;
+        if (await db.getUserByEmail(memberEmail))
+          fail(409, "Email is already registered");
+        if (phone && (await db.findMemberByPhone(phone)))
+          fail(409, "WhatsApp number is already registered");
+        return { channel, destination, memberEmail, phone };
+      };
+      if (path === "/api/auth/register/request") {
+        validRegistrationName(body.name);
+        validPassword(body.password);
+        const { channel, destination } = await resolveRegistrationTarget(body);
+        send(
+          200,
+          await deliverOtp({
+            key: `reg:${channel}:${destination}`,
+            channel,
+            destination,
+            headline: "Kode verifikasi pendaftaran",
+          }),
+        );
+        return;
+      }
+      if (path === "/api/auth/register/verify") {
+        const memberName = validRegistrationName(body.name);
+        const password = validPassword(body.password);
+        const { channel, destination, memberEmail, phone } =
+          await resolveRegistrationTarget(body);
+        const key = `reg:${channel}:${destination}`;
+        await verifyOtpCode(key, body.code, { deleteOnSuccess: false });
+        await db.deleteVerificationCode(key);
+        const user = { id: randomUUID(), email: memberEmail, role: "member" };
+        await db.createUserWithMember(
+          {
+            id: user.id,
+            email: memberEmail,
+            password: hashPassword(password),
+            role: "member",
+          },
+          {
+            id: user.id,
+            email: memberEmail,
+            name: memberName,
+            phone,
+            emailVerified: channel === "email",
+            phoneVerified: channel === "phone",
+            addresses: [],
+          },
+        );
+        await session(setCookie, user);
+        send(200, await state(user));
+        return;
+      }
       if (
         ["/api/auth/login", "/api/auth/register", "/api/auth/setup"].includes(
           path,
