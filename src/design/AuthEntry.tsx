@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import {
   ArrowRight,
   Eye,
@@ -357,7 +356,7 @@ function GoogleAuthSection({
         theme: "outline",
         size: "large",
         text: mode === "register" ? "signup_with" : "continue_with",
-        shape: "pill",
+        shape: "rectangular",
         width: btnWidth,
       });
     };
@@ -573,132 +572,64 @@ export function MemberEntry({
   return (
     <div className={`member-entry auth-entry ${creating ? "is-creating" : ""}`}>
       <div className="auth-card-head">
-        <span className={`auth-workspace-pill ${admin ? "is-studio" : ""}`}>
-          <span className="auth-workspace-dot" aria-hidden="true" />
-          <span>
-            {admin
-              ? "VALERIE & CO STUDIO"
-              : verifyingRegister
-                ? t("VERIFIKASI AKUN", "ACCOUNT VERIFICATION")
-                : "VALERIE & CO MEMBERS"}
-          </span>
+        <span className="auth-kicker">
+          {verifyingRegister
+            ? t("VERIFIKASI AKUN", "ACCOUNT VERIFICATION")
+            : mode === "register"
+              ? t("BUAT AKUN BARU", "CREATE ACCOUNT")
+              : mode === "setup"
+                ? t("AKTIVASI STUDIO", "STUDIO SETUP")
+                : admin
+                  ? "VALERIE & CO STUDIO"
+                  : "VALERIE & CO"}
         </span>
         <h3>
           {verifyingRegister
             ? t("Verifikasi kode OTP.", "Verify OTP code.")
             : mode === "login"
-              ? t("Masuk ke akun.", "Welcome back.")
+              ? admin
+                ? t("Masuk Studio.", "Studio Sign In.")
+                : t("Masuk", "Sign in")
               : mode === "register"
-                ? t("Buat akun baru.", "Create account.")
+                ? t("Buat akun", "Create account")
                 : mode === "setup"
                   ? t("Siapkan studio Anda.", "Set up your studio.")
-                  : t("Pulihkan akun.", "Recover account.")}
+                  : mode === "reset"
+                    ? t("Buat sandi baru.", "Set new password.")
+                    : t("Pulihkan akun.", "Recover account.")}
         </h3>
         <p className="auth-card-sub">
           {verifyingRegister
             ? t(
-                "Masukkan kode 6 digit yang kami kirim untuk mengaktifkan akun Anda.",
-                "Enter the 6-digit code we sent to activate your account.",
+                "Masukkan kode 6 digit yang dikirim untuk mengaktifkan akun.",
+                "Enter the 6-digit code sent to activate your account.",
               )
             : mode === "login"
               ? admin
                 ? t(
-                    "Masuk dengan akun terotorisasi untuk mengelola operasional butik.",
-                    "Sign in with an authorized account to manage studio operations.",
+                    "Masuk dengan akun terotorisasi untuk mengelola butik.",
+                    "Sign in with an authorized account to manage the studio.",
                   )
                 : t(
-                    "Kelola pesanan, alamat pengiriman, dan koleksi favorit Anda.",
-                    "Manage your orders, saved addresses, and curated wishlist.",
+                    "Masuk untuk melanjutkan ke ruang pribadi Anda.",
+                    "Welcome back. Enter your details to continue.",
                   )
               : mode === "register"
                 ? t(
-                    "Daftar cepat untuk pelacakan pesanan, struk resmi, dan profil ukuran.",
-                    "Sign up in moments for order tracking, official receipts, and fit profile.",
+                    "Lengkapi data singkat untuk membuat akun member baru.",
+                    "Fill in your details to open a personal member account.",
                   )
                 : mode === "setup"
                   ? t(
-                      "Inisialisasi akses Super Admin utama untuk ruang kerja studio.",
-                      "Initialize primary Super Admin access for this studio workspace.",
+                      "Inisialisasi akses Super Admin pertama untuk studio ini.",
+                      "Initialize primary Super Admin access for this studio.",
                     )
                   : t(
-                      "Masukkan kontak terdaftar untuk menerima kode pemulihan kata sandi.",
-                      "Enter your registered contact to receive a password reset code.",
+                      "Kami akan mengirim kode verifikasi untuk pemulihan kata sandi.",
+                      "We'll send a verification code to reset your password.",
                     )}
         </p>
       </div>
-
-      {showMethodToggles && (
-        <>
-          <div
-            className="auth-segmented"
-            role="tablist"
-            aria-label={t("Mode autentikasi", "Authentication mode")}
-          >
-            {(admin
-              ? ([
-                  ["login", t("Masuk Tim", "Team Sign In")],
-                  ["setup", t("Aktivasi Studio", "Studio Setup")],
-                ] as const)
-              : ([
-                  ["login", t("Masuk", "Sign in")],
-                  ["register", t("Daftar", "Register")],
-                ] as const)
-            ).map(([mKey, mLabel]) => (
-              <button
-                key={mKey}
-                type="button"
-                role="tab"
-                aria-selected={mode === mKey}
-                className={mode === mKey ? "active" : ""}
-                onClick={() => changeMode(mKey)}
-              >
-                {mode === mKey && (
-                  <motion.span
-                    layoutId={`${pillGroupId}-mode`}
-                    className="auth-pill-indicator"
-                    transition={{ type: "spring", stiffness: 480, damping: 34 }}
-                  />
-                )}
-                <span>{mLabel}</span>
-              </button>
-            ))}
-          </div>
-
-          {showChannelTabs && (
-            <div
-              className="auth-channel-tabs"
-              role="tablist"
-              aria-label={t("Jalur kontak", "Contact channel")}
-            >
-              {(
-                [
-                  ["email", "Email", Mail],
-                  ["whatsapp", "WhatsApp", Smartphone],
-                ] as const
-              ).map(([chKey, chLabel, Icon]) => (
-                <button
-                  key={chKey}
-                  type="button"
-                  role="tab"
-                  aria-selected={channel === chKey}
-                  className={channel === chKey ? "active" : ""}
-                  onClick={() => changeChannel(chKey)}
-                >
-                  <Icon size={13} aria-hidden="true" />
-                  <span>{chLabel}</span>
-                  {channel === chKey && (
-                    <motion.span
-                      layoutId={`${pillGroupId}-channel`}
-                      className="auth-channel-line"
-                      transition={{ type: "spring", stiffness: 520, damping: 36 }}
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
 
       <form
         className="form-stack"
@@ -926,11 +857,36 @@ export function MemberEntry({
 
             {showContactField && (
               <div className="auth-field">
-                <label htmlFor={`${pillGroupId}-contact`}>
-                  {channel === "whatsapp" && showChannelTabs
-                    ? t("Nomor WhatsApp", "WhatsApp number")
-                    : "Email"}
-                </label>
+                <div className="auth-field-head">
+                  <label htmlFor={`${pillGroupId}-contact`}>
+                    {channel === "whatsapp" && showChannelTabs
+                      ? t("Nomor WhatsApp", "WhatsApp")
+                      : "Email"}
+                  </label>
+                  {showChannelTabs && (
+                    <button
+                      type="button"
+                      className="auth-inline-switch"
+                      onClick={() =>
+                        changeChannel(
+                          channel === "whatsapp" ? "email" : "whatsapp",
+                        )
+                      }
+                    >
+                      {channel === "whatsapp" ? (
+                        <>
+                          <Mail size={12} aria-hidden="true" />
+                          <span>{t("Pakai Email", "Use Email")}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Smartphone size={12} aria-hidden="true" />
+                          <span>{t("Pakai WhatsApp", "Use WhatsApp")}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
                 {channel === "whatsapp" && showChannelTabs ? (
                   <span className="wa-input-wrap">
                     <span className="wa-prefix">WA +62</span>
@@ -1138,12 +1094,16 @@ export function MemberEntry({
                       ? t("Verifikasi & lanjutkan", "Verify & continue")
                       : t("Kirim kode OTP", "Send OTP code")
                     : mode === "login"
-                      ? t("Masuk sekarang", "Sign in")
-                      : mode === "forgot"
-                        ? t("Kirim kode pemulihan", "Send recovery code")
-                        : mode === "reset"
-                          ? t("Simpan kata sandi baru", "Save new password")
-                          : t("Daftar sekarang", "Create account")}
+                      ? admin
+                        ? t("Masuk Studio", "Sign in to Studio")
+                        : t("Masuk", "Sign in")
+                      : mode === "setup"
+                        ? t("Aktivasi Studio", "Activate Studio")
+                        : mode === "forgot"
+                          ? t("Kirim kode pemulihan", "Send recovery code")
+                          : mode === "reset"
+                            ? t("Simpan kata sandi baru", "Save new password")
+                            : t("Buat akun", "Create account")}
               <ArrowRight size={15} />
             </button>
           </form>
@@ -1154,6 +1114,10 @@ export function MemberEntry({
                 <span>{t("atau", "or")}</span>
               </div>
               <div className="auth-alt-stack">
+                <GoogleAuthSection
+                  mode={mode === "register" ? "register" : "login"}
+                  onDone={onDone}
+                />
                 {mode === "login" && (
                   <button
                     type="button"
@@ -1180,10 +1144,6 @@ export function MemberEntry({
                     )}
                   </button>
                 )}
-                <GoogleAuthSection
-                  mode={mode === "register" ? "register" : "login"}
-                  onDone={onDone}
-                />
               </div>
             </>
           )}
@@ -1215,15 +1175,56 @@ export function MemberEntry({
               {t("Kembali ke masuk", "Back to sign in")}
             </button>
           )}
-      <div className="auth-trust">
-        <ShieldCheck size={14} aria-hidden="true" />
-        <span>
-          {t(
-            "Dilindungi sesi terenkripsi & verifikasi server.",
-            "Protected by encrypted sessions & server verification.",
+
+          {!admin && (mode === "login" || mode === "register") && !inOtpStep2 && (
+            <div className="auth-switch-footer">
+              <span>
+                {mode === "login"
+                  ? t("Belum punya akun?", "Don't have an account?")
+                  : t("Sudah punya akun?", "Already have an account?")}
+              </span>
+              <button
+                type="button"
+                className="auth-switch-link"
+                onClick={() =>
+                  changeMode(mode === "login" ? "register" : "login")
+                }
+              >
+                {mode === "login"
+                  ? t("Daftar sekarang", "Sign up")
+                  : t("Masuk di sini", "Sign in")}
+              </button>
+            </div>
           )}
-        </span>
-      </div>
+
+          {admin && (mode === "login" || mode === "setup") && !inOtpStep2 && (
+            <div className="auth-switch-footer">
+              <span>
+                {mode === "login"
+                  ? t("Menyiapkan studio baru?", "First time setting up Studio?")
+                  : t("Sudah punya akun tim?", "Already have team access?")}
+              </span>
+              <button
+                type="button"
+                className="auth-switch-link"
+                onClick={() => changeMode(mode === "login" ? "setup" : "login")}
+              >
+                {mode === "login"
+                  ? t("Aktivasi Studio", "Studio Setup")
+                  : t("Masuk Tim", "Team Sign In")}
+              </button>
+            </div>
+          )}
+
+          <div className="auth-trust">
+            <ShieldCheck size={13} aria-hidden="true" />
+            <span>
+              {t(
+                "Terenkripsi & terverifikasi server.",
+                "Encrypted & server-verified session.",
+              )}
+            </span>
+          </div>
     </div>
   );
 }
