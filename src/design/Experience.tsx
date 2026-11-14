@@ -181,21 +181,26 @@ export function Experience() {
       {lang.toUpperCase()}
     </button>
   );
-  if (s.serverMode && !s.ready)
-    return (
-      <div className="empty">
-        <h2>Valerie & CO</h2>
-        <p>
-          {s.backendError ||
-            t("Menghubungkan database…", "Connecting to the database…")}
-        </p>
-        {s.backendError && (
+  if (s.serverMode && !s.ready) {
+    if (s.backendError) {
+      return (
+        <div className="empty">
+          <h2>Valerie & CO</h2>
+          <p>{s.backendError}</p>
           <button className="button dark" onClick={() => void s.refresh()}>
             {t("Coba lagi", "Try again")}
           </button>
-        )}
-      </div>
+        </div>
+      );
+    }
+    return (
+      <StoreSkeleton
+        view={view}
+        brandName={db.settings.name || "Valerie & CO"}
+        label={t("Memuat koleksi Valerie & CO", "Loading Valerie & CO")}
+      />
     );
+  }
   return (
     <div className={`solere-app ${view === "home" ? "reference-home" : ""}`}>
       <a className="skip-link" href="#main-content">
@@ -618,7 +623,14 @@ export function Experience() {
         )}
         {(view === "member" || view === "admin") && (
           <Suspense
-            fallback={<div className="empty">{t("Memuat…", "Loading…")}</div>}
+            fallback={
+              <StoreSkeleton
+                view={view}
+                embedded
+                brandName={db.settings.name || "Valerie & CO"}
+                label={t("Memuat halaman akun", "Loading account page")}
+              />
+            }
           >
             <Dashboard
               key={view}
@@ -1493,6 +1505,182 @@ function MobileHome({
           <ArrowUpRight size={12} />
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Luxury warm-shadow skeleton placeholders shown while initial store/chunk data loads. */
+function StoreSkeleton({
+  view,
+  brandName,
+  label,
+  embedded = false,
+}: {
+  view: View;
+  brandName: string;
+  label: string;
+  embedded?: boolean;
+}) {
+  const isMember = view === "member" || view === "admin";
+  const body = isMember ? (
+    <section className="member-landing skeleton-member" aria-hidden="true">
+      <div className="skeleton-member-intro skeleton-hide-mobile">
+        <span className="sk-bar sk-eyebrow" />
+        <span className="sk-bar sk-display" />
+        <span className="sk-bar sk-display sk-short" />
+        <span className="sk-bar sk-line sk-mid" />
+        <div className="sk-card skeleton-illustration" />
+      </div>
+      <div className="skeleton-auth-card sk-card">
+        <span className="sk-bar sk-card-title" />
+        <span className="sk-bar sk-pill-group" />
+        <div className="skeleton-tabs">
+          <span className="sk-bar sk-tab" />
+          <span className="sk-bar sk-tab" />
+        </div>
+        <span className="sk-bar sk-label" />
+        <span className="sk-bar sk-input" />
+        <span className="sk-bar sk-label" />
+        <span className="sk-bar sk-input" />
+        <span className="sk-bar sk-cta" />
+        <span className="sk-bar sk-divider" />
+        <span className="sk-bar sk-cta sk-google" />
+      </div>
+    </section>
+  ) : view === "detail" ? (
+    <section className="section detail-page skeleton-detail" aria-hidden="true">
+      <span className="sk-bar sk-breadcrumb" />
+      <div className="detail-layout">
+        <div className="sk-card skeleton-detail-media" />
+        <div className="skeleton-detail-info">
+          <span className="sk-bar sk-eyebrow" />
+          <span className="sk-bar sk-display" />
+          <span className="sk-bar sk-price-box" />
+          <div className="skeleton-sizes">
+            {[0, 1, 2, 3].map((n) => (
+              <span key={n} className="sk-bar sk-size-box" />
+            ))}
+          </div>
+          <span className="sk-bar sk-cta" />
+          <span className="sk-bar sk-line" />
+          <span className="sk-bar sk-line sk-mid" />
+        </div>
+      </div>
+    </section>
+  ) : view === "shop" || view === "wishlist" ? (
+    <section className="section catalog-page skeleton-catalog" aria-hidden="true">
+      <div className="skeleton-catalog-head">
+        <span className="sk-bar sk-eyebrow" />
+        <span className="sk-bar sk-heading" />
+      </div>
+      <div className="skeleton-chips">
+        {[0, 1, 2, 3, 4].map((n) => (
+          <span key={n} className="sk-bar sk-chip" />
+        ))}
+      </div>
+      <div className="product-grid skeleton-grid">
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => (
+          <div key={n} className="sk-card skeleton-product-card">
+            <div className="sk-bar skeleton-product-img" />
+            <span className="sk-bar sk-line sk-mid" />
+            <span className="sk-bar sk-price" />
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : (
+    <div className="skeleton-home" aria-hidden="true">
+      <div className="skeleton-hero">
+        <div className="skeleton-hero-cats skeleton-hide-mobile">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <span key={n} className="sk-bar sk-cat-bar" />
+          ))}
+        </div>
+        <div className="skeleton-stage">
+          <div className="sk-circle skeleton-ghost skeleton-ghost-left skeleton-hide-mobile" />
+          <div className="skeleton-pedestal sk-card">
+            <div className="sk-circle skeleton-shoe-shadow" />
+          </div>
+          <div className="sk-circle skeleton-ghost skeleton-ghost-right skeleton-hide-mobile" />
+        </div>
+        <div className="skeleton-hero-caption">
+          <span className="sk-bar sk-pill-sm" />
+          <span className="sk-bar sk-hero-title" />
+          <span className="sk-bar sk-hero-sub" />
+          <div className="skeleton-hero-controls">
+            <span className="sk-circle sk-arrow" />
+            <span className="sk-bar sk-hero-cta" />
+            <span className="sk-circle sk-arrow" />
+          </div>
+        </div>
+      </div>
+      <div className="skeleton-ribbon">
+        <span className="sk-bar sk-ribbon-bar" />
+      </div>
+      <section className="section">
+        <div className="skeleton-catalog-head">
+          <span className="sk-bar sk-eyebrow" />
+          <span className="sk-bar sk-heading" />
+        </div>
+        <div className="product-grid skeleton-grid">
+          {[0, 1, 2, 3].map((n) => (
+            <div key={n} className="sk-card skeleton-product-card">
+              <div className="sk-bar skeleton-product-img" />
+              <span className="sk-bar sk-line sk-mid" />
+              <span className="sk-bar sk-price" />
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="solere-skeleton solere-skeleton-embedded" role="status" aria-busy="true">
+        <span className="sr-only">{label}</span>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`solere-app solere-skeleton ${view === "home" ? "reference-home" : ""}`}
+      role="status"
+      aria-busy="true"
+    >
+      <span className="sr-only">{label}</span>
+      <header className="reference-header skeleton-top-bar" aria-hidden="true">
+        <div className="reference-nav skeleton-nav">
+          <div className="reference-nav-group reference-nav-left">
+            <span className="sk-bar sk-nav-link" />
+            <span className="sk-bar sk-nav-link" />
+          </div>
+          <span className="reference-wordmark skeleton-wordmark">{brandName}</span>
+          <div className="reference-nav-group reference-nav-right">
+            <span className="sk-bar sk-nav-link" />
+            <span className="sk-bar sk-nav-link" />
+          </div>
+        </div>
+        <div className="reference-actions">
+          <div className="reference-action-icons">
+            {[0, 1, 2, 3].map((n) => (
+              <span key={n} className="sk-circle sk-icon-dot" />
+            ))}
+          </div>
+        </div>
+      </header>
+      <header className="site-header skeleton-mobile-header" aria-hidden="true">
+        <span className="wordmark">{brandName}</span>
+        <div className="header-actions">
+          <span className="sk-circle sk-icon-dot" />
+          <span className="sk-circle sk-icon-dot" />
+        </div>
+      </header>
+      <main id="main-content" tabIndex={-1}>
+        {body}
+      </main>
     </div>
   );
 }
