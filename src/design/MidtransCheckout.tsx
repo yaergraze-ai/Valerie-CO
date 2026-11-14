@@ -5,8 +5,9 @@ import { api } from "./backend";
 import {
   AddressFields,
   InlinePaymentAndReceipt,
-  PAYMENT_CHANNELS,
+  PaymentChannelOptions,
 } from "./Shopping";
+import { MidtransGatewayBadge, PaymentPartnersStrip } from "./PaymentLogos";
 type Quote = {
   subtotal: number;
   discount: number;
@@ -219,35 +220,24 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
         <section className="checkout-step-card">
           <div className="checkout-step-head">
             <span className="checkout-step-num">03</span>
-            <div>
-              <h3>Midtrans · QRIS / Virtual Account</h3>
+            <div className="checkout-step-head-body">
+              <div className="checkout-step-title-row">
+                <h3>Midtrans · QRIS / Virtual Account</h3>
+                <MidtransGatewayBadge compact />
+              </div>
               <p>
                 {t(
                   "Pembayaran resmi dalam Rupiah (IDR) langsung di jendela ini tanpa pindah halaman.",
                   "Official Rupiah (IDR) inline checkout right here without leaving the page.",
                 )}
               </p>
+              <PaymentPartnersStrip compact />
             </div>
           </div>
-          <div className="delivery-options-list payment-channel-options">
-            {PAYMENT_CHANNELS.map((ch) => (
-              <label
-                key={ch.id}
-                className={`delivery-option ${selectedChannel === ch.id ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="paymentChannel"
-                  checked={selectedChannel === ch.id}
-                  onChange={() => setSelectedChannel(ch.id)}
-                />
-                <span>
-                  <b>{ch.label}</b>
-                  <small>{ch.sub}</small>
-                </span>
-              </label>
-            ))}
-          </div>
+          <PaymentChannelOptions
+            selectedChannel={selectedChannel}
+            onSelect={setSelectedChannel}
+          />
           <div className="notice checkout-payment-notice">
             <LockKeyhole size={18} />
             <p>

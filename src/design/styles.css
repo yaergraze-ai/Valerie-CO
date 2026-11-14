@@ -16838,3 +16838,338 @@ body:has(.member-landing) {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================
+   PAYMENT METHOD & MIDTRANS BRAND LOGOS (CHECKOUT, INLINE GATEWAY & FOOTER)
+   ============================================================================ */
+.payment-logo-tile {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px;
+  border: 1px solid rgba(23, 20, 18, 0.14);
+  padding: 0 9px;
+  min-width: 78px;
+  height: 30px;
+  box-shadow: 0 2px 6px rgba(17, 24, 39, 0.06);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.payment-logo-tile.size-sm {
+  min-width: 54px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+}
+
+.payment-logo-tile.size-md {
+  min-width: 82px;
+  height: 30px;
+  padding: 0 9px;
+}
+
+.payment-logo-tile.size-lg {
+  min-width: 96px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+}
+
+.pay-logo-inner {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px;
+  line-height: 1;
+}
+
+.pay-logo-mark {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.payment-logo-tile.size-sm .pay-logo-mark {
+  width: 12px;
+  height: 12px;
+}
+
+.payment-logo-tile.size-lg .pay-logo-mark {
+  width: 17px;
+  height: 17px;
+}
+
+.pay-logo-word {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em;
+  color: inherit !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.payment-logo-tile.size-sm .pay-logo-word {
+  font-size: 9.5px !important;
+}
+
+.payment-logo-tile.size-lg .pay-logo-word {
+  font-size: 12.5px !important;
+}
+
+.pay-logo-wordmark-col {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5px;
+}
+
+.pay-logo-flag-bar {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pay-mandiri-ribbon {
+  width: 44px;
+  height: 5px;
+  display: block;
+}
+
+.payment-logo-tile.size-sm .pay-mandiri-ribbon {
+  width: 34px;
+}
+
+.pay-retail-bars {
+  display: inline-grid !important;
+  grid-template-columns: repeat(3, 3px);
+  gap: 1.5px;
+  height: 11px;
+}
+
+.pay-retail-bars i {
+  display: block;
+  border-radius: 1px;
+}
+
+.pay-logo-cards {
+  gap: 4px;
+}
+
+.pay-card-visa {
+  width: 24px;
+  height: 10px;
+}
+
+.pay-card-mc {
+  width: 16px;
+  height: 10px;
+}
+
+.pay-card-jcb {
+  width: 14px;
+  height: 10px;
+}
+
+.payment-logo-tile.size-lg .pay-card-visa {
+  width: 28px;
+  height: 12px;
+}
+
+.payment-logo-tile.size-lg .pay-card-mc {
+  width: 19px;
+  height: 12px;
+}
+
+.payment-logo-tile.size-lg .pay-card-jcb {
+  width: 16px;
+  height: 12px;
+}
+
+.midtrans-brand-badge {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 40, 85, 0.16);
+  box-shadow: 0 2px 8px rgba(0, 40, 85, 0.08);
+  flex-shrink: 0;
+}
+
+.midtrans-brand-badge.compact {
+  padding: 3px 8px;
+  gap: 5px;
+  border-radius: 7px;
+}
+
+.midtrans-brand-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.midtrans-brand-badge.compact .midtrans-brand-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.midtrans-brand-copy {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.midtrans-brand-copy b {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #002855 !important;
+}
+
+.midtrans-brand-badge.compact .midtrans-brand-copy b {
+  font-size: 11px;
+}
+
+.midtrans-brand-copy small {
+  font-size: 8.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #0077b6 !important;
+}
+
+.payment-partners-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.payment-partners-strip.compact {
+  margin-top: 8px;
+  gap: 5px;
+}
+
+.payment-partners-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(252, 250, 247, 0.72);
+  margin-right: 4px;
+}
+
+.payment-partners-logos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.checkout-step-head-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.checkout-step-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.checkout-grid .delivery-option.payment-channel-row {
+  grid-template-columns: 18px 86px minmax(0, 1fr) !important;
+}
+
+.payment-channel-row-logo {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.inline-gateway-title-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.inline-channel-active-check {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #171412;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.inline-va-brand-title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.inline-va-brand-title b {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.payment-panel-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.bag-payment-partners {
+  padding: 6px 0 2px;
+  display: flex;
+  justify-content: center;
+}
+
+.bag-payment-partners .payment-partners-strip {
+  justify-content: center;
+}
+
+.footer-payment-bar {
+  max-width: 1260px;
+  margin: 26px auto 0;
+  padding: 16px 0 6px;
+  border-top: 1px solid rgba(227, 193, 144, 0.16);
+}
+
+@media (max-width: 640px) {
+  .checkout-grid .delivery-option.payment-channel-row {
+    grid-template-columns: 18px 74px minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .checkout-grid .delivery-option.payment-channel-row .payment-logo-tile.size-md {
+    min-width: 72px;
+    padding: 0 6px;
+    height: 27px;
+  }
+
+  .inline-va-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -32,6 +32,7 @@ import { Bag, Checkout, MemberEntry } from "./Shopping";
 import { Showcase } from "./Showcase";
 import { showcaseImage } from "./showcase-data";
 import { CutoutImg } from "./bg-remove";
+import { PaymentPartnersStrip } from "./PaymentLogos";
 const Dashboard = lazy(() => import("./Dashboard"));
 type View = "home" | "shop" | "wishlist" | "member" | "admin" | "detail";
 
@@ -693,6 +694,11 @@ export function Experience() {
                 {t("Studio admin", "Admin studio")}
               </button>
             </div>
+          </div>
+          <div className="footer-payment-bar">
+            <PaymentPartnersStrip
+              label={t("Kanal Pembayaran Resmi", "Official Payment Methods")}
+            />
           </div>
           <div className="footer-bottom">
             <span>

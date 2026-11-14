@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Check,
   Copy,
-  CreditCard,
   Download,
   ExternalLink,
   LocateFixed,
@@ -23,6 +22,11 @@ import {
 import { useStore, type Address, type Order } from "./store";
 import { lineKey, SHIPPING_RATES, totals, validateBag } from "./commerce";
 import { Empty } from "./ui";
+import {
+  MidtransGatewayBadge,
+  PaymentBrandLogo,
+  PaymentPartnersStrip,
+} from "./PaymentLogos";
 export function Bag({
   onShop,
   onCheckout,
@@ -171,6 +175,9 @@ export function Bag({
             )}
           </p>
         )}
+        <div className="bag-payment-partners">
+          <PaymentPartnersStrip compact />
+        </div>
         <button className="text-link centered" onClick={onShop}>
           {t("Lanjut belanja", "Continue exploring")}
         </button>
@@ -371,6 +378,39 @@ export const PAYMENT_CHANNELS: readonly PaymentChannelSpec[] = [
     vaPrefix: "",
   },
 ];
+
+export function PaymentChannelOptions({
+  selectedChannel,
+  onSelect,
+}: {
+  selectedChannel: string;
+  onSelect: (channelId: string) => void;
+}) {
+  return (
+    <div className="delivery-options-list payment-channel-options">
+      {PAYMENT_CHANNELS.map((ch) => (
+        <label
+          key={ch.id}
+          className={`delivery-option payment-channel-row ${selectedChannel === ch.id ? "selected" : ""}`}
+        >
+          <input
+            type="radio"
+            name="paymentChannel"
+            checked={selectedChannel === ch.id}
+            onChange={() => onSelect(ch.id)}
+          />
+          <div className="payment-channel-row-logo">
+            <PaymentBrandLogo channelId={ch.id} size="md" />
+          </div>
+          <span>
+            <b>{ch.label}</b>
+            <small>{ch.sub}</small>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
 
 function formatReceiptDateTime(iso: string, lang: "id" | "en") {
   const d = new Date(iso);
@@ -644,12 +684,15 @@ export function InlinePaymentAndReceipt({
       <div className="inline-payment-stage">
         <div className="inline-payment-header">
           <div>
-            <span className="eyebrow">
-              {t(
-                "PAYMENT GATEWAY TERINTEGRASI · TETAP DI HALAMAN INI",
-                "INTEGRATED IN-PAGE PAYMENT GATEWAY · NO NEW TAB",
-              )}
-            </span>
+            <div className="inline-gateway-title-badges">
+              <MidtransGatewayBadge />
+              <span className="eyebrow">
+                {t(
+                  "PAYMENT GATEWAY TERINTEGRASI · TETAP DI HALAMAN INI",
+                  "INTEGRATED IN-PAGE PAYMENT GATEWAY · NO NEW TAB",
+                )}
+              </span>
+            </div>
             <h2>
               {t(
                 "Pilih Metode & Selesaikan Pembayaran",
@@ -688,7 +731,13 @@ export function InlinePaymentAndReceipt({
           <div className="inline-category-tabs" role="tablist">
             {(
               [
-                ["all", t("Semua Metode (19)", "All Methods (19)")],
+                [
+                  "all",
+                  t(
+                    `Semua Metode (${PAYMENT_CHANNELS.length})`,
+                    `All Methods (${PAYMENT_CHANNELS.length})`,
+                  ),
+                ],
                 ["qris_ewallet", t("QRIS & E-Wallet", "QRIS & E-Wallet")],
                 ["va", t("Virtual Account Bank", "Bank Virtual Account")],
                 ["card", t("Kartu Kredit / Debit", "Credit / Debit Card")],
@@ -718,8 +767,12 @@ export function InlinePaymentAndReceipt({
                 onClick={() => setChannelId(ch.id)}
               >
                 <div className="inline-channel-chip-top">
-                  <span className="inline-channel-badge">{ch.badge}</span>
-                  {channelId === ch.id && <Check size={14} />}
+                  <PaymentBrandLogo channelId={ch.id} size="md" />
+                  {channelId === ch.id && (
+                    <span className="inline-channel-active-check">
+                      <Check size={14} />
+                    </span>
+                  )}
                 </div>
                 <b>{ch.label}</b>
                 <small>{ch.sub}</small>
@@ -733,7 +786,7 @@ export function InlinePaymentAndReceipt({
             <div className="inline-qris-box">
               <div className="inline-qris-visual" aria-label={`QRIS ${activeChannel.label}`}>
                 <div className="inline-qris-top">
-                  <strong>{activeChannel.badge} · QRIS</strong>
+                  <PaymentBrandLogo channelId={activeChannel.id} size="md" />
                   <span>NMID: ID202608891029A01</span>
                 </div>
                 <svg
@@ -854,9 +907,9 @@ export function InlinePaymentAndReceipt({
           ) : activeChannel.category === "va" ? (
             <div className="inline-va-box">
               <div className="inline-va-head">
-                <span>
-                  <span className="inline-channel-badge">{activeChannel.badge}</span>{" "}
-                  {activeChannel.label}
+                <span className="inline-va-brand-title">
+                  <PaymentBrandLogo channelId={activeChannel.id} size="lg" />
+                  <b>{activeChannel.label}</b>
                 </span>
                 <small>{t("Verifikasi Otomatis 24 Jam", "24/7 Auto Verification")}</small>
               </div>
@@ -932,8 +985,9 @@ export function InlinePaymentAndReceipt({
           ) : activeChannel.category === "card" ? (
             <div className="inline-va-box">
               <div className="inline-va-head">
-                <span>
-                  <CreditCard size={16} /> {activeChannel.label}
+                <span className="inline-va-brand-title">
+                  <PaymentBrandLogo channelId="card" size="lg" />
+                  <b>{activeChannel.label}</b>
                 </span>
                 <small>3D Secure 2.0 · PCI-DSS Level 1</small>
               </div>
@@ -1019,9 +1073,9 @@ export function InlinePaymentAndReceipt({
           ) : activeChannel.category === "retail" ? (
             <div className="inline-va-box">
               <div className="inline-va-head">
-                <span>
-                  <span className="inline-channel-badge">{activeChannel.badge}</span>{" "}
-                  {activeChannel.label}
+                <span className="inline-va-brand-title">
+                  <PaymentBrandLogo channelId={activeChannel.id} size="lg" />
+                  <b>{activeChannel.label}</b>
                 </span>
                 <small>{t("Kode Barcode Kasir Instan", "Instant Cashier Barcode")}</small>
               </div>
@@ -1078,9 +1132,9 @@ export function InlinePaymentAndReceipt({
           ) : (
             <div className="inline-va-box">
               <div className="inline-va-head">
-                <span>
-                  <span className="inline-channel-badge">{activeChannel.badge}</span>{" "}
-                  {activeChannel.label}
+                <span className="inline-va-brand-title">
+                  <PaymentBrandLogo channelId={activeChannel.id} size="lg" />
+                  <b>{activeChannel.label}</b>
                 </span>
                 <small>{t("Persetujuan Instan Tanpa Kartu", "Instant Cardless Approval")}</small>
               </div>
@@ -1122,11 +1176,14 @@ export function InlinePaymentAndReceipt({
           {liveOrder.payment?.url && (
             <div className="inline-gateway-embed-wrap">
               <div className="inline-gateway-embed-bar">
-                <span>
-                  {t(
-                    "Modul Midtrans Snap Live (Tertanam di Halaman Ini — Tanpa Tab Baru)",
-                    "Midtrans Snap Live Module (Embedded In-Page — No New Tab)",
-                  )}
+                <span className="inline-va-brand-title">
+                  <MidtransGatewayBadge compact />
+                  <span>
+                    {t(
+                      "Modul Midtrans Snap Live (Tertanam di Halaman Ini — Tanpa Tab Baru)",
+                      "Midtrans Snap Live Module (Embedded In-Page — No New Tab)",
+                    )}
+                  </span>
                 </span>
                 <button
                   type="button"
@@ -1537,35 +1594,24 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
         <section className="checkout-step-card">
           <div className="checkout-step-head">
             <span className="checkout-step-num">03</span>
-            <div>
-              <h3>{t("Pembayaran", "Payment")}</h3>
+            <div className="checkout-step-head-body">
+              <div className="checkout-step-title-row">
+                <h3>{t("Pembayaran", "Payment")}</h3>
+                <MidtransGatewayBadge compact />
+              </div>
               <p>
                 {t(
                   "Pilih kanal pembayaran — tampil langsung di halaman ini tanpa pindah tab.",
                   "Choose your payment channel — opens inline right here without leaving the page.",
                 )}
               </p>
+              <PaymentPartnersStrip compact />
             </div>
           </div>
-          <div className="delivery-options-list payment-channel-options">
-            {PAYMENT_CHANNELS.map((ch) => (
-              <label
-                key={ch.id}
-                className={`delivery-option ${selectedChannel === ch.id ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="paymentChannel"
-                  checked={selectedChannel === ch.id}
-                  onChange={() => setSelectedChannel(ch.id)}
-                />
-                <span>
-                  <b>{ch.label}</b>
-                  <small>{ch.sub}</small>
-                </span>
-              </label>
-            ))}
-          </div>
+          <PaymentChannelOptions
+            selectedChannel={selectedChannel}
+            onSelect={setSelectedChannel}
+          />
           <div className="notice checkout-payment-notice">
             <LockKeyhole size={18} />
             <p>

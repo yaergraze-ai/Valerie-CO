@@ -81,6 +81,7 @@ import {
   CutoutImg,
   removeBackgroundFromImageElement,
 } from "./bg-remove";
+import { MidtransGatewayBadge } from "./PaymentLogos";
 type Props = {
   mode: "member" | "admin";
   onShop: () => void;
@@ -6154,10 +6155,13 @@ function PaymentPanel({ order }: { order: Order }) {
   return (
     <div className="notice payment-panel">
       <div style={{ width: "100%" }}>
-        <b>
-          Payment Gateway · {money(order.total, order.currency || "IDR")}
-          {order.payment?.method ? ` · ${order.payment.method.toUpperCase()}` : ""}
-        </b>
+        <div className="payment-panel-title-row">
+          <MidtransGatewayBadge compact />
+          <b>
+            {money(order.total, order.currency || "IDR")}
+            {order.payment?.method ? ` · ${order.payment.method.toUpperCase()}` : ""}
+          </b>
+        </div>
         <p>
           {t("Status pembayaran", "Payment status")}:{" "}
           <b>{order.payment?.status?.toUpperCase()}</b>
