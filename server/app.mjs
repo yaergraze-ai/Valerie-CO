@@ -201,7 +201,7 @@ export function createApp({
     process.env.VERCEL_ENV === "preview",
   trustProxy =
     process.env.TRUST_PROXY === "true" || Boolean(process.env.VERCEL),
-  googleClientId = String(process.env.GOOGLE_CLIENT_ID || "").trim(),
+  googleClientId: rawGoogleClientId = process.env.GOOGLE_CLIENT_ID,
   verifyGoogleToken = verifyGoogle,
   sendReset = resetMailer(),
   sendWhatsapp = whatsappMailer(),
@@ -221,6 +221,14 @@ export function createApp({
   supabaseUrl = process.env.SUPABASE_URL,
   supabaseSecretKey = process.env.SUPABASE_SECRET_KEY,
 } = {}) {
+  const trimmedGoogleClientId = String(rawGoogleClientId || "").trim();
+  const googleClientSecretMisconfigured = /^GOCSPX-/i.test(
+    trimmedGoogleClientId,
+  );
+  // Client secrets (GOCSPX-...) must never be exposed via public /api/auth/config.
+  const googleClientId = googleClientSecretMisconfigured
+    ? ""
+    : trimmedGoogleClientId;
   if (Object.values(idrShipping).some((n) => !Number.isSafeInteger(n) || n < 0))
     throw Error("Invalid IDR shipping configuration");
   const db =
@@ -502,6 +510,9 @@ export function createApp({
         );
         send(200, {
           googleClientId: googleClientId || null,
+          ...(googleClientSecretMisconfigured
+            ? { googleIssue: "secret_in_client_id" }
+            : {}),
           nonce,
           recovery: !!sendReset,
           emailOtp: !!sendReset,

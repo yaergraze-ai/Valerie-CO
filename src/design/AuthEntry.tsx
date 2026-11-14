@@ -216,20 +216,25 @@ function GoogleAuthSection({
   const [sdkStatus, setSdkStatus] = useState<
     "checking" | "ready" | "unconfigured" | "error"
   >(serverMode ? "checking" : "unconfigured");
+  const [googleIssue, setGoogleIssue] = useState("");
   const [error, setError] = useState("");
+  const effectiveSdkStatus = !serverMode ? "unconfigured" : sdkStatus;
 
   useEffect(() => {
-    if (!serverMode) {
-      setSdkStatus("unconfigured");
-      return;
-    }
+    if (!serverMode) return;
     const lifecycle = new AbortController();
     void api("auth/config")
       .then(async (config) => {
         if (!config.googleClientId) {
-          if (!lifecycle.signal.aborted) setSdkStatus("unconfigured");
+          if (!lifecycle.signal.aborted) {
+            setGoogleIssue(
+              typeof config.googleIssue === "string" ? config.googleIssue : "",
+            );
+            setSdkStatus("unconfigured");
+          }
           return;
         }
+        if (!lifecycle.signal.aborted) setGoogleIssue("");
         await loadGoogle();
         if (lifecycle.signal.aborted || !ref.current) return;
         window.google!.accounts.id.initialize({
@@ -258,7 +263,8 @@ function GoogleAuthSection({
   }, [serverMode]);
 
   useEffect(() => {
-    if (sdkStatus !== "ready" || !ref.current || !window.google) return;
+    if (effectiveSdkStatus !== "ready" || !ref.current || !window.google)
+      return;
     const host = ref.current;
     const renderBtn = () => {
       const hostWidth = host.parentElement?.clientWidth || 364;
@@ -280,20 +286,20 @@ function GoogleAuthSection({
     const ro = new ResizeObserver(() => renderBtn());
     ro.observe(host.parentElement);
     return () => ro.disconnect();
-  }, [sdkStatus, mode]);
+  }, [effectiveSdkStatus, mode]);
 
   return (
     <div className="auth-google">
       <div
         ref={ref}
         className="auth-google-slot"
-        style={{ display: sdkStatus === "ready" ? "flex" : "none" }}
+        style={{ display: effectiveSdkStatus === "ready" ? "flex" : "none" }}
       />
-      {sdkStatus !== "ready" && (
+      {effectiveSdkStatus !== "ready" && (
         <button
           type="button"
           className="auth-google-btn"
-          disabled={sdkStatus === "checking"}
+          disabled={effectiveSdkStatus === "checking"}
           onClick={() => {
             setError(
               !serverMode
@@ -301,21 +307,26 @@ function GoogleAuthSection({
                     "Backend autentikasi belum aktif. Jalankan server terlebih dahulu.",
                     "Authentication backend is offline. Start the server first.",
                   )
-                : sdkStatus === "error"
+                : effectiveSdkStatus === "error"
                   ? t(
                       "Gagal terhubung ke server Google Sign-In. Periksa koneksi server & GOOGLE_CLIENT_ID.",
                       "Unable to reach Google Sign-In server. Check server connection & GOOGLE_CLIENT_ID.",
                     )
-                  : t(
-                      "Google OAuth belum dikonfigurasi pada server (.env GOOGLE_CLIENT_ID). Gunakan Email atau No. WhatsApp di atas.",
-                      "Google OAuth is not configured on the server (.env GOOGLE_CLIENT_ID). Please use Email or WhatsApp above.",
-                    ),
+                  : googleIssue === "secret_in_client_id"
+                    ? t(
+                        "GOOGLE_CLIENT_ID terisi Client Secret (GOCSPX-...), bukan Client ID (...apps.googleusercontent.com). Segera putar ulang secret di Google Cloud Console lalu pasang Client ID yang benar.",
+                        "GOOGLE_CLIENT_ID is set to a Client Secret (GOCSPX-...) instead of an OAuth Client ID (...apps.googleusercontent.com).",
+                      )
+                    : t(
+                        "Google OAuth belum dikonfigurasi pada server (.env GOOGLE_CLIENT_ID). Gunakan Email atau No. WhatsApp di atas.",
+                        "Google OAuth is not configured on the server (.env GOOGLE_CLIENT_ID). Please use Email or WhatsApp above.",
+                      ),
             );
           }}
         >
           <GoogleMark />
           <span>
-            {sdkStatus === "checking"
+            {effectiveSdkStatus === "checking"
               ? t("Menghubungkan Google…", "Connecting Google…")
               : mode === "register"
                 ? t("Daftar dengan Google", "Continue with Google")

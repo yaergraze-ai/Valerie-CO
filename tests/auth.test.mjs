@@ -481,3 +481,27 @@ test("passwordless WhatsApp and Email OTP sign-in, lockout, duplicate phone guar
   });
   assert.equal(regWaLogin.status, 200);
 });
+
+test("Google Client Secret (GOCSPX-...) placed in GOOGLE_CLIENT_ID is never leaked by auth/config", async (t) => {
+  const app = createApp({
+    dbPath: ":memory:",
+    googleClientId: "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t",
+  });
+  await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+  t.after(() => app.close());
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const cfgRes = await fetch(base + "/api/auth/config");
+  const cfgText = await cfgRes.text();
+  assert.equal(cfgRes.status, 200);
+  assert.equal(cfgText.includes("GOCSPX-"), false);
+  const cfg = JSON.parse(cfgText);
+  assert.equal(cfg.googleClientId, null);
+  assert.equal(cfg.googleIssue, "secret_in_client_id");
+
+  const googleRes = await fetch(base + "/api/auth/google", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential: "dummy" }),
+  });
+  assert.equal(googleRes.status, 503);
+});
