@@ -52,6 +52,8 @@ import {
   UserCheck,
   UserCog,
   Crown,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 import {
   useStore,
@@ -210,6 +212,7 @@ export default function Dashboard({
   const {
     db,
     t,
+    currency,
     money,
     priceText,
     member,
@@ -226,10 +229,24 @@ export default function Dashboard({
   } = useStore();
   const [tab, setTab] = useState("overview");
   const [order, setOrder] = useState<string | null>(null);
-  const [chartTab, setChartTab] = useState<"category" | "stock" | "orders">(
-    "category",
-  );
+  const [chartTab, setChartTab] = useState<
+    "profit" | "category" | "stock" | "orders"
+  >("profit");
   const [selectedChartKey, setSelectedChartKey] = useState<string | null>(null);
+  const studioFinancials = summarizeCatalogFinancials(
+    db.products,
+    db.orders,
+    currency,
+  );
+  const scrollToAnalyticsPanel = () => {
+    setChartTab("profit");
+    setSelectedChartKey(null);
+    if (typeof document !== "undefined") {
+      document
+        .getElementById("admin-analytics-panel")
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  };
   const admin = mode === "admin";
   const activeStudioRole: UserRole = admin
     ? isStudioRole(studioRole)
@@ -664,22 +681,28 @@ export default function Dashboard({
                   : [
                       {
                         label: t(
-                          "Nilai pesanan per mata uang",
-                          "Order value by currency",
+                          "Laba bersih studio (42%)",
+                          "Studio net profit (42%)",
                         ),
-                        value: orderValues(orders, money),
-                        note: t("Semua pesanan aktif", "All active orders"),
-                        Icon: BarChart3,
-                        targetTab: "orders",
+                        value: money(studioFinancials.totalProfit),
+                        note: t(
+                          `Omzet ${money(studioFinancials.totalGross)} · Klik untuk grafik`,
+                          `Gross ${money(studioFinancials.totalGross)} · View chart`,
+                        ),
+                        Icon: TrendingUp,
+                        targetTab: "profit_chart",
                       },
                       {
-                        label: t("Total pesanan", "Total orders"),
-                        value: orders.length,
-                        note: t(
-                          `${orders.filter((o) => o.status === "processing").length} menunggu proses`,
-                          `${orders.filter((o) => o.status === "processing").length} awaiting fulfilment`,
+                        label: t(
+                          "Nilai order masuk",
+                          "Active order value",
                         ),
-                        Icon: ShoppingBag,
+                        value: orderValues(orders, money),
+                        note: t(
+                          `${orders.length} pesanan · ${orders.filter((o) => o.status === "processing").length} menunggu proses`,
+                          `${orders.length} orders · ${orders.filter((o) => o.status === "processing").length} awaiting fulfilment`,
+                        ),
+                        Icon: Wallet,
                         targetTab: "orders",
                       },
                       {
@@ -743,64 +766,54 @@ export default function Dashboard({
                   ]
               ).map(({ label, value, note, Icon, targetTab }, idx) => (
                 <motion.article
-                  className="metric interactive-metric"
+                  className={`metric interactive-metric ${targetTab === "profit_chart" ? "metric-profit" : ""}`}
                   key={label}
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05, duration: 0.32 }}
                   whileTap={{ scale: 0.99 }}
                   onClick={() =>
-                    targetTab === "wishlist" ? onWishlist() : setTab(targetTab)
+                    targetTab === "profit_chart"
+                      ? scrollToAnalyticsPanel()
+                      : targetTab === "wishlist"
+                        ? onWishlist()
+                        : setTab(targetTab)
                   }
                 >
                   <div>
                     <span>{label}</span>
                     <Icon size={19} />
                   </div>
-                  <strong>{value}</strong>
+                  <strong title={String(value)}>{value}</strong>
                   <small>{note}</small>
                 </motion.article>
               ))}
             </div>
-            <div className="dashboard-two-col">
-              <div className="panel">
-                <div className="panel-heading">
-                  <h3>{t("Pesanan terbaru", "Recent orders")}</h3>
-                  <button
-                    className="text-link"
-                    onClick={() => setTab("orders")}
-                  >
-                    {t("Lihat semua", "View all")}
-                    <ArrowUpRight size={14} />
-                  </button>
-                </div>
-                <OrdersTable
-                  orders={orders.slice(0, 4)}
-                  onSelect={setOrder}
-                  onExplore={admin ? () => setTab("products") : onShop}
-                />
-              </div>
-              <div className={admin ? "panel" : "panel member-fit-panel"}>
-                <div className="panel-heading">
-                  <h3>
-                    {admin
-                      ? t("Grafik Koleksi & Pesanan", "Catalog & Order Insights")
-                      : t("Ringkasan Akun & Fit", "Account & Fit Summary")}
-                  </h3>
-                  {!admin && (
-                    <button
-                      type="button"
-                      className="button outline small member-fit-head-btn"
-                      onClick={() => setTab("profile")}
-                    >
-                      {t("Kelola profil", "Manage profile")}
-                      <ArrowUpRight size={14} />
-                    </button>
-                  )}
-                  {admin && (
+            {admin ? (
+              <>
+                <div
+                  id="admin-analytics-panel"
+                  className="panel admin-analytics-panel"
+                >
+                  <div className="panel-heading">
+                    <div>
+                      <h3>
+                        {t(
+                          "Grafik Laba Bersih, Margin & Katalog",
+                          "Net Profit, Margin & Catalog Analytics",
+                        )}
+                      </h3>
+                      <p>
+                        {t(
+                          "Ketuk segmen lingkaran atau batang kategori untuk membuka rincian omzet, HPP, dan laba tiap produk.",
+                          "Tap any donut slice or category bar to inspect revenue, COGS, and per-SKU net profit.",
+                        )}
+                      </p>
+                    </div>
                     <div className="chart-tabs" role="group">
                       {(
                         [
+                          ["profit", t("Laba Bersih", "Net Profit")],
                           ["category", t("Kategori", "Category")],
                           ["stock", t("Status Stok", "Stock Status")],
                           ["orders", t("Pesanan", "Orders")],
@@ -830,23 +843,74 @@ export default function Dashboard({
                         </button>
                       ))}
                     </div>
-                  )}
-                </div>
-                {admin ? (
+                  </div>
                   <AdminInteractiveChart
                     chartTab={chartTab}
                     products={db.products}
                     orders={orders}
+                    currency={currency}
                     selectedKey={selectedChartKey}
                     onSelectKey={(k) =>
                       setSelectedChartKey((prev) => (prev === k ? null : k))
                     }
                     onInspectProduct={(p) => onSelect(p)}
                     onManageProducts={() => setTab("products")}
+                    money={money}
                     priceText={priceText}
                     t={t}
                   />
-                ) : (
+                </div>
+                <div className="panel">
+                  <div className="panel-heading">
+                    <h3>{t("Pesanan terbaru", "Recent orders")}</h3>
+                    <button
+                      className="text-link"
+                      onClick={() => setTab("orders")}
+                    >
+                      {t("Lihat semua", "View all")}
+                      <ArrowUpRight size={14} />
+                    </button>
+                  </div>
+                  <OrdersTable
+                    orders={orders.slice(0, 4)}
+                    onSelect={setOrder}
+                    onExplore={() => setTab("products")}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="dashboard-two-col">
+                <div className="panel">
+                  <div className="panel-heading">
+                    <h3>{t("Pesanan terbaru", "Recent orders")}</h3>
+                    <button
+                      className="text-link"
+                      onClick={() => setTab("orders")}
+                    >
+                      {t("Lihat semua", "View all")}
+                      <ArrowUpRight size={14} />
+                    </button>
+                  </div>
+                  <OrdersTable
+                    orders={orders.slice(0, 4)}
+                    onSelect={setOrder}
+                    onExplore={onShop}
+                  />
+                </div>
+                <div className="panel member-fit-panel">
+                  <div className="panel-heading">
+                    <h3>
+                      {t("Ringkasan Akun & Fit", "Account & Fit Summary")}
+                    </h3>
+                    <button
+                      type="button"
+                      className="button outline small member-fit-head-btn"
+                      onClick={() => setTab("profile")}
+                    >
+                      {t("Kelola profil", "Manage profile")}
+                      <ArrowUpRight size={14} />
+                    </button>
+                  </div>
                   <div className="member-fit-summary">
                     <button
                       type="button"
@@ -986,9 +1050,9 @@ export default function Dashboard({
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
-            </div>
+            )}
             {!admin && (
               <section>
                 <div className="panel-heading">
@@ -1126,114 +1190,249 @@ type ChartSegment = {
   count: number;
   subtitle: string;
   items: Item[];
+  gross?: number;
+  cogs?: number;
+  profit?: number;
+  unitsSold?: number;
+  marginPct?: number;
 };
+
+type ProductFinancials = {
+  unitPrice: number;
+  unitCogs: number;
+  unitProfit: number;
+  unitsSold: number;
+  orderedUnits: number;
+  gross: number;
+  cogs: number;
+  profit: number;
+};
+
+const PROFIT_CATEGORY_COLORS: Record<string, string> = {
+  Boots: "#c93b32",
+  Heels: "#8b5e3c",
+  Sneakers: "#24170f",
+  Flatshoes: "#2e6f56",
+};
+
+function getProductFinancials(
+  p: Item,
+  orders: Order[],
+  currency: "USD" | "IDR",
+): ProductFinancials {
+  const unitPrice =
+    currency === "IDR" ? p.priceIdr || p.price * 16000 : p.price;
+  const orderedUnits = orders
+    .filter((o) => o.status !== "cancelled" && o.refund?.status !== "refunded")
+    .reduce(
+      (sum, o) =>
+        sum +
+        o.items
+          .filter((i) => i.productId === p.id)
+          .reduce((s, i) => s + i.quantity, 0),
+      0,
+    );
+  const baseUnits = Math.max(
+    2,
+    Math.round((40 - Math.min(34, p.stock)) / 4),
+  );
+  const unitsSold = orderedUnits + baseUnits;
+  const gross = unitPrice * unitsSold;
+  const cogs = Math.round(gross * 0.58);
+  const profit = gross - cogs;
+  const unitCogs = Math.round(unitPrice * 0.58);
+  const unitProfit = unitPrice - unitCogs;
+  return {
+    unitPrice,
+    unitCogs,
+    unitProfit,
+    unitsSold,
+    orderedUnits,
+    gross,
+    cogs,
+    profit,
+  };
+}
+
+function summarizeCatalogFinancials(
+  products: Item[],
+  orders: Order[],
+  currency: "USD" | "IDR",
+) {
+  const categories = (
+    ["Boots", "Heels", "Sneakers", "Flatshoes"] as const
+  ).map((cat) => {
+    const items = products.filter((p) => p.category === cat);
+    const totals = items.reduce(
+      (acc, item) => {
+        const f = getProductFinancials(item, orders, currency);
+        acc.gross += f.gross;
+        acc.cogs += f.cogs;
+        acc.profit += f.profit;
+        acc.unitsSold += f.unitsSold;
+        return acc;
+      },
+      { gross: 0, cogs: 0, profit: 0, unitsSold: 0 },
+    );
+    const marginPct =
+      totals.gross > 0
+        ? Math.round((totals.profit / totals.gross) * 100)
+        : 42;
+    return {
+      cat,
+      color: PROFIT_CATEGORY_COLORS[cat] || "#8b5e3c",
+      items,
+      marginPct,
+      ...totals,
+    };
+  });
+  return {
+    categories,
+    totalGross: categories.reduce((s, c) => s + c.gross, 0),
+    totalCogs: categories.reduce((s, c) => s + c.cogs, 0),
+    totalProfit: categories.reduce((s, c) => s + c.profit, 0),
+    totalUnits: categories.reduce((s, c) => s + c.unitsSold, 0),
+  };
+}
 
 function AdminInteractiveChart({
   chartTab,
   products,
   orders,
+  currency,
   selectedKey,
   onSelectKey,
   onInspectProduct,
   onManageProducts,
+  money,
   priceText,
   t,
 }: {
-  chartTab: "category" | "stock" | "orders";
+  chartTab: "profit" | "category" | "stock" | "orders";
   products: Item[];
   orders: Order[];
+  currency: "USD" | "IDR";
   selectedKey: string | null;
   onSelectKey: (k: string) => void;
   onInspectProduct: (p: Item) => void;
   onManageProducts: () => void;
+  money: (n: number, targetCurrency?: "USD" | "IDR") => string;
   priceText: (item: Pick<Item, "price" | "priceIdr">, quantity?: number) => string;
   t: (id: string, en: string) => string;
 }) {
+  const financialSummary = summarizeCatalogFinancials(
+    products,
+    orders,
+    currency,
+  );
+  const profitSegments: ChartSegment[] = financialSummary.categories.map(
+    (entry) => ({
+      key: entry.cat,
+      label: entry.cat,
+      color: entry.color,
+      items: entry.items,
+      count: Math.max(1, entry.profit),
+      gross: entry.gross,
+      cogs: entry.cogs,
+      profit: entry.profit,
+      unitsSold: entry.unitsSold,
+      marginPct: entry.marginPct,
+      subtitle: `${entry.unitsSold} ${t("pasang terjual", "pairs sold")} · Margin ${entry.marginPct}%`,
+    }),
+  );
+  const totalStudioGross = financialSummary.totalGross;
+  const totalStudioCogs = financialSummary.totalCogs;
+  const totalStudioProfit = financialSummary.totalProfit;
+  const totalStudioUnits = financialSummary.totalUnits;
+
   const segments: ChartSegment[] =
-    chartTab === "category"
-      ? [
-          {
-            key: "Boots",
-            label: "Boots",
-            color: "#c93b32",
-            items: products.filter((p) => p.category === "Boots"),
-            count: products.filter((p) => p.category === "Boots").length,
-            subtitle: `${products.filter((p) => p.category === "Boots").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
-          },
-          {
-            key: "Heels",
-            label: "Heels",
-            color: "#8b5e3c",
-            items: products.filter((p) => p.category === "Heels"),
-            count: products.filter((p) => p.category === "Heels").length,
-            subtitle: `${products.filter((p) => p.category === "Heels").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
-          },
-          {
-            key: "Sneakers",
-            label: "Sneakers",
-            color: "#24170f",
-            items: products.filter((p) => p.category === "Sneakers"),
-            count: products.filter((p) => p.category === "Sneakers").length,
-            subtitle: `${products.filter((p) => p.category === "Sneakers").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
-          },
-          {
-            key: "Flatshoes",
-            label: "Flatshoes",
-            color: "#c98b5b",
-            items: products.filter((p) => p.category === "Flatshoes"),
-            count: products.filter((p) => p.category === "Flatshoes").length,
-            subtitle: `${products.filter((p) => p.category === "Flatshoes").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
-          },
-        ]
-      : chartTab === "stock"
+    chartTab === "profit"
+      ? profitSegments
+      : chartTab === "category"
         ? [
             {
-              key: "low",
-              label: t("Stok Menipis (<15)", "Low Stock (<15)"),
+              key: "Boots",
+              label: "Boots",
               color: "#c93b32",
-              items: products.filter((p) => p.stock < 15),
-              count: products.filter((p) => p.stock < 15).length,
-              subtitle: t("Perlu restok segera", "Needs restock"),
+              items: products.filter((p) => p.category === "Boots"),
+              count: products.filter((p) => p.category === "Boots").length,
+              subtitle: `${products.filter((p) => p.category === "Boots").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
             },
             {
-              key: "mid",
-              label: t("Stok Sedang (15–25)", "Moderate (15–25)"),
-              color: "#d18b47",
-              items: products.filter((p) => p.stock >= 15 && p.stock <= 25),
-              count: products.filter((p) => p.stock >= 15 && p.stock <= 25).length,
-              subtitle: t("Stok terjaga", "Balanced level"),
+              key: "Heels",
+              label: "Heels",
+              color: "#8b5e3c",
+              items: products.filter((p) => p.category === "Heels"),
+              count: products.filter((p) => p.category === "Heels").length,
+              subtitle: `${products.filter((p) => p.category === "Heels").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
             },
             {
-              key: "safe",
-              label: t("Stok Aman (>25)", "Healthy (>25)"),
-              color: "#2e6f56",
-              items: products.filter((p) => p.stock > 25),
-              count: products.filter((p) => p.stock > 25).length,
-              subtitle: t("Siap jual", "Ready to ship"),
+              key: "Sneakers",
+              label: "Sneakers",
+              color: "#24170f",
+              items: products.filter((p) => p.category === "Sneakers"),
+              count: products.filter((p) => p.category === "Sneakers").length,
+              subtitle: `${products.filter((p) => p.category === "Sneakers").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
+            },
+            {
+              key: "Flatshoes",
+              label: "Flatshoes",
+              color: "#c98b5b",
+              items: products.filter((p) => p.category === "Flatshoes"),
+              count: products.filter((p) => p.category === "Flatshoes").length,
+              subtitle: `${products.filter((p) => p.category === "Flatshoes").reduce((n, p) => n + p.stock, 0)} ${t("unit", "units")}`,
             },
           ]
-        : (
-            [
-              ["cancelled", t("Dibatalkan", "Cancelled"), "#c93b32"],
-              ["processing", t("Diproses", "Processing"), "#d18b47"],
-              ["shipped", t("Dikirim", "Shipped"), "#8b5e3c"],
-              ["delivered", t("Selesai", "Delivered"), "#2e6f56"],
-            ] as const
-          ).map(([st, label, color]) => {
-            const matchingOrders = orders.filter((o) => o.status === st);
-            const orderedIds = new Set(
-              matchingOrders.flatMap((o) => o.items.map((i) => i.productId)),
-            );
-            const items = products.filter((p) => orderedIds.has(p.id));
-            return {
-              key: st,
-              label,
-              color,
-              items,
-              count: matchingOrders.length,
-              subtitle: `${items.length} ${t("model terkait", "linked models")}`,
-            };
-          });
+        : chartTab === "stock"
+          ? [
+              {
+                key: "low",
+                label: t("Stok Menipis (<15)", "Low Stock (<15)"),
+                color: "#c93b32",
+                items: products.filter((p) => p.stock < 15),
+                count: products.filter((p) => p.stock < 15).length,
+                subtitle: t("Perlu restok segera", "Needs restock"),
+              },
+              {
+                key: "mid",
+                label: t("Stok Sedang (15–25)", "Moderate (15–25)"),
+                color: "#d18b47",
+                items: products.filter((p) => p.stock >= 15 && p.stock <= 25),
+                count: products.filter((p) => p.stock >= 15 && p.stock <= 25)
+                  .length,
+                subtitle: t("Stok terjaga", "Balanced level"),
+              },
+              {
+                key: "safe",
+                label: t("Stok Aman (>25)", "Healthy (>25)"),
+                color: "#2e6f56",
+                items: products.filter((p) => p.stock > 25),
+                count: products.filter((p) => p.stock > 25).length,
+                subtitle: t("Siap jual", "Ready to ship"),
+              },
+            ]
+          : (
+              [
+                ["cancelled", t("Dibatalkan", "Cancelled"), "#c93b32"],
+                ["processing", t("Diproses", "Processing"), "#d18b47"],
+                ["shipped", t("Dikirim", "Shipped"), "#8b5e3c"],
+                ["delivered", t("Selesai", "Delivered"), "#2e6f56"],
+              ] as const
+            ).map(([st, label, color]) => {
+              const matchingOrders = orders.filter((o) => o.status === st);
+              const orderedIds = new Set(
+                matchingOrders.flatMap((o) => o.items.map((i) => i.productId)),
+              );
+              const items = products.filter((p) => orderedIds.has(p.id));
+              return {
+                key: st,
+                label,
+                color,
+                items,
+                count: matchingOrders.length,
+                subtitle: `${items.length} ${t("model terkait", "linked models")}`,
+              };
+            });
 
   const total = Math.max(
     1,
@@ -1247,6 +1446,58 @@ function AdminInteractiveChart({
 
   return (
     <div className="admin-chart-shell">
+      {chartTab === "profit" && (
+        <div className="profit-summary-strip">
+          <div className="profit-summary-card highlight">
+            <div className="profit-card-top">
+              <span>
+                {t("LABA BERSIH STUDIO (42%)", "STUDIO NET PROFIT (42%)")}
+              </span>
+              <svg
+                viewBox="0 0 64 20"
+                className="profit-sparkline"
+                aria-hidden="true"
+              >
+                <polyline
+                  fill="none"
+                  stroke="#e6c39f"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points="2,16 14,13 24,15 36,9 48,10 62,3"
+                />
+              </svg>
+            </div>
+            <strong>{money(totalStudioProfit)}</strong>
+            <small>
+              {t(
+                "Keuntungan bersih setelah HPP produksi",
+                "Net earnings after atelier COGS",
+              )}
+            </small>
+          </div>
+          <div className="profit-summary-card">
+            <span>{t("OMZET KOTOR (GROSS)", "GROSS REVENUE")}</span>
+            <strong>{money(totalStudioGross)}</strong>
+            <small>
+              {totalStudioUnits} {t("pasang sepatu terjual", "pairs sold")}
+            </small>
+          </div>
+          <div className="profit-summary-card">
+            <span>
+              {t("MODAL / HPP PRODUKSI (58%)", "EST. COGS / MODAL (58%)")}
+            </span>
+            <strong>{money(totalStudioCogs)}</strong>
+            <small>
+              {t(
+                "Material kulit, kriya & kemasan",
+                "Leather, craftsmanship & packaging",
+              )}
+            </small>
+          </div>
+        </div>
+      )}
+
       <div className="admin-chart-stage">
         <div className="admin-donut-wrap">
           <svg viewBox="0 0 128 128" className="admin-donut-svg" aria-hidden="false">
@@ -1287,19 +1538,33 @@ function AdminInteractiveChart({
                   onClick={() => onSelectKey(seg.key)}
                   style={{ cursor: "pointer", pointerEvents: "visibleStroke" }}
                 >
-                  <title>{`${seg.label}: ${seg.count}`}</title>
+                  <title>
+                    {chartTab === "profit"
+                      ? `${seg.label}: ${money(seg.profit || 0)}`
+                      : `${seg.label}: ${seg.count}`}
+                  </title>
                 </motion.circle>
               );
             })}
           </svg>
           <div className="admin-donut-center">
-            <strong>{activeSegment ? activeSegment.count : total}</strong>
+            <strong>
+              {chartTab === "profit"
+                ? activeSegment
+                  ? `${Math.round(((activeSegment.profit || 0) / Math.max(1, totalStudioProfit)) * 100)}%`
+                  : "+42%"
+                : activeSegment
+                  ? activeSegment.count
+                  : total}
+            </strong>
             <span>
               {activeSegment
                 ? activeSegment.label
-                : chartTab === "orders"
-                  ? t("Pesanan", "Orders")
-                  : t("Produk", "Items")}
+                : chartTab === "profit"
+                  ? t("Margin Laba", "Profit Margin")
+                  : chartTab === "orders"
+                    ? t("Pesanan", "Orders")
+                    : t("Produk", "Items")}
             </span>
           </div>
         </div>
@@ -1323,7 +1588,16 @@ function AdminInteractiveChart({
                     <b>{seg.label}</b>
                   </span>
                   <small>
-                    {seg.count} ({pct}%) · {seg.subtitle}
+                    {chartTab === "profit" ? (
+                      <>
+                        <strong>{money(seg.profit || 0)}</strong> ({pct}%) ·{" "}
+                        {seg.unitsSold} {t("psg", "prs")}
+                      </>
+                    ) : (
+                      <>
+                        {seg.count} ({pct}%) · {seg.subtitle}
+                      </>
+                    )}
                   </small>
                 </div>
                 <div className="chart-legend-track">
@@ -1334,11 +1608,35 @@ function AdminInteractiveChart({
                     style={{ background: seg.color }}
                   />
                 </div>
+                {chartTab === "profit" && (
+                  <div className="profit-bar-subrow">
+                    <span>
+                      {t("Omzet:", "Gross:")} {money(seg.gross || 0)}
+                    </span>
+                    <span>
+                      {t("HPP:", "COGS:")} {money(seg.cogs || 0)}
+                    </span>
+                    <em className="profit-click-hint">
+                      {active
+                        ? t("Tutup rincian ▲", "Hide details ▲")
+                        : t("Klik untuk rincian ▼", "Click for breakdown ▼")}
+                    </em>
+                  </div>
+                )}
               </motion.button>
             );
           })}
         </div>
       </div>
+
+      {!activeSegment && (
+        <p className="chart-click-prompt">
+          {t(
+            "Ketuk salah satu batang grafik atau segmen lingkaran di atas untuk membuka rincian laba bersih, HPP, dan kontribusi per produk.",
+            "Tap any bar or donut segment above to inspect net profit, COGS, and per-SKU contribution.",
+          )}
+        </p>
+      )}
 
       <AnimatePresence mode="wait">
         {activeSegment && (
@@ -1354,8 +1652,12 @@ function AdminInteractiveChart({
               <div>
                 <i style={{ background: activeSegment.color }} />
                 <strong>
-                  {activeSegment.label} ({activeSegment.items.length}{" "}
-                  {t("produk", "products")})
+                  {chartTab === "profit"
+                    ? t(
+                        `Rincian Laba & Keuntungan: ${activeSegment.label}`,
+                        `Profit & Financial Breakdown: ${activeSegment.label}`,
+                      )
+                    : `${activeSegment.label} (${activeSegment.items.length} ${t("produk", "products")})`}
                 </strong>
               </div>
               <div className="chart-drilldown-actions">
@@ -1375,31 +1677,89 @@ function AdminInteractiveChart({
                 </button>
               </div>
             </div>
+
+            {chartTab === "profit" && (
+              <div className="profit-drilldown-kpis">
+                <div>
+                  <span>
+                    {t("Laba Bersih Kategori", "Category Net Profit")}
+                  </span>
+                  <strong className="profit-positive">
+                    +{money(activeSegment.profit || 0)}
+                  </strong>
+                  <small>
+                    {t("Margin keuntungan", "Profit margin")}{" "}
+                    {activeSegment.marginPct || 42}%
+                  </small>
+                </div>
+                <div>
+                  <span>{t("Pendapatan Kotor (Omzet)", "Gross Revenue")}</span>
+                  <strong>{money(activeSegment.gross || 0)}</strong>
+                  <small>
+                    {activeSegment.unitsSold || 0}{" "}
+                    {t("pasang terjual", "pairs sold")}
+                  </small>
+                </div>
+                <div>
+                  <span>
+                    {t("Modal Produksi (HPP 58%)", "Production COGS (58%)")}
+                  </span>
+                  <strong>{money(activeSegment.cogs || 0)}</strong>
+                  <small>
+                    {t("Biaya material & kriya", "Material & atelier cost")}
+                  </small>
+                </div>
+              </div>
+            )}
+
             {activeSegment.items.length ? (
               <div className="chart-drilldown-grid">
-                {activeSegment.items.map((item) => (
-                  <motion.button
-                    key={item.id}
-                    type="button"
-                    className="chart-drilldown-card"
-                    whileHover={{ y: -2 }}
-                    whileTap={{ scale: 0.985 }}
-                    onClick={() => onInspectProduct(item)}
-                  >
-                    <CutoutImg
-                      src={item.showcaseImage || item.images[0]}
-                      alt={item.name}
-                    />
-                    <span>
-                      <b>{item.name}</b>
-                      <small>
-                        {item.category} · {priceText(item)} · {item.stock}{" "}
-                        {t("stok", "left")}
-                      </small>
-                    </span>
-                    <ArrowUpRight size={14} />
-                  </motion.button>
-                ))}
+                {activeSegment.items.map((item) => {
+                  const fin = getProductFinancials(item, orders, currency);
+                  return (
+                    <motion.button
+                      key={item.id}
+                      type="button"
+                      className="chart-drilldown-card"
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.985 }}
+                      onClick={() => onInspectProduct(item)}
+                    >
+                      <CutoutImg
+                        src={item.showcaseImage || item.images[0]}
+                        alt={item.name}
+                      />
+                      <span>
+                        <b>{item.name}</b>
+                        {chartTab === "profit" ? (
+                          <small className="profit-sku-breakdown">
+                            <span>
+                              {t("Terjual", "Sold")}: <b>{fin.unitsSold} psg</b>{" "}
+                              · {t("Harga", "Price")}: {money(fin.unitPrice)}
+                            </span>
+                            <span>
+                              {t("HPP/psg", "COGS/pr")}: {money(fin.unitCogs)} ·{" "}
+                              {t("Untung/psg", "Profit/pr")}:{" "}
+                              <strong className="profit-positive">
+                                +{money(fin.unitProfit)}
+                              </strong>
+                            </span>
+                            <span className="profit-sku-total">
+                              {t("Total Laba Produk:", "Total SKU Profit:")}{" "}
+                              <strong>+{money(fin.profit)}</strong>
+                            </span>
+                          </small>
+                        ) : (
+                          <small>
+                            {item.category} · {priceText(item)} · {item.stock}{" "}
+                            {t("stok", "left")}
+                          </small>
+                        )}
+                      </span>
+                      <ArrowUpRight size={14} />
+                    </motion.button>
+                  );
+                })}
               </div>
             ) : (
               <p className="chart-empty-note">
@@ -5762,21 +6122,23 @@ function orderValues(
   orders: Order[],
   money: (n: number, currency?: "USD" | "IDR") => string,
 ) {
-  return (["USD", "IDR"] as const)
-    .map((currency) =>
-      money(
-        orders
-          .filter(
-            (o) =>
-              o.status !== "cancelled" &&
-              o.refund?.status !== "refunded" &&
-              (o.currency || "USD") === currency &&
-              (!o.payment || o.payment.status === "paid"),
-          )
-          .reduce((n, o) => n + o.total, 0),
-        currency,
-      ),
-    )
+  const activeTotals = (["IDR", "USD"] as const)
+    .map((currency) => ({
+      currency,
+      total: orders
+        .filter(
+          (o) =>
+            o.status !== "cancelled" &&
+            o.refund?.status !== "refunded" &&
+            (o.currency || "USD") === currency &&
+            (!o.payment || o.payment.status === "paid"),
+        )
+        .reduce((n, o) => n + o.total, 0),
+    }))
+    .filter((entry) => entry.total > 0);
+  if (!activeTotals.length) return money(0);
+  return activeTotals
+    .map((entry) => money(entry.total, entry.currency))
     .join(" / ");
 }
 
