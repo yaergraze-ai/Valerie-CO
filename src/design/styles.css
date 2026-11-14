@@ -15172,8 +15172,28 @@ button.editorial-divider:hover {
 .inline-payment-stage,
 .inline-receipt-shell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   padding: 6px 2px;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.inline-payment-stage > *,
+.inline-receipt-shell > *,
+.inline-channel-selector,
+.inline-payment-instruction-card,
+.inline-qris-visual,
+.inline-qris-steps,
+.inline-va-box,
+.inline-gateway-embed-wrap,
+.inline-payment-actions,
+.inline-receipt-actions {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .inline-payment-header {
@@ -15309,9 +15329,10 @@ button.editorial-divider:hover {
 
 .inline-qris-box {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
+  grid-template-columns: 210px minmax(0, 1fr);
   gap: 18px;
-  align-items: center;
+  align-items: start;
+  min-width: 0;
 }
 
 .inline-qris-visual {
@@ -15765,7 +15786,8 @@ button.editorial-divider:hover {
 
 @media (max-width: 640px) {
   .inline-qris-box {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
   .realtime-clock-date,
   .realtime-clock-sep {
@@ -15830,12 +15852,17 @@ button.editorial-divider:hover {
 }
 
 .inline-qris-mini-btns {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
-  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.inline-qris-mini-btns .button {
+  width: 100%;
   justify-content: center;
-  margin-top: 4px;
+  white-space: nowrap;
 }
 
 .inline-ewallet-phone-box {
@@ -17271,5 +17298,39 @@ body:has(.member-landing) {
   .inline-va-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .inline-channel-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inline-payment-instruction-card {
+    padding: 14px;
+  }
+
+  .inline-payment-timer-box {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .inline-payment-timer-box span {
+    overflow-wrap: anywhere;
+  }
+
+  .inline-va-number-row {
+    flex-wrap: wrap;
+  }
+
+  .inline-va-number-row code {
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+
+  .inline-confirm-pay-btn {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.35;
+    padding-top: 12px;
+    padding-bottom: 12px;
   }
 }
