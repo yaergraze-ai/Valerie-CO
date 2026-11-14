@@ -375,10 +375,28 @@ export function createApp({
     return true;
   };
 
+  const VALID_ROLES = new Set(["member", "staff", "admin", "super_admin"]);
+  const isStaffRole = (role) =>
+    role === "staff" || role === "admin" || role === "super_admin";
+  const isAdminRole = (role) => role === "admin" || role === "super_admin";
+  const isSuperAdminRole = (role) => role === "super_admin";
+
+  const resolveEffectiveUser = async (user, prefetchedMember) => {
+    if (!user) return null;
+    const member =
+      prefetchedMember !== undefined
+        ? prefetchedMember
+        : await db.getMember(user.id);
+    const effectiveRole =
+      member?.role && VALID_ROLES.has(member.role) ? member.role : user.role;
+    return { ...user, role: effectiveRole };
+  };
+
   const authenticate = async (cookieHeader = "") => {
     const token = getCookieValue(cookieHeader, "solere_session");
     if (!token) return null;
-    return await db.getSessionUser(hashToken(token), Date.now());
+    const sessionUser = await db.getSessionUser(hashToken(token), Date.now());
+    return resolveEffectiveUser(sessionUser);
   };
   const session = async (setCookie, user, useSecure = secureCookie) => {
     const token = randomBytes(32).toString("hex");
@@ -452,19 +470,21 @@ export function createApp({
       settings,
       adminExists,
       allMembers,
-      allCoupons,
       allTickets,
-      allSubscribers,
     ] = await Promise.all([
       db.listOrders(),
       db.listProducts(),
       db.getSettings(),
       db.hasAdmin(),
       u ? db.listMembers() : Promise.resolve([]),
-      u?.role === "admin" ? db.listCoupons() : Promise.resolve([]),
       u ? db.listTickets() : Promise.resolve([]),
-      u?.role === "admin" ? db.listSubscribers() : Promise.resolve([]),
     ]);
+    const ownMember = u ? allMembers.find((m) => m.id === u.id) || null : null;
+    const resolved = u ? await resolveEffectiveUser(u, ownMember) : null;
+    const role = resolved?.role || null;
+    const [allCoupons, allSubscribers] = isAdminRole(role)
+      ? await Promise.all([db.listCoupons(), db.listSubscribers()])
+      : [[], []];
     return {
       paymentConfig: {
         enabled: !!gateway,
@@ -479,20 +499,29 @@ export function createApp({
             (!o.payment || o.payment.status === "paid"),
         ),
       ),
-      products: allProducts.filter((p) => u?.role === "admin" || p.active),
-      members: u
-        ? allMembers.filter((m) => u.role === "admin" || m.id === u.id)
+      products: allProducts.filter((p) => isStaffRole(role) || p.active),
+      members: resolved
+        ? allMembers
+            .filter((m) => isStaffRole(role) || m.id === resolved.id)
+            .map((m) => ({
+              ...m,
+              role: VALID_ROLES.has(m.role)
+                ? m.role
+                : m.id === resolved.id
+                  ? role
+                  : "member",
+            }))
         : [],
-      orders: u
-        ? allOrders.filter((o) => u.role === "admin" || o.memberId === u.id)
+      orders: resolved
+        ? allOrders.filter((o) => isStaffRole(role) || o.memberId === resolved.id)
         : [],
       coupons: allCoupons,
-      tickets: u
-        ? allTickets.filter((t) => u.role === "admin" || t.memberId === u.id)
+      tickets: resolved
+        ? allTickets.filter((t) => isStaffRole(role) || t.memberId === resolved.id)
         : [],
       subscribers: allSubscribers,
       settings,
-      currentUser: u ? { id: u.id, role: u.role } : null,
+      currentUser: resolved ? { id: resolved.id, role: resolved.role } : null,
       needsAdmin: !adminExists,
     };
   };
@@ -584,9 +613,13 @@ export function createApp({
       const requireUser = () => {
         if (!u) fail(401, "Sign in required");
       };
+      const requireStaff = () => {
+        requireUser();
+        if (!isStaffRole(u.role)) fail(403, "Staff access required");
+      };
       const requireAdmin = () => {
         requireUser();
-        if (u.role !== "admin") fail(403, "Admin access required");
+        if (!isAdminRole(u.role)) fail(403, "Admin access required");
       };
       const syncPayment = async (id) => {
         if (!gateway) fail(503, "Midtrans is not configured");
@@ -673,7 +706,7 @@ export function createApp({
       if (path === "/api/payments/status") {
         requireUser();
         const o = await db.getOrder(str(body.id, 80));
-        if (!o || (u.role !== "admin" && o.memberId !== u.id))
+        if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
           fail(403, "Order access denied");
         await syncPayment(o.id);
         send(200, await state(u));
@@ -1163,10 +1196,27 @@ export function createApp({
         for (const change of changes) {
           const { kind, data } = change;
           if (kind === "products") {
-            requireAdmin();
+            requireStaff();
             const p = product(data);
-            virtualProductIds.add(p.id);
-            ops.push({ kind: "products", data: p });
+            if (!isAdminRole(u.role)) {
+              const existing = initialProducts.find((item) => item.id === p.id);
+              if (!existing) fail(403, "Admin access required");
+              const stockChangedOnly =
+                p.name === existing.name &&
+                p.brand === existing.brand &&
+                p.category === existing.category &&
+                (p.description?.id ?? "") === (existing.description?.id ?? "") &&
+                (p.description?.en ?? "") === (existing.description?.en ?? "") &&
+                Number(p.price) === Number(existing.price) &&
+                p.active === existing.active;
+              if (!stockChangedOnly) fail(403, "Admin access required");
+              const stockOnlyProduct = { ...existing, stock: p.stock };
+              virtualProductIds.add(stockOnlyProduct.id);
+              ops.push({ kind: "products", data: stockOnlyProduct });
+            } else {
+              virtualProductIds.add(p.id);
+              ops.push({ kind: "products", data: p });
+            }
           } else if (kind === "products_delete") {
             requireAdmin();
             const id = str(data?.id, 80);
@@ -1304,7 +1354,7 @@ export function createApp({
             const old = ticketMap.get(id);
             let nextTicket;
             if (old) {
-              requireAdmin();
+              requireStaff();
               nextTicket = {
                 ...old,
                 reply: str(data.reply, 10000),
@@ -1474,7 +1524,7 @@ export function createApp({
         const o = await db.getOrder(str(body.id, 80));
         if (!o) fail(404, "Order not found");
         if (
-          u.role !== "admin" &&
+          !isStaffRole(u.role) &&
           (o.memberId !== u.id || body.status !== "cancelled")
         )
           fail(403, "Order access denied");
@@ -1495,7 +1545,7 @@ export function createApp({
         if (!allowed[o.status].includes(body.status))
           fail(409, "Invalid order transition");
         const tracking =
-          u.role === "admin"
+          isStaffRole(u.role)
             ? String(body.tracking || o.tracking).slice(0, 100)
             : o.tracking;
         if (body.status === "shipped" && !tracking.trim())
@@ -1516,12 +1566,12 @@ export function createApp({
         const o = await db.getOrder(id);
         if (!o) fail(404, "Order not found");
         const action =
-          body.action || (u.role === "admin" ? "approve" : "request");
+          body.action || (isAdminRole(u.role) ? "approve" : "request");
         if (!["request", "approve", "reject"].includes(action))
           fail(400, "Invalid refund action");
-        if (action !== "request" && u.role !== "admin")
+        if (action !== "request" && !isAdminRole(u.role))
           fail(403, "Admin access required");
-        if (action === "request" && o.memberId !== u.id && u.role !== "admin")
+        if (action === "request" && o.memberId !== u.id && !isAdminRole(u.role))
           fail(403, "Order access denied");
         const reason = str(body.reason, 400);
         const now = new Date().toISOString();
@@ -1639,6 +1689,49 @@ export function createApp({
             latest.status !== "cancelled" && latest.payment?.status !== "failed",
         });
         send(200, await state(u));
+        return;
+      }
+      if (path === "/api/admin/role") {
+        requireAdmin();
+        if (method !== "POST") fail(405, "Method not allowed");
+        const userId = str(body.userId, 80);
+        const nextRole = str(body.role, 32);
+        if (!VALID_ROLES.has(nextRole)) fail(400, "Invalid role");
+        const targetUser = await db.getUserById(userId);
+        if (!targetUser) fail(404, "User not found");
+        const allMembers = await db.listMembers();
+        const targetMember = allMembers.find((m) => m.id === userId) || null;
+        const targetCurrent = await resolveEffectiveUser(
+          targetUser,
+          targetMember,
+        );
+        const superAdmins = allMembers.filter((m) => m.role === "super_admin");
+        const callerIsSuper = isSuperAdminRole(u.role);
+        const isFirstSuperClaim =
+          superAdmins.length === 0 &&
+          targetUser.id === u.id &&
+          nextRole === "super_admin";
+        if (!callerIsSuper && !isFirstSuperClaim) {
+          if (
+            targetCurrent.role === "super_admin" ||
+            nextRole === "super_admin" ||
+            nextRole === "admin"
+          ) {
+            fail(403, "Super Admin access required");
+          }
+        }
+        if (targetUser.id === u.id && !isAdminRole(nextRole)) {
+          fail(409, "Cannot demote your own administrative account");
+        }
+        if (
+          targetCurrent.role === "super_admin" &&
+          nextRole !== "super_admin" &&
+          superAdmins.length <= 1
+        ) {
+          fail(409, "At least one Super Admin is required");
+        }
+        await db.updateUserRole(userId, nextRole);
+        send(200, await state(userId === u.id ? { ...u, role: nextRole } : u));
         return;
       }
       fail(404, "Not found");

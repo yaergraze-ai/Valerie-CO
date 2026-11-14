@@ -150,7 +150,9 @@ export function createSqliteStore(dbPath) {
     },
 
     async hasAdmin() {
-      return !!sql.prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").get();
+      return !!sql
+        .prepare("SELECT id FROM users WHERE role IN ('admin','super_admin') LIMIT 1")
+        .get();
     },
     async getUserById(id) {
       return sql.prepare("SELECT * FROM users WHERE id=?").get(id) || null;
@@ -214,6 +216,15 @@ export function createSqliteStore(dbPath) {
           .prepare("UPDATE users SET password=? WHERE id=?")
           .run(passwordHash, userId);
         sql.prepare("DELETE FROM sessions WHERE user_id=?").run(userId);
+      });
+    },
+    async updateUserRole(userId, role) {
+      tx(() => {
+        sql.prepare("UPDATE users SET role=? WHERE id=?").run(role, userId);
+        const member = get("members", userId);
+        if (member) {
+          put("members", userId, { ...member, role });
+        }
       });
     },
 

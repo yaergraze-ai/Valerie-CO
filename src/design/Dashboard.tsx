@@ -46,11 +46,19 @@ import {
   Printer,
   RotateCcw,
   Receipt,
+  UserCheck,
+  UserCog,
+  Crown,
 } from "lucide-react";
 import {
   useStore,
   nextProductCode,
   buildProductId,
+  isStudioRole,
+  isAdminRole,
+  isSuperAdminRole,
+  type UserRole,
+  type Member,
   type Order,
   type Address,
   type Ticket,
@@ -71,6 +79,120 @@ type Props = {
   onEntry: () => void;
   onSelect: (p: Item) => void;
 };
+
+type RoleSpec = {
+  role: UserRole;
+  labelId: string;
+  labelEn: string;
+  scopeId: string;
+  scopeEn: string;
+  perksId: string[];
+  perksEn: string[];
+};
+
+const ROLE_SPECS: RoleSpec[] = [
+  {
+    role: "super_admin",
+    labelId: "Super Admin",
+    labelEn: "Super Admin",
+    scopeId: "Otoritas penuh atas arsitektur tim, keuangan, katalog, & toko.",
+    scopeEn: "Full authority across team roles, refunds, catalogue, & store.",
+    perksId: [
+      "Kelola peran Admin, Staff, & Member",
+      "Setujui atau tolak refund pembayaran",
+      "Atur katalog, promo kupon, & identitas toko",
+    ],
+    perksEn: [
+      "Manage Admin, Staff, & Member roles",
+      "Approve or reject order refunds",
+      "Manage catalogue, coupons, & store identity",
+    ],
+  },
+  {
+    role: "admin",
+    labelId: "Admin",
+    labelEn: "Admin",
+    scopeId: "Kendali operasional katalog, promo, refund, & anggota Staff.",
+    scopeEn: "Operational control of catalogue, promos, refunds, & Staff.",
+    perksId: [
+      "Tambah, edit, arsip, & hapus produk",
+      "Kelola kupon promo & proses refund",
+      "Tetapkan peran Staff / Member",
+    ],
+    perksEn: [
+      "Create, edit, archive, & remove products",
+      "Manage promo coupons & order refunds",
+      "Assign Staff / Member roles",
+    ],
+  },
+  {
+    role: "staff",
+    labelId: "Staff",
+    labelEn: "Staff",
+    scopeId: "Fokus fulfillment pesanan, pembaruan stok, & layanan pelanggan.",
+    scopeEn: "Focused on order fulfilment, stock updates, & client concierge.",
+    perksId: [
+      "Proses status pesanan & input nomor resi",
+      "Perbarui stok produk (proteksi harga/hapus)",
+      "Balas & selesaikan pesan pelanggan",
+    ],
+    perksEn: [
+      "Update order fulfilment & tracking numbers",
+      "Adjust unit stock (catalog metadata protected)",
+      "Reply & close client concierge tickets",
+    ],
+  },
+  {
+    role: "member",
+    labelId: "Member",
+    labelEn: "Member",
+    scopeId: "Ruang pribadi belanja, profil ukuran EU, alamat, & keamanan akun.",
+    scopeEn: "Personal space for orders, EU fit profile, addresses, & security.",
+    perksId: [
+      "Lacak pesanan & unduh struk resmi",
+      "Ajukan refund & simpan wishlist",
+      "Verifikasi OTP Email / WA & pengaturan 2FA",
+    ],
+    perksEn: [
+      "Track orders & download official receipts",
+      "Request refunds & curate saved wishlist",
+      "Email / WhatsApp OTP & 2FA account protection",
+    ],
+  },
+];
+
+function formatRoleLabel(role: string | undefined, t: (id: string, en: string) => string) {
+  const spec = ROLE_SPECS.find((r) => r.role === role) || ROLE_SPECS[3];
+  return t(spec.labelId, spec.labelEn);
+}
+
+function RoleBadge({
+  role,
+  t,
+}: {
+  role?: string;
+  t: (id: string, en: string) => string;
+}) {
+  const normalized: UserRole =
+    role === "super_admin" || role === "admin" || role === "staff"
+      ? role
+      : "member";
+  const Icon =
+    normalized === "super_admin"
+      ? Crown
+      : normalized === "admin"
+        ? ShieldCheck
+        : normalized === "staff"
+          ? UserCheck
+          : User;
+  return (
+    <span className={`role-badge role-${normalized}`}>
+      <Icon size={12} aria-hidden="true" />
+      <span>{formatRoleLabel(normalized, t)}</span>
+    </span>
+  );
+}
+
 export default function Dashboard({
   mode,
   onShop,
@@ -89,6 +211,8 @@ export default function Dashboard({
     saveMember,
     serverMode,
     backendUser,
+    studioRole,
+    setStudioRolePreview,
     logout,
   } = useStore();
   const [tab, setTab] = useState("overview");
@@ -98,15 +222,32 @@ export default function Dashboard({
   );
   const [selectedChartKey, setSelectedChartKey] = useState<string | null>(null);
   const admin = mode === "admin";
-  const adminTabs = [
-    ["overview", t("Ringkasan", "Overview"), LayoutDashboard],
-    ["orders", t("Pesanan", "Orders"), ShoppingBag],
-    ["products", t("Produk", "Products"), Package],
-    ["customers", t("Pelanggan", "Clients"), Users],
-    ["coupons", t("Promo", "Promotions"), Tag],
-    ["support", t("Pesan", "Messages"), MessageSquare],
-    ["settings", t("Pengaturan", "Settings"), Settings],
-  ] as const;
+  const activeStudioRole: UserRole = admin
+    ? isStudioRole(studioRole)
+      ? studioRole
+      : "super_admin"
+    : "member";
+  const canManageCatalog = !admin || isAdminRole(activeStudioRole);
+  const canSwitchPreview =
+    admin && (!serverMode || isSuperAdminRole(backendUser?.role));
+  const adminTabs = (
+    [
+      ["overview", t("Ringkasan", "Overview"), LayoutDashboard],
+      ["orders", t("Pesanan", "Orders"), ShoppingBag],
+      ["products", t("Produk", "Products"), Package],
+      ["customers", t("Pelanggan", "Clients"), Users],
+      ...(isAdminRole(activeStudioRole)
+        ? ([
+            ["coupons", t("Promo", "Promotions"), Tag],
+            ["team", t("Tim & Akses", "Team & Access"), ShieldCheck],
+          ] as const)
+        : []),
+      ["support", t("Pesan", "Messages"), MessageSquare],
+      ...(isAdminRole(activeStudioRole)
+        ? ([["settings", t("Pengaturan", "Settings"), Settings]] as const)
+        : []),
+    ] as const
+  );
   const memberTabs = [
     ["overview", t("Ringkasan", "Overview"), LayoutDashboard],
     ["orders", t("Pesanan", "Orders"), ShoppingBag],
@@ -121,7 +262,7 @@ export default function Dashboard({
     ? db.orders
     : db.orders.filter((o) => o.memberId === member?.id);
   const title = tabs.find((x) => x[0] === activeTab)?.[1];
-  if (admin && serverMode && backendUser?.role !== "admin")
+  if (admin && serverMode && !isStudioRole(backendUser?.role))
     return (
       <section className="member-landing section">
         <div className={`member-intro ${member ? "member-intro-action" : ""}`}>
@@ -131,8 +272,8 @@ export default function Dashboard({
           </h1>
           <p>
             {t(
-              "Pengelolaan produk dan pesanan memerlukan akun dengan hak akses admin.",
-              "Managing products and orders requires an account with admin permissions.",
+              "Pengelolaan studio memerlukan akun dengan hak akses Staff, Admin, atau Super Admin.",
+              "Studio management requires an account with Staff, Admin, or Super Admin permissions.",
             )}
           </p>
           {member && (
@@ -189,7 +330,7 @@ export default function Dashboard({
             <b>{admin ? "VALERIE & CO STUDIO" : "VALERIE & CO MEMBERS"}</b>
             <small>
               {admin
-                ? t("Ruang administrasi", "Administration workspace")
+                ? `${formatRoleLabel(activeStudioRole, t)} · ${t("Ruang Studio", "Studio Workspace")}`
                 : t("Ruang pribadi Anda", "Your personal space")}
             </small>
           </div>
@@ -245,9 +386,15 @@ export default function Dashboard({
       <div className="dashboard-content">
         <header className="dashboard-top">
           <div>
-            <span className="eyebrow">
-              {admin ? "VALERIE & CO / STUDIO" : "VALERIE & CO / MEMBERS"}
-            </span>
+            <div className="dashboard-eyebrow-row">
+              <span className="eyebrow">
+                {admin ? "VALERIE & CO / STUDIO" : "VALERIE & CO / MEMBERS"}
+              </span>
+              <RoleBadge
+                role={admin ? activeStudioRole : member?.role || "member"}
+                t={t}
+              />
+            </div>
             <h1>{title}</h1>
           </div>
           <div className="dashboard-person">
@@ -258,7 +405,7 @@ export default function Dashboard({
                 year: "numeric",
               }).format(new Date())}
             </span>
-            {!admin && member?.avatar ? (
+            {member?.avatar ? (
               <img
                 src={member.avatar}
                 alt={member.name}
@@ -266,7 +413,11 @@ export default function Dashboard({
               />
             ) : (
               <span className="avatar">
-                {admin ? "V" : member?.name.slice(0, 1).toUpperCase()}
+                {member?.name
+                  ? member.name.slice(0, 1).toUpperCase()
+                  : admin
+                    ? "V"
+                    : "M"}
               </span>
             )}
             {(!admin || serverMode) && (
@@ -282,6 +433,38 @@ export default function Dashboard({
             )}
           </div>
         </header>
+        {canSwitchPreview && (
+          <div className="studio-role-bar" role="region" aria-label={t("Mode tampilan peran studio", "Studio role perspective")}>
+            <div className="studio-role-copy">
+              <UserCog size={14} aria-hidden="true" />
+              <span>
+                {t(
+                  "Perspektif Ruang Kerja Studio:",
+                  "Studio Role Perspective:",
+                )}
+              </span>
+            </div>
+            <div className="studio-role-pills" role="group">
+              {(["super_admin", "admin", "staff"] as const).map((roleKey) => {
+                const isSelected = activeStudioRole === roleKey;
+                return (
+                  <button
+                    key={roleKey}
+                    type="button"
+                    className={isSelected ? "active" : ""}
+                    onClick={() =>
+                      setStudioRolePreview(
+                        backendUser?.role === roleKey ? null : roleKey,
+                      )
+                    }
+                  >
+                    {formatRoleLabel(roleKey, t)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -301,11 +484,17 @@ export default function Dashboard({
             >
               <div>
                 <span className="eyebrow">
-                  {admin ? "VALERIE & CO ATELIER" : "PRESTIGE MEMBER"}
+                  {admin
+                    ? `VALERIE & CO · ${formatRoleLabel(activeStudioRole, t).toUpperCase()}`
+                    : "PRESTIGE MEMBER"}
                 </span>
                 <h2>
                   {admin
-                    ? t("Pusat kendali toko.", "Store command center.")
+                    ? isSuperAdminRole(activeStudioRole)
+                      ? t("Komando utama atelier.", "Atelier master command.")
+                      : activeStudioRole === "staff"
+                        ? t("Pusat operasional harian.", "Daily fulfilment desk.")
+                        : t("Pusat kendali toko.", "Store command center.")
                     : t(
                         `Halo, ${member?.name.split(" ")[0]}.`,
                         `Hello, ${member?.name.split(" ")[0]}.`,
@@ -313,10 +502,15 @@ export default function Dashboard({
                 </h2>
                 <p>
                   {admin
-                    ? t(
-                        `${db.products.filter((p) => p.active).length} model aktif · ${orders.filter((o) => o.status === "processing").length} pesanan menunggu proses.`,
-                        `${db.products.filter((p) => p.active).length} active pieces · ${orders.filter((o) => o.status === "processing").length} orders awaiting fulfilment.`,
-                      )
+                    ? activeStudioRole === "staff"
+                      ? t(
+                          `${orders.filter((o) => o.status === "processing").length} pesanan menunggu proses · ${db.tickets.filter((x) => x.status === "open").length} pesan concierge terbuka.`,
+                          `${orders.filter((o) => o.status === "processing").length} orders awaiting fulfilment · ${db.tickets.filter((x) => x.status === "open").length} open concierge tickets.`,
+                        )
+                      : t(
+                          `${db.products.filter((p) => p.active).length} model aktif · ${orders.filter((o) => o.status === "processing").length} pesanan menunggu proses.`,
+                          `${db.products.filter((p) => p.active).length} active pieces · ${orders.filter((o) => o.status === "processing").length} orders awaiting fulfilment.`,
+                        )
                     : member?.emailVerified && member?.phoneVerified
                       ? t(
                           "Email & WhatsApp terverifikasi · Siap menikmati akses privat Valerie & CO.",
@@ -330,21 +524,43 @@ export default function Dashboard({
                 <div className="welcome-cta-row">
                   {admin ? (
                     <>
-                      <button
-                        type="button"
-                        className="button light small"
-                        onClick={() => setTab("products")}
-                      >
-                        <Plus size={14} />
-                        {t("Kelola Produk", "Manage Catalogue")}
-                      </button>
-                      <button
-                        type="button"
-                        className="button ghost small"
-                        onClick={() => setTab("orders")}
-                      >
-                        {t("Cek Pesanan", "View Orders")}
-                      </button>
+                      {canManageCatalog ? (
+                        <button
+                          type="button"
+                          className="button light small"
+                          onClick={() => setTab("products")}
+                        >
+                          <Plus size={14} />
+                          {t("Kelola Produk", "Manage Catalogue")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="button light small"
+                          onClick={() => setTab("orders")}
+                        >
+                          <ShoppingBag size={14} />
+                          {t("Proses Pesanan", "Fulfil Orders")}
+                        </button>
+                      )}
+                      {isAdminRole(activeStudioRole) ? (
+                        <button
+                          type="button"
+                          className="button ghost small"
+                          onClick={() => setTab("team")}
+                        >
+                          <ShieldCheck size={14} />
+                          {t("Tim & Hak Akses", "Team & Access")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="button ghost small"
+                          onClick={() => setTab("products")}
+                        >
+                          {t("Perbarui Stok", "Update Stock")}
+                        </button>
+                      )}
                     </>
                   ) : (
                     <>
@@ -382,48 +598,85 @@ export default function Dashboard({
             </motion.div>
             <div className="metric-grid">
               {(admin
-                ? [
-                    {
-                      label: t(
-                        "Nilai pesanan per mata uang",
-                        "Order value by currency",
-                      ),
-                      value: orderValues(orders, money),
-                      note: t("Semua pesanan aktif", "All active orders"),
-                      Icon: BarChart3,
-                      targetTab: "orders",
-                    },
-                    {
-                      label: t("Total pesanan", "Total orders"),
-                      value: orders.length,
-                      note: t(
-                        `${orders.filter((o) => o.status === "processing").length} menunggu proses`,
-                        `${orders.filter((o) => o.status === "processing").length} awaiting fulfilment`,
-                      ),
-                      Icon: ShoppingBag,
-                      targetTab: "orders",
-                    },
-                    {
-                      label: t("Produk aktif", "Active products"),
-                      value: db.products.filter((p) => p.active).length,
-                      note: t(
-                        `${db.products.reduce((n, p) => n + p.stock, 0)} unit tersedia`,
-                        `${db.products.reduce((n, p) => n + p.stock, 0)} units in stock`,
-                      ),
-                      Icon: Package,
-                      targetTab: "products",
-                    },
-                    {
-                      label: t("Member terdaftar", "Registered members"),
-                      value: db.members.length,
-                      note: t(
-                        `${db.subscribers.length} peminat newsletter`,
-                        `${db.subscribers.length} newsletter interests`,
-                      ),
-                      Icon: Users,
-                      targetTab: "customers",
-                    },
-                  ]
+                ? activeStudioRole === "staff"
+                  ? [
+                      {
+                        label: t("Menunggu proses", "Awaiting fulfilment"),
+                        value: orders.filter((o) => o.status === "processing")
+                          .length,
+                        note: t("Siap dikemas & dikirim", "Ready to pack & ship"),
+                        Icon: ShoppingBag,
+                        targetTab: "orders",
+                      },
+                      {
+                        label: t("Dalam pengiriman", "In transit"),
+                        value: orders.filter((o) => o.status === "shipped")
+                          .length,
+                        note: t("Resi kurir aktif", "Active tracking numbers"),
+                        Icon: Truck,
+                        targetTab: "orders",
+                      },
+                      {
+                        label: t("Stok menipis (<15)", "Low stock (<15)"),
+                        value: db.products.filter((p) => p.stock < 15).length,
+                        note: t(
+                          `${db.products.reduce((n, p) => n + p.stock, 0)} unit total tersedia`,
+                          `${db.products.reduce((n, p) => n + p.stock, 0)} units total`,
+                        ),
+                        Icon: Package,
+                        targetTab: "products",
+                      },
+                      {
+                        label: t("Pesan terbuka", "Open concierge"),
+                        value: db.tickets.filter((x) => x.status === "open")
+                          .length,
+                        note: t("Perlu balasan tim", "Awaiting team reply"),
+                        Icon: MessageSquare,
+                        targetTab: "support",
+                      },
+                    ]
+                  : [
+                      {
+                        label: t(
+                          "Nilai pesanan per mata uang",
+                          "Order value by currency",
+                        ),
+                        value: orderValues(orders, money),
+                        note: t("Semua pesanan aktif", "All active orders"),
+                        Icon: BarChart3,
+                        targetTab: "orders",
+                      },
+                      {
+                        label: t("Total pesanan", "Total orders"),
+                        value: orders.length,
+                        note: t(
+                          `${orders.filter((o) => o.status === "processing").length} menunggu proses`,
+                          `${orders.filter((o) => o.status === "processing").length} awaiting fulfilment`,
+                        ),
+                        Icon: ShoppingBag,
+                        targetTab: "orders",
+                      },
+                      {
+                        label: t("Produk aktif", "Active products"),
+                        value: db.products.filter((p) => p.active).length,
+                        note: t(
+                          `${db.products.reduce((n, p) => n + p.stock, 0)} unit tersedia`,
+                          `${db.products.reduce((n, p) => n + p.stock, 0)} units in stock`,
+                        ),
+                        Icon: Package,
+                        targetTab: "products",
+                      },
+                      {
+                        label: t("Tim & Member", "Team & Members"),
+                        value: db.members.length,
+                        note: t(
+                          `${db.members.filter((m) => isStudioRole(m.role)).length} tim studio · ${db.subscribers.length} subscriber`,
+                          `${db.members.filter((m) => isStudioRole(m.role)).length} studio roles · ${db.subscribers.length} subscribers`,
+                        ),
+                        Icon: ShieldCheck,
+                        targetTab: "team",
+                      },
+                    ]
                 : [
                     {
                       label: t("Pesanan saya", "My orders"),
@@ -608,7 +861,7 @@ export default function Dashboard({
                       <button
                         type="button"
                         className="member-fit-card"
-                        onClick={() => setTab("security")}
+                        onClick={() => setTab("settings")}
                       >
                         <div className="member-fit-card-top">
                           <span className="member-fit-icon">
@@ -740,10 +993,21 @@ export default function Dashboard({
         {activeTab === "orders" && (
           <OrdersPanel orders={orders} onSelect={setOrder} admin={admin} />
         )}
-        {activeTab === "products" && admin && <ProductsPanel />}
-        {activeTab === "customers" && admin && <CustomersPanel />}
-        {activeTab === "coupons" && admin && <CouponsPanel />}
-        {activeTab === "settings" && admin && <SettingsPanel />}
+        {activeTab === "products" && admin && (
+          <ProductsPanel canManageCatalog={canManageCatalog} />
+        )}
+        {activeTab === "customers" && admin && (
+          <CustomersPanel canManageRoles={canManageCatalog} activeStudioRole={activeStudioRole} />
+        )}
+        {activeTab === "coupons" && admin && canManageCatalog && (
+          <CouponsPanel />
+        )}
+        {activeTab === "team" && admin && canManageCatalog && (
+          <TeamPanel activeStudioRole={activeStudioRole} />
+        )}
+        {activeTab === "settings" && admin && canManageCatalog && (
+          <SettingsPanel />
+        )}
         {activeTab === "settings" && !admin && (
           <MemberSettingsPanel
             lang={lang}
@@ -769,26 +1033,7 @@ export default function Dashboard({
             className="dashboard-mobile-dock"
             aria-label={t("Navigasi dashboard mobile", "Mobile dashboard navigation")}
           >
-            {(
-              (admin
-                ? [
-                    ["overview", t("Ringkasan", "Home"), LayoutDashboard],
-                    ["orders", t("Pesanan", "Orders"), ShoppingBag],
-                    ["products", t("Produk", "Products"), Package],
-                    ["customers", t("Member", "Clients"), Users],
-                    ["coupons", t("Promo", "Promo"), Tag],
-                    ["support", t("Pesan", "Inbox"), MessageSquare],
-                    ["settings", t("Setelan", "Settings"), Settings],
-                  ]
-                : [
-                    ["overview", t("Ringkasan", "Home"), LayoutDashboard],
-                    ["orders", t("Pesanan", "Orders"), ShoppingBag],
-                    ["addresses", t("Alamat", "Address"), MapPin],
-                    ["profile", t("Profil", "Profile"), User],
-                    ["settings", t("Keamanan", "Security"), Shield],
-                    ["support", t("Bantuan", "Help"), MessageSquare],
-                  ]) as [string, string, typeof LayoutDashboard][]
-            ).map(([id, label, IconComp]) => (
+            {tabs.map(([id, label, IconComp]) => (
               <button
                 key={id}
                 type="button"
@@ -840,6 +1085,7 @@ export default function Dashboard({
         <OrderModal
           order={db.orders.find((o) => o.id === order)!}
           admin={admin}
+          canApproveRefund={canManageCatalog}
           onClose={() => setOrder(null)}
         />
       )}
@@ -1169,8 +1415,12 @@ function OrdersTable({
         <tbody>
           {orders.map((o) => (
             <tr key={o.id}>
-              <td>
-                <button className="table-link" onClick={() => onSelect(o.id)}>
+              <td data-label={t("Pesanan", "Order")}>
+                <button
+                  className="table-link"
+                  title={o.id}
+                  onClick={() => onSelect(o.id)}
+                >
                   {o.id}
                 </button>
                 <small>
@@ -1199,14 +1449,18 @@ function OrdersTable({
                   )}
                 </div>
               </td>
-              <td data-label="Total">{money(o.total, o.currency || "USD")}</td>
-              <td>
+              <td data-label="Total" className="table-price-cell">
+                {money(o.total, o.currency || "USD")}
+              </td>
+              <td data-label={t("Aksi", "Action")}>
                 <button
-                  className="icon"
+                  type="button"
+                  className="table-action-pill"
                   aria-label={t("Detail pesanan", "Order details")}
                   onClick={() => onSelect(o.id)}
                 >
-                  <ArrowUpRight size={16} />
+                  <span>{t("Detail", "Details")}</span>
+                  <ArrowUpRight size={14} aria-hidden="true" />
                 </button>
               </td>
             </tr>
@@ -1384,6 +1638,7 @@ function OrdersPanel({
                         <button
                           type="button"
                           className="table-link"
+                          title={o.id}
                           onClick={() => onSelect(o.id)}
                         >
                           {o.id}
@@ -1467,10 +1722,12 @@ function OrdersPanel({
 function OrderModal({
   order: o,
   admin,
+  canApproveRefund = true,
   onClose,
 }: {
   order: Order;
   admin: boolean;
+  canApproveRefund?: boolean;
   onClose: () => void;
 }) {
   const { db, t, lang, money, updateOrder, refundOrder, notify } = useStore();
@@ -1497,6 +1754,7 @@ function OrderModal({
     (!o.refund || o.refund.status === "rejected");
   const canAdminRefund =
     admin &&
+    canApproveRefund &&
     !isRefunded &&
     (o.payment ? o.payment.status === "paid" : o.status !== "cancelled");
 
@@ -2035,7 +2293,11 @@ function OrderModal({
     </Modal>
   );
 }
-function ProductsPanel() {
+function ProductsPanel({
+  canManageCatalog = true,
+}: {
+  canManageCatalog?: boolean;
+}) {
   const {
     db,
     setDb,
@@ -2078,31 +2340,44 @@ function ProductsPanel() {
               {t("Katalog produk", "Product catalogue")} ({db.products.length})
             </h3>
           </div>
-          <div className="panel-head-actions">
-            <button
-              className="button outline small"
-              onClick={() => setConfirmRestore(true)}
-            >
-              {t("Sinkronkan Katalog", "Sync Catalogue")}
-            </button>
-            {db.products.length > 0 && (
+          {canManageCatalog && (
+            <div className="panel-head-actions">
               <button
                 className="button outline small"
-                onClick={() => setConfirmClearAll(true)}
+                onClick={() => setConfirmRestore(true)}
               >
-                <Trash2 size={14} />
-                {t("Kosongkan Katalog", "Clear Catalogue")}
+                {t("Sinkronkan Katalog", "Sync Catalogue")}
               </button>
-            )}
-            <button
-              className="button dark small"
-              onClick={() => setEdit("new")}
-            >
-              <Plus size={16} />
-              {t("Tambah produk", "Add product")}
-            </button>
-          </div>
+              {db.products.length > 0 && (
+                <button
+                  className="button outline small"
+                  onClick={() => setConfirmClearAll(true)}
+                >
+                  <Trash2 size={14} />
+                  {t("Kosongkan Katalog", "Clear Catalogue")}
+                </button>
+              )}
+              <button
+                className="button dark small"
+                onClick={() => setEdit("new")}
+              >
+                <Plus size={16} />
+                {t("Tambah produk", "Add product")}
+              </button>
+            </div>
+          )}
         </div>
+        {!canManageCatalog && (
+          <div className="staff-mode-banner">
+            <Package size={15} aria-hidden="true" />
+            <span>
+              {t(
+                "Mode Operasional Staff: Anda dapat memperbarui jumlah stok unit secara langsung. Edit harga & hapus produk dikunci untuk Admin / Super Admin.",
+                "Staff Operations Mode: You can adjust available unit stock directly. Pricing, details, and catalogue deletion require Admin / Super Admin access.",
+              )}
+            </span>
+          </div>
+        )}
         <div className="table-toolbar" style={{ flexWrap: "wrap", gap: 10 }}>
           <label className="search-input">
             <Search size={16} />
@@ -2151,36 +2426,38 @@ function ProductsPanel() {
               <Download size={15} />
               {t("Ekspor JSON", "Export JSON")}
             </button>
-            <label
-              className="button outline small"
-              style={{ cursor: "pointer", margin: 0 }}
-            >
-              {t("Impor JSON", "Import JSON")}
-              <input
-                type="file"
-                accept="application/json,.json"
-                style={{ display: "none" }}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const parsed = JSON.parse(await file.text());
-                    if (!Array.isArray(parsed)) throw new Error("Invalid format");
-                    setDb((d) => ({ ...d, products: parsed }));
-                    notify(
-                      `${parsed.length} produk berhasil diimpor`,
-                      `Imported ${parsed.length} products`,
-                    );
-                  } catch {
-                    notify(
-                      "Format file JSON katalog tidak valid",
-                      "Invalid catalogue JSON file",
-                    );
-                  }
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            {canManageCatalog && (
+              <label
+                className="button outline small"
+                style={{ cursor: "pointer", margin: 0 }}
+              >
+                {t("Impor JSON", "Import JSON")}
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const parsed = JSON.parse(await file.text());
+                      if (!Array.isArray(parsed)) throw new Error("Invalid format");
+                      setDb((d) => ({ ...d, products: parsed }));
+                      notify(
+                        `${parsed.length} produk berhasil diimpor`,
+                        `Imported ${parsed.length} products`,
+                      );
+                    } catch {
+                      notify(
+                        "Format file JSON katalog tidak valid",
+                        "Invalid catalogue JSON file",
+                      );
+                    }
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
             <button
               className="button outline small"
               onClick={() =>
@@ -2273,32 +2550,34 @@ function ProductsPanel() {
                       <Plus size={12} />
                     </button>
                   </div>
-                  <div className="table-actions">
-                    <button
-                      type="button"
-                      className="icon"
-                      onClick={() => setEdit(p)}
-                      aria-label={t("Edit produk", "Edit product")}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon"
-                      onClick={() => setArchive(p)}
-                      aria-label={t("Arsipkan produk", "Archive product")}
-                    >
-                      <Check size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon"
-                      onClick={() => setDeleteTarget(p)}
-                      aria-label={t("Hapus produk", "Delete product")}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                  {canManageCatalog && (
+                    <div className="table-actions">
+                      <button
+                        type="button"
+                        className="icon"
+                        onClick={() => setEdit(p)}
+                        aria-label={t("Edit produk", "Edit product")}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon"
+                        onClick={() => setArchive(p)}
+                        aria-label={t("Arsipkan produk", "Archive product")}
+                      >
+                        <Check size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon"
+                        onClick={() => setDeleteTarget(p)}
+                        aria-label={t("Hapus produk", "Delete product")}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.article>
             ))}
@@ -2313,13 +2592,13 @@ function ProductsPanel() {
                 <th>{t("Harga", "Price")}</th>
                 <th>{t("Stok", "Stock")}</th>
                 <th>Status</th>
-                <th />
+                {canManageCatalog && <th />}
               </tr>
             </thead>
             <tbody>
               {list.map((p) => (
                 <tr key={p.id}>
-                  <td>
+                  <td data-label={t("Produk", "Product")}>
                     <div className="table-product">
                       <CutoutImg src={p.showcaseImage || p.images[0]} alt="" />
                       <span>
@@ -2383,42 +2662,44 @@ function ProductsPanel() {
                       {p.active ? t("Aktif", "Active") : t("Arsip", "Archived")}
                     </span>
                   </td>
-                  <td>
-                    <div className="table-actions">
-                      <button
-                        className="icon"
-                        title={t("Edit / ganti produk", "Edit / replace product")}
-                        aria-label={t("Edit produk", "Edit product")}
-                        onClick={() => setEdit(p)}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        className="icon"
-                        title={
-                          p.active
-                            ? t("Arsipkan (sembunyikan)", "Archive (hide)")
-                            : t("Aktifkan kembali", "Activate")
-                        }
-                        aria-label={
-                          p.active
-                            ? t("Arsipkan produk", "Archive product")
-                            : t("Aktifkan produk", "Activate product")
-                        }
-                        onClick={() => setArchive(p)}
-                      >
-                        <Check size={15} />
-                      </button>
-                      <button
-                        className="icon"
-                        title={t("Hapus permanen", "Delete permanently")}
-                        aria-label={t("Hapus produk", "Delete product")}
-                        onClick={() => setDeleteTarget(p)}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
+                  {canManageCatalog && (
+                    <td data-label={t("Aksi", "Action")}>
+                      <div className="table-actions">
+                        <button
+                          className="icon"
+                          title={t("Edit / ganti produk", "Edit / replace product")}
+                          aria-label={t("Edit produk", "Edit product")}
+                          onClick={() => setEdit(p)}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          className="icon"
+                          title={
+                            p.active
+                              ? t("Arsipkan (sembunyikan)", "Archive (hide)")
+                              : t("Aktifkan kembali", "Activate")
+                          }
+                          aria-label={
+                            p.active
+                              ? t("Arsipkan produk", "Archive product")
+                              : t("Aktifkan produk", "Activate product")
+                          }
+                          onClick={() => setArchive(p)}
+                        >
+                          <Check size={15} />
+                        </button>
+                        <button
+                          className="icon"
+                          title={t("Hapus permanen", "Delete permanently")}
+                          aria-label={t("Hapus produk", "Delete product")}
+                          onClick={() => setDeleteTarget(p)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -3111,13 +3392,110 @@ function ProductEditor({
     </Modal>
   );
 }
-function CustomersPanel() {
-  const { db, t, money } = useStore();
+function RoleSelectControl({
+  target,
+  callerRole,
+  currentUserId,
+  superAdminCount,
+  onAssign,
+  t,
+}: {
+  target: Member;
+  callerRole: UserRole;
+  currentUserId?: string;
+  superAdminCount: number;
+  onAssign: (userId: string, nextRole: UserRole) => Promise<void>;
+  t: (id: string, en: string) => string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const current: UserRole =
+    target.role === "super_admin" ||
+    target.role === "admin" ||
+    target.role === "staff"
+      ? target.role
+      : "member";
+  const isSelf = target.id === currentUserId;
+  const isCallerSuper = isSuperAdminRole(callerRole);
+  const canClaimFirstSuper =
+    callerRole === "admin" && superAdminCount === 0 && isSelf;
+  const lockedTarget = !isCallerSuper && current === "super_admin";
+
+  return (
+    <select
+      className="role-select-input"
+      aria-label={`${t("Ubah peran untuk", "Change role for")} ${target.name}`}
+      value={current}
+      disabled={busy || lockedTarget}
+      onChange={async (e) => {
+        const nextRole = e.target.value as UserRole;
+        if (nextRole === current) return;
+        setBusy(true);
+        try {
+          await onAssign(target.id, nextRole);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <option value="member" disabled={isSelf && isAdminRole(current)}>
+        {t("Member", "Member")}
+      </option>
+      <option value="staff" disabled={isSelf && isAdminRole(current)}>
+        {t("Staff", "Staff")}
+      </option>
+      <option
+        value="admin"
+        disabled={(!isCallerSuper && current !== "admin") || (isSelf && current === "super_admin" && superAdminCount <= 1)}
+      >
+        {t("Admin", "Admin")}
+      </option>
+      <option
+        value="super_admin"
+        disabled={!isCallerSuper && !canClaimFirstSuper && current !== "super_admin"}
+      >
+        {t("Super Admin", "Super Admin")}
+      </option>
+    </select>
+  );
+}
+
+function CustomersPanel({
+  canManageRoles = true,
+  activeStudioRole = "admin",
+}: {
+  canManageRoles?: boolean;
+  activeStudioRole?: UserRole;
+}) {
+  const {
+    db,
+    t,
+    money,
+    serverMode,
+    backendUser,
+    updateMemberRole,
+    notify,
+  } = useStore();
   const [q, setQ] = useState("");
   const [customer, setCustomer] = useState<string | null>(null);
+  const callerRole: UserRole = serverMode
+    ? ((backendUser?.role as UserRole | undefined) || activeStudioRole)
+    : activeStudioRole;
+  const superAdminCount = db.members.filter(
+    (m) => m.role === "super_admin",
+  ).length;
   const members = db.members.filter((m) =>
-    `${m.name} ${m.email}`.toLowerCase().includes(q.toLowerCase()),
+    `${m.name} ${m.email} ${m.role || "member"}`
+      .toLowerCase()
+      .includes(q.toLowerCase()),
   );
+  const handleRoleAssign = async (userId: string, nextRole: UserRole) => {
+    try {
+      await updateMemberRole(userId, nextRole);
+    } catch (err) {
+      notify((err as Error).message, (err as Error).message);
+    }
+  };
+
   return (
     <div className="panel">
       <div className="panel-heading">
@@ -3128,11 +3506,12 @@ function CustomersPanel() {
           className="button outline small"
           onClick={() =>
             csvDownload("valerieco-members.csv", [
-              ["Name", "Email", "Phone", "Orders"],
+              ["Name", "Email", "Phone", "Role", "Orders"],
               ...members.map((m) => [
                 m.name,
                 m.email,
                 m.phone,
+                m.role || "member",
                 db.orders.filter((o) => o.memberId === m.id).length,
               ]),
             ])
@@ -3158,6 +3537,7 @@ function CustomersPanel() {
             <thead>
               <tr>
                 <th>{t("Member", "Member")}</th>
+                <th>{t("Peran", "Role")}</th>
                 <th>Email</th>
                 <th>{t("Pesanan", "Orders")}</th>
                 <th>{t("Nilai pesanan", "Order value")}</th>
@@ -3167,7 +3547,7 @@ function CustomersPanel() {
             <tbody>
               {members.map((m) => (
                 <tr key={m.id}>
-                  <td>
+                  <td data-label={t("Member", "Member")}>
                     <div className="customer-name">
                       {m.avatar ? (
                         <img
@@ -3178,26 +3558,34 @@ function CustomersPanel() {
                       ) : (
                         <span className="avatar">{m.name[0]}</span>
                       )}
-                      {m.name}
+                      <span>{m.name}</span>
                     </div>
+                  </td>
+                  <td data-label={t("Peran", "Role")}>
+                    <RoleBadge role={m.role} t={t} />
                   </td>
                   <td data-label="Email">{m.email}</td>
                   <td data-label={t("Pesanan", "Orders")}>
                     {db.orders.filter((o) => o.memberId === m.id).length}
                   </td>
-                  <td data-label={t("Nilai pesanan", "Order value")}>
+                  <td
+                    data-label={t("Nilai pesanan", "Order value")}
+                    className="table-price-cell"
+                  >
                     {orderValues(
                       db.orders.filter((o) => o.memberId === m.id),
                       money,
                     )}
                   </td>
-                  <td>
+                  <td data-label={t("Aksi", "Action")}>
                     <button
-                      className="icon"
+                      type="button"
+                      className="table-action-pill"
                       onClick={() => setCustomer(m.id)}
                       aria-label={t("Lihat pelanggan", "View customer")}
                     >
-                      <ArrowUpRight size={16} />
+                      <span>{t("Detail", "Details")}</span>
+                      <ArrowUpRight size={14} aria-hidden="true" />
                     </button>
                   </td>
                 </tr>
@@ -3234,7 +3622,10 @@ function CustomersPanel() {
                     <span className="avatar">{m.name[0]}</span>
                   )}
                   <div>
-                    <h3>{m.name}</h3>
+                    <div className="dashboard-eyebrow-row">
+                      <h3>{m.name}</h3>
+                      <RoleBadge role={m.role} t={t} />
+                    </div>
                     <div className="verify-chip-row">
                       <span
                         className={`verify-pill ${m.emailVerified ? "ok" : "pending"}`}
@@ -3255,6 +3646,21 @@ function CustomersPanel() {
                   {m.phone || "—"}
                   {m.preferredSize ? ` · EU ${m.preferredSize}` : ""}
                 </p>
+                {canManageRoles && (
+                  <div className="customer-role-editor">
+                    <label>
+                      <span>{t("Tetapkan Hak Akses Akun", "Assign Account Role")}</span>
+                      <RoleSelectControl
+                        target={m}
+                        callerRole={callerRole}
+                        currentUserId={backendUser?.id}
+                        superAdminCount={superAdminCount}
+                        onAssign={handleRoleAssign}
+                        t={t}
+                      />
+                    </label>
+                  </div>
+                )}
                 <h4>{t("Alamat tersimpan", "Saved addresses")}</h4>
                 {m.addresses.map((a) => (
                   <p key={a.id}>
@@ -3268,6 +3674,244 @@ function CustomersPanel() {
             ))}
         </Modal>
       )}
+    </div>
+  );
+}
+
+function TeamPanel({ activeStudioRole }: { activeStudioRole: UserRole }) {
+  const { db, t, serverMode, backendUser, updateMemberRole, notify } =
+    useStore();
+  const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
+  const [elevating, setElevating] = useState(false);
+
+  const callerRole: UserRole = serverMode
+    ? ((backendUser?.role as UserRole | undefined) || activeStudioRole)
+    : activeStudioRole;
+  const superAdminCount = db.members.filter(
+    (m) => m.role === "super_admin",
+  ).length;
+  const canClaimFirstSuper =
+    serverMode &&
+    backendUser?.role === "admin" &&
+    superAdminCount === 0 &&
+    !!backendUser?.id;
+
+  const filtered = db.members.filter((m) => {
+    const normalized: UserRole =
+      m.role === "super_admin" || m.role === "admin" || m.role === "staff"
+        ? m.role
+        : "member";
+    const matchRole = roleFilter === "all" || normalized === roleFilter;
+    const matchText = `${m.name} ${m.email} ${m.phone || ""}`
+      .toLowerCase()
+      .includes(q.toLowerCase());
+    return matchRole && matchText;
+  });
+
+  const handleAssign = async (userId: string, nextRole: UserRole) => {
+    try {
+      await updateMemberRole(userId, nextRole);
+    } catch (err) {
+      notify((err as Error).message, (err as Error).message);
+    }
+  };
+
+  return (
+    <div className="team-layout">
+      {canClaimFirstSuper && (
+        <div className="panel padded super-claim-banner">
+          <div className="super-claim-copy">
+            <Crown size={20} aria-hidden="true" />
+            <div>
+              <strong>
+                {t(
+                  "Aktifkan Peran Super Admin Pertama",
+                  "Activate Founding Super Admin Role",
+                )}
+              </strong>
+              <p>
+                {t(
+                  "Belum ada akun Super Admin terdaftar. Elevasi akun Anda agar dapat mengelola Admin, Staff, & seluruh otoritas penuh Studio.",
+                  "No Super Admin account is active yet. Elevate your account to unlock full Studio governance across Admin, Staff, & Member tiers.",
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="button dark small"
+            disabled={elevating}
+            onClick={async () => {
+              if (!backendUser?.id) return;
+              setElevating(true);
+              try {
+                await updateMemberRole(backendUser.id, "super_admin");
+              } catch (err) {
+                notify((err as Error).message, (err as Error).message);
+              } finally {
+                setElevating(false);
+              }
+            }}
+          >
+            <Crown size={14} aria-hidden="true" />
+            {elevating
+              ? t("Memproses…", "Activating…")
+              : t("Aktifkan Super Admin", "Activate Super Admin")}
+          </button>
+        </div>
+      )}
+
+      <div className="panel padded">
+        <div className="panel-heading">
+          <div>
+            <h3>{t("Arsitektur Hak Akses 4 Tingkat", "4-Tier Access Architecture")}</h3>
+            <p className="panel-subnote">
+              {t(
+                "Pembagian tanggung jawab antar Super Admin, Admin, Staff, dan Member Valerie & CO.",
+                "Structured permissions across Super Admin, Admin, Staff, and Valerie & CO Members.",
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="team-matrix-grid">
+          {ROLE_SPECS.map((spec) => {
+            const count = db.members.filter(
+              (m) => (m.role || "member") === spec.role,
+            ).length;
+            const perks = t("id", "en") === "id" ? spec.perksId : spec.perksEn;
+            return (
+              <article
+                className={`team-role-card role-${spec.role}`}
+                key={spec.role}
+              >
+                <div className="team-role-head">
+                  <RoleBadge role={spec.role} t={t} />
+                  <b>
+                    {count} {t("akun", "accounts")}
+                  </b>
+                </div>
+                <p>{t(spec.scopeId, spec.scopeEn)}</p>
+                <ul>
+                  {perks.map((perk) => (
+                    <li key={perk}>
+                      <Check size={13} aria-hidden="true" />
+                      <span>{perk}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-heading">
+          <div>
+            <h3>{t("Direktori Tim & Akun", "Team & Role Directory")}</h3>
+            <p className="panel-subnote">
+              {t(
+                "Kelola penetapan peran untuk tim operasional dan pelanggan.",
+                "Manage role assignments across operational staff and members.",
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="table-toolbar">
+          <label className="search-input">
+            <Search size={16} />
+            <input
+              placeholder={t("Cari nama atau email…", "Search name or email…")}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </label>
+          <select
+            aria-label={t("Filter peran", "Filter role")}
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value as "all" | UserRole)}
+          >
+            <option value="all">{t("Semua peran", "All roles")}</option>
+            <option value="super_admin">Super Admin</option>
+            <option value="admin">Admin</option>
+            <option value="staff">Staff</option>
+            <option value="member">Member</option>
+          </select>
+        </div>
+        {filtered.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("Akun", "Account")}</th>
+                  <th>{t("Verifikasi", "Verification")}</th>
+                  <th>{t("Peran", "Role")}</th>
+                  <th>{t("Ubah Akses", "Assign Role")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((m) => (
+                  <tr key={m.id}>
+                    <td data-label={t("Akun", "Account")}>
+                      <div className="customer-name">
+                        {m.avatar ? (
+                          <img
+                            src={m.avatar}
+                            alt={m.name}
+                            className="avatar avatar-photo"
+                          />
+                        ) : (
+                          <span className="avatar">{m.name[0]}</span>
+                        )}
+                        <div>
+                          <b>{m.name}</b>
+                          <small>{m.email}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td data-label={t("Verifikasi", "Verification")}>
+                      <div className="verify-chip-row">
+                        <span
+                          className={`verify-pill ${m.emailVerified ? "ok" : "pending"}`}
+                        >
+                          Email
+                        </span>
+                        <span
+                          className={`verify-pill ${m.phoneVerified ? "ok" : "pending"}`}
+                        >
+                          WA
+                        </span>
+                      </div>
+                    </td>
+                    <td data-label={t("Peran", "Role")}>
+                      <RoleBadge role={m.role} t={t} />
+                    </td>
+                    <td data-label={t("Ubah Akses", "Assign Role")}>
+                      <RoleSelectControl
+                        target={m}
+                        callerRole={callerRole}
+                        currentUserId={backendUser?.id}
+                        superAdminCount={superAdminCount}
+                        onAssign={handleAssign}
+                        t={t}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty
+            title={t("Akun tidak ditemukan", "No matching accounts")}
+            body={t(
+              "Coba kata kunci pencarian lain atau ubah filter peran.",
+              "Try another search query or reset the role filter.",
+            )}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -4273,46 +4917,46 @@ function AddressesPanel() {
   if (!member) return null;
   return (
     <>
-      <div className="panel-heading">
-        <h3>{t("Alamat tersimpan", "Your saved addresses")}</h3>
-        <button className="button dark small" onClick={() => setEdit("new")}>
-          <Plus size={16} />
-          {t("Tambah alamat", "Add address")}
-        </button>
-      </div>
-      {member.addresses.length ? (
-        <div className="address-grid">
-          {member.addresses.map((a) => (
-            <article className="panel padded address-card" key={a.id}>
-              <div>
-                <MapPin size={22} />
-                <span>{a.label}</span>
-              </div>
-              <h3>{a.name}</h3>
-              <p>
-                {a.street}
-                <br />
-                {a.city}, {a.postal}
-              </p>
-              <p>{a.phone}</p>
-              <div className="address-actions">
-                <button className="text-link" onClick={() => setEdit(a)}>
-                  <Pencil size={14} />
-                  {t("Edit", "Edit")}
-                </button>
-                <button
-                  className="text-link danger"
-                  onClick={() => setRemove(a.id)}
-                >
-                  <Trash2 size={14} />
-                  {t("Hapus", "Remove")}
-                </button>
-              </div>
-            </article>
-          ))}
+      <div className="panel padded addresses-panel-shell">
+        <div className="panel-heading">
+          <h3>{t("Alamat tersimpan", "Your saved addresses")}</h3>
+          <button className="button dark small" onClick={() => setEdit("new")}>
+            <Plus size={16} />
+            {t("Tambah alamat", "Add address")}
+          </button>
         </div>
-      ) : (
-        <div className="panel">
+        {member.addresses.length ? (
+          <div className="address-grid">
+            {member.addresses.map((a) => (
+              <article className="address-card" key={a.id}>
+                <div>
+                  <MapPin size={22} />
+                  <span>{a.label}</span>
+                </div>
+                <h3>{a.name}</h3>
+                <p>
+                  {a.street}
+                  <br />
+                  {a.city}, {a.postal}
+                </p>
+                <p>{a.phone}</p>
+                <div className="address-actions">
+                  <button className="text-link" onClick={() => setEdit(a)}>
+                    <Pencil size={14} />
+                    {t("Edit", "Edit")}
+                  </button>
+                  <button
+                    className="text-link danger"
+                    onClick={() => setRemove(a.id)}
+                  >
+                    <Trash2 size={14} />
+                    {t("Hapus", "Remove")}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
           <Empty
             title={t("Ke mana langkah berikutnya?", "Where to next?")}
             body={t(
@@ -4322,8 +4966,8 @@ function AddressesPanel() {
             action={t("Tambah alamat", "Add address")}
             onAction={() => setEdit("new")}
           />
-        </div>
-      )}
+        )}
+      </div>
       {edit && (
         <Modal
           title={

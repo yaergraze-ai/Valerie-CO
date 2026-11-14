@@ -495,6 +495,232 @@ test("server authentication, authorization and commerce flow", async (t) => {
         assert.equal(r.data.order.total, p.priceIdr - expectedDiscount);
       },
     );
+    await t.test(
+      "four-tier roles (member, staff, admin, super_admin) enforce permissions accurately",
+      async () => {
+        const staffReg = await call("auth/register", {
+          name: "Atelier Staff",
+          email: "staff@example.com",
+          password: "staff-password-123",
+        });
+        assert.equal(staffReg.status, 200);
+        const staffId = staffReg.data.currentUser.id;
+        assert.equal(staffReg.data.currentUser.role, "member");
+
+        const ticketId = `TKT-${Date.now()}`;
+        const ticketRes = await call(
+          "patch",
+          {
+            changes: [
+              {
+                kind: "tickets",
+                data: {
+                  id: ticketId,
+                  subject: "Pertanyaan ukuran EU",
+                  message: "Apakah tersedia ukuran 39?",
+                },
+              },
+            ],
+          },
+          staffReg.cookie,
+        );
+        assert.equal(ticketRes.status, 200);
+
+        const adminState = await call("state", undefined, admin);
+        const adminId = adminState.data.currentUser.id;
+        assert.equal(adminState.data.currentUser.role, "admin");
+
+        // Member cannot assign roles
+        assert.equal(
+          (
+            await call(
+              "admin/role",
+              { userId: staffId, role: "staff" },
+              staffReg.cookie,
+            )
+          ).status,
+          403,
+        );
+
+        // Founding admin claims initial Super Admin
+        const claimSuper = await call(
+          "admin/role",
+          { userId: adminId, role: "super_admin" },
+          admin,
+        );
+        assert.equal(claimSuper.status, 200);
+        assert.equal(claimSuper.data.currentUser.role, "super_admin");
+
+        // Cannot remove the sole Super Admin
+        assert.equal(
+          (
+            await call(
+              "admin/role",
+              { userId: adminId, role: "admin" },
+              admin,
+            )
+          ).status,
+          409,
+        );
+
+        // Super Admin assigns Staff role
+        const makeStaff = await call(
+          "admin/role",
+          { userId: staffId, role: "staff" },
+          admin,
+        );
+        assert.equal(makeStaff.status, 200);
+        assert.equal(
+          makeStaff.data.members.find((m) => m.id === staffId).role,
+          "staff",
+        );
+
+        // Staff state includes orders/products/members/tickets but hides coupons/subscribers
+        const staffState = await call("state", undefined, staffReg.cookie);
+        assert.equal(staffState.status, 200);
+        assert.equal(staffState.data.currentUser.role, "staff");
+        assert.ok(staffState.data.orders.length > 0);
+        assert.deepEqual(staffState.data.coupons, []);
+        assert.deepEqual(staffState.data.subscribers, []);
+
+        // Staff can adjust product stock but cannot change price or delete product or coupons
+        const targetProduct = staffState.data.products[0];
+        const stockUpdate = await call(
+          "patch",
+          {
+            changes: [
+              {
+                kind: "products",
+                data: { ...targetProduct, stock: targetProduct.stock + 2 },
+              },
+            ],
+          },
+          staffReg.cookie,
+        );
+        assert.equal(stockUpdate.status, 200);
+        assert.equal(
+          stockUpdate.data.products.find((x) => x.id === targetProduct.id).stock,
+          targetProduct.stock + 2,
+        );
+        assert.equal(
+          (
+            await call(
+              "patch",
+              {
+                changes: [
+                  {
+                    kind: "products",
+                    data: { ...targetProduct, price: targetProduct.price + 10 },
+                  },
+                ],
+              },
+              staffReg.cookie,
+            )
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await call(
+              "patch",
+              {
+                changes: [
+                  { kind: "products_delete", data: { id: targetProduct.id } },
+                ],
+              },
+              staffReg.cookie,
+            )
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await call(
+              "patch",
+              {
+                changes: [
+                  {
+                    kind: "coupons",
+                    data: { code: "STAFF10", percent: 10, active: true },
+                  },
+                ],
+              },
+              staffReg.cookie,
+            )
+          ).status,
+          403,
+        );
+
+        // Staff can reply/close ticket and update order status, but cannot approve refund
+        const ticketReply = await call(
+          "patch",
+          {
+            changes: [
+              {
+                kind: "tickets",
+                data: {
+                  id: ticketId,
+                  reply: "Tersedia dan siap dikirim hari ini.",
+                  status: "closed",
+                },
+              },
+            ],
+          },
+          staffReg.cookie,
+        );
+        assert.equal(ticketReply.status, 200);
+        assert.equal(
+          ticketReply.data.tickets.find((x) => x.id === ticketId).status,
+          "closed",
+        );
+
+        const procOrder = staffState.data.orders.find(
+          (o) => o.status === "processing",
+        );
+        if (procOrder) {
+          const shipRes = await call(
+            "orders/update",
+            { id: procOrder.id, status: "shipped", tracking: "JNE-STAFF-01" },
+            staffReg.cookie,
+          );
+          assert.equal(shipRes.status, 200);
+          assert.equal(
+            (
+              await call(
+                "orders/refund",
+                { id: procOrder.id, action: "approve", reason: "test" },
+                staffReg.cookie,
+              )
+            ).status,
+          403,
+          );
+        }
+
+        // Secondary Admin cannot promote anyone to Super Admin once Super Admin exists
+        const opsReg = await call("auth/register", {
+          name: "Store Admin Two",
+          email: "admin2@example.com",
+          password: "admin2-password-123",
+        });
+        assert.equal(opsReg.status, 200);
+        const makeAdmin2 = await call(
+          "admin/role",
+          { userId: opsReg.data.currentUser.id, role: "admin" },
+          admin,
+        );
+        assert.equal(makeAdmin2.status, 200);
+        assert.equal(
+          (
+            await call(
+              "admin/role",
+              { userId: opsReg.data.currentUser.id, role: "super_admin" },
+              opsReg.cookie,
+            )
+          ).status,
+          403,
+        );
+      },
+    );
   } finally {
     await new Promise((r) => app.server.close(r));
     app.sql.close();

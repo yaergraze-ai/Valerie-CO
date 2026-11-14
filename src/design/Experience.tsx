@@ -24,7 +24,7 @@ import {
   Check,
   Globe,
 } from "lucide-react";
-import { useStore } from "./store";
+import { useStore, isStudioRole } from "./store";
 import { itemPrice, SHIPPING_RATES } from "./commerce";
 import { categoryCopy, type Item } from "./catalog";
 import { Modal, Empty } from "./ui";
@@ -710,7 +710,8 @@ export function Experience() {
         </footer>
       )}
       {!((view === "member" && !!member) ||
-        (view === "admin" && (!serverMode || backendUser?.role === "admin"))) && (
+        (view === "admin" &&
+          (!serverMode || isStudioRole(backendUser?.role)))) && (
         <LayoutGroup id="mobile-bottom-nav">
           <motion.nav
             className="mobile-bottom"

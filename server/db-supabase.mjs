@@ -379,6 +379,17 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
         }),
       );
     },
+    async updateUserRole(userId, role) {
+      const dbRole =
+        role === "admin" || role === "super_admin" ? "admin" : "member";
+      unwrap(
+        await sb.from("app_users").update({ role: dbRole }).eq("id", userId),
+      );
+      const member = await this.getMember(userId);
+      if (member) {
+        await this.putMember({ ...member, role });
+      }
+    },
 
     async saveGoogleChallenge(nonceHash, expiresAt, now) {
       unwrap(await sb.from("google_challenges").delete().lt("expires_at", now));

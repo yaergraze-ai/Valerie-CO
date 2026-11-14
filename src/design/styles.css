@@ -13035,7 +13035,7 @@ button.editorial-divider:hover {
   }
 
   .dashboard {
-    padding: 12px 14px calc(76px + env(safe-area-inset-bottom)) !important;
+    padding: 0 0 calc(84px + env(safe-area-inset-bottom)) !important;
   }
 
   .dashboard-footnote,
@@ -14435,5 +14435,454 @@ button.editorial-divider:hover {
   .receipt-totals {
     max-width: 100%;
     margin-left: 0;
+  }
+}
+
+/* ============================================================
+   Dashboard 4-Tier Role Architecture & Mobile/Desktop Polish
+   ============================================================ */
+
+.dashboard-eyebrow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.role-badge.role-super_admin {
+  background: linear-gradient(135deg, #2b1d14 0%, #4b3120 100%);
+  color: #f8e5c8;
+  border-color: rgba(212, 169, 108, 0.45);
+}
+
+.role-badge.role-admin {
+  background: rgba(139, 94, 60, 0.14);
+  color: #6f4526;
+  border-color: rgba(139, 94, 60, 0.32);
+}
+
+.role-badge.role-staff {
+  background: rgba(46, 111, 86, 0.12);
+  color: #215742;
+  border-color: rgba(46, 111, 86, 0.28);
+}
+
+.role-badge.role-member {
+  background: rgba(110, 92, 78, 0.1);
+  color: #5a4636;
+  border-color: rgba(110, 92, 78, 0.22);
+}
+
+.studio-role-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: rgba(255, 252, 247, 0.86);
+  border: 1px solid rgba(110, 82, 58, 0.16);
+  box-shadow: 0 6px 18px -14px rgba(36, 23, 15, 0.2);
+}
+
+.studio-role-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4f3b2c;
+}
+
+.studio-role-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(242, 232, 220, 0.72);
+  border: 1px solid rgba(110, 82, 58, 0.12);
+}
+
+.studio-role-pills button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #5b4534;
+  background: transparent;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.studio-role-pills button.active {
+  background: #2b1d14;
+  color: #fbf7f2;
+  box-shadow: 0 3px 10px rgba(36, 23, 15, 0.24);
+}
+
+.panel-subnote {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.staff-mode-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 22px 14px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: rgba(46, 111, 86, 0.08);
+  border: 1px solid rgba(46, 111, 86, 0.22);
+  color: #1f4e3c;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.staff-mode-banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.super-claim-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: linear-gradient(135deg, #fffdf9 0%, #f5ebdd 100%) !important;
+  border-color: rgba(139, 94, 60, 0.3) !important;
+}
+
+.super-claim-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1 1 280px;
+}
+
+.super-claim-copy svg {
+  flex-shrink: 0;
+  color: #6b4324;
+  margin-top: 2px;
+}
+
+.super-claim-copy strong {
+  display: block;
+  font-size: 14px;
+  color: #24170f;
+}
+
+.super-claim-copy p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #5b4534;
+  line-height: 1.45;
+}
+
+.team-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.team-matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.team-role-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 253, 249, 0.9);
+  border: 1px solid rgba(110, 82, 58, 0.16);
+}
+
+.team-role-card.role-super_admin {
+  border-color: rgba(139, 94, 60, 0.36);
+  background: linear-gradient(180deg, #fffcf6 0%, #f6ede0 100%);
+}
+
+.team-role-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.team-role-head b {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.team-role-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #3d2c20;
+}
+
+.team-role-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.team-role-card li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #5a4636;
+}
+
+.team-role-card li svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #2e6f56;
+}
+
+.role-select-input {
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 82, 58, 0.22);
+  background: #fffdfa;
+  color: #24170f;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.customer-role-editor {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(247, 241, 233, 0.72);
+  border: 1px solid rgba(110, 82, 58, 0.14);
+}
+
+.customer-role-editor label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #3d2c20;
+}
+
+.table-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 82, 58, 0.2);
+  background: rgba(255, 253, 249, 0.92);
+  color: #2b1d14;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.table-action-pill:hover {
+  background: #2b1d14;
+  color: #fbf7f2;
+  border-color: #2b1d14;
+}
+
+.table-price-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.addresses-panel-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.addresses-panel-shell .panel-heading {
+  padding: 0;
+  border-bottom: 1px solid rgba(110, 82, 58, 0.12);
+  padding-bottom: 14px;
+}
+
+.addresses-panel-shell .address-card {
+  border: 1px solid rgba(110, 82, 58, 0.14) !important;
+  background: rgba(255, 253, 249, 0.85) !important;
+  padding: 20px 22px !important;
+  border-radius: 16px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.addresses-panel-shell .address-card h3 {
+  margin: 10px 0 4px !important;
+  font-size: 16px !important;
+}
+
+.addresses-panel-shell .address-card p {
+  margin: 2px 0 !important;
+  line-height: 1.5;
+}
+
+.addresses-panel-shell .address-actions {
+  margin-top: 12px !important;
+  padding-top: 10px;
+  border-top: 1px solid rgba(110, 82, 58, 0.1);
+}
+
+.kanban-col,
+.kanban-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kanban-card-top {
+  min-width: 0;
+  gap: 10px;
+}
+
+.kanban-card-top .table-link {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.kanban-card-top strong {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.dashboard-content .table-scroll td .table-link {
+  display: inline-block;
+  max-width: 155px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+@media (min-width: 980px) {
+  .security-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    max-width: none !important;
+    align-items: start;
+  }
+
+  .security-score-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  .dashboard-content {
+    padding: 16px 14px 24px !important;
+  }
+
+  .dashboard-content .table-scroll td .table-link {
+    max-width: 100%;
+  }
+
+  .studio-role-bar {
+    padding: 10px 12px;
+  }
+
+  .studio-role-pills {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .studio-role-pills button {
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 7px 8px;
+  }
+
+  .staff-mode-banner {
+    margin: 0 14px 12px;
+  }
+
+  .inventory-watch {
+    grid-template-columns: 1fr !important;
+    padding: 4px 14px !important;
+  }
+
+  .kanban-board {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .dashboard-content .table-scroll td:first-child {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+  }
+
+  .dashboard-content .table-scroll td:last-child {
+    justify-content: space-between !important;
+  }
+
+  .modal .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .modal .form-grid .span-two {
+    grid-column: auto !important;
+  }
+
+  .order-modal-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .order-receipt-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .order-receipt-actions .button {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+
+  .customer-detail-head {
+    flex-wrap: wrap;
+  }
+
+  .addresses-panel-shell {
+    padding: 16px 14px !important;
   }
 }

@@ -34,11 +34,20 @@ export type MemberSecurity = {
   recoveryEmail?: string;
   lastPasswordChange?: string;
 };
+export type UserRole = "member" | "staff" | "admin" | "super_admin";
+export const isStudioRole = (role?: string | null) =>
+  role === "staff" || role === "admin" || role === "super_admin";
+export const isAdminRole = (role?: string | null) =>
+  role === "admin" || role === "super_admin";
+export const isSuperAdminRole = (role?: string | null) =>
+  role === "super_admin";
+
 export type Member = {
   id: string;
   name: string;
   email: string;
   phone: string;
+  role?: UserRole;
   emailVerified?: boolean;
   phoneVerified?: boolean;
   avatar?: string;
@@ -284,6 +293,9 @@ function useStoreState() {
     id: string;
     role: string;
   } | null>(null);
+  const [studioRolePreview, setStudioRolePreview] = useState<UserRole | null>(
+    null,
+  );
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [ready, setReady] = useState(!serverMode);
   const [backendError, setBackendError] = useState("");
@@ -690,7 +702,8 @@ function useStoreState() {
   ) => {
     const cleanReason = reason.trim() || "Permintaan refund / Refund request";
     const action =
-      options?.action || (backendUser?.role === "admin" ? "approve" : "request");
+      options?.action ||
+      (isAdminRole(backendUser?.role) ? "approve" : "request");
     if (serverMode) {
       receive(
         await api("orders/refund", {
@@ -883,8 +896,27 @@ function useStoreState() {
     receive(await api("member/verify/confirm", { channel, code }));
   };
   const logout = async () => {
+    setStudioRolePreview(null);
     if (serverMode) receive(await api("auth/logout", {}));
     else setMemberId(null);
+  };
+  const studioRole: UserRole = !serverMode
+    ? studioRolePreview || "super_admin"
+    : backendUser?.role === "super_admin" && studioRolePreview
+      ? studioRolePreview
+      : isStudioRole(backendUser?.role)
+        ? (backendUser?.role as UserRole)
+        : "member";
+  const updateMemberRole = async (userId: string, role: UserRole) => {
+    if (serverMode) {
+      receive(await api("admin/role", { userId, role }));
+    } else {
+      setDb((d) => ({
+        ...d,
+        members: d.members.map((m) => (m.id === userId ? { ...m, role } : m)),
+      }));
+    }
+    notify("Hak akses peran diperbarui", "Member role permissions updated");
   };
   const applyCoupon = async (code: string) => {
     if (serverMode) {
@@ -913,6 +945,10 @@ function useStoreState() {
     backendError,
     refresh,
     backendUser,
+    studioRole,
+    studioRolePreview,
+    setStudioRolePreview,
+    updateMemberRole,
     needsAdmin,
     pending,
     authenticate,
