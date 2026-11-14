@@ -82,8 +82,7 @@ create table if not exists public.members (
   updated_at timestamptz not null default now()
 );
 
-drop index if exists public.members_phone_partial_idx;
-create unique index if not exists members_phone_unique_idx on public.members (phone) where phone <> '';
+create index if not exists members_phone_partial_idx on public.members (phone) where phone <> '';
 
 create table if not exists public.orders (
   id text primary key,

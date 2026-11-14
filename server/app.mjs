@@ -1,6 +1,5 @@
 import {
   midtransClient,
-  extractSnapToken,
   verifyNotification,
   paymentState,
   idrQuote,
@@ -9,7 +8,6 @@ import { verifyGoogle, resetMailer, whatsappMailer } from "./auth-services.mjs";
 import { createSqliteStore } from "./db-sqlite.mjs";
 import { createSupabaseStore } from "./db-supabase.mjs";
 import { salesTotals } from "./sales.mjs";
-import { normalizeCanonicalPhone } from "./phone.mjs";
 import http from "node:http";
 import {
   randomBytes,
@@ -72,8 +70,18 @@ const email = (v) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) fail(400, "Invalid email");
   return e;
 };
-const normalizePhone = (v) =>
-  normalizeCanonicalPhone(v, () => fail(400, "Invalid WhatsApp number"));
+const normalizePhone = (v) => {
+  if (typeof v !== "string" || !v.trim()) return "";
+  const cleaned = v.replace(/[^\d+]/g, "");
+  const rawDigits = cleaned.replace(/^\+/, "");
+  const digits = rawDigits.startsWith("08")
+    ? `62${rawDigits.slice(1)}`
+    : rawDigits.startsWith("8")
+      ? `62${rawDigits}`
+      : rawDigits;
+  if (!/^\d{9,15}$/.test(digits)) fail(400, "Invalid WhatsApp number");
+  return `+${digits}`;
+};
 const number = (v, min, max) => {
   if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max)
     fail(400, "Invalid number");
@@ -512,20 +520,14 @@ export function createApp({
     const ownMember = u ? allMembers.find((m) => m.id === u.id) || null : null;
     const resolved = u ? await resolveEffectiveUser(u, ownMember) : null;
     const role = resolved?.role || null;
-    const [allCoupons, allSubscribers] = await Promise.all([
-      isAdminRole(role) ? db.listCoupons() : [],
-      isSuperAdminRole(role) ? db.listSubscribers() : [],
-    ]);
-    const snapScriptUrl = paymentProduction
-      ? "https://app.midtrans.com/snap/snap.js"
-      : "https://app.sandbox.midtrans.com/snap/snap.js";
+    const [allCoupons, allSubscribers] = isAdminRole(role)
+      ? await Promise.all([db.listCoupons(), db.listSubscribers()])
+      : [[], []];
     return {
       paymentConfig: {
         enabled: !!gateway,
         production: paymentProduction,
         shipping: idrShipping,
-        clientKey: process.env.MIDTRANS_CLIENT_KEY?.trim() || "",
-        snapScriptUrl,
       },
       sales: salesTotals(
         allOrders.filter(
@@ -538,7 +540,7 @@ export function createApp({
       products: allProducts.filter((p) => isStaffRole(role) || p.active),
       members: resolved
         ? allMembers
-            .filter((m) => isSuperAdminRole(role) || m.id === resolved.id)
+            .filter((m) => isStaffRole(role) || m.id === resolved.id)
             .map((m) => ({
               ...m,
               role: VALID_ROLES.has(m.role)
@@ -732,45 +734,6 @@ export function createApp({
           restoreStock: shouldRestore,
         });
       };
-      const preparePayment = async (order) => {
-        if (!order.payment || order.payment.status !== "pending") return order;
-        const existingUrl = order.payment.url || "";
-        const existingToken =
-          order.payment.snapToken || extractSnapToken(existingUrl);
-        if (existingUrl) {
-          if (existingToken && !order.payment.snapToken) {
-            const latest = await db.getOrder(order.id);
-            return await db.saveOrder({
-              ...latest,
-              payment: { ...latest.payment, snapToken: existingToken },
-            });
-          }
-          return order;
-        }
-        if (!gateway) return order;
-        let url = "";
-        let snapToken = "";
-        try {
-          if (typeof gateway.createSnap === "function") {
-            const snap = await gateway.createSnap(order);
-            url = snap?.redirectUrl || "";
-            snapToken = snap?.token || extractSnapToken(url);
-          } else {
-            url = await gateway.create(order);
-            snapToken = extractSnapToken(url);
-          }
-        } catch {
-          // Leave pending without failing checkout if remote gateway is unreachable
-          url = "";
-          snapToken = "";
-        }
-        if (!url && !snapToken) return order;
-        const latest = await db.getOrder(order.id);
-        return await db.saveOrder({
-          ...latest,
-          payment: { ...latest.payment, url, snapToken },
-        });
-      };
       if (webhook) {
         if (!verifyNotification(body, midtransKey))
           fail(403, "Invalid payment signature");
@@ -780,15 +743,9 @@ export function createApp({
       }
       if (path === "/api/payments/status") {
         requireUser();
-        let o = await db.getOrder(str(body.id, 80));
+        const o = await db.getOrder(str(body.id, 80));
         if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
           fail(403, "Order access denied");
-        if (
-          o.payment?.status === "pending" &&
-          (!o.payment.url || !o.payment.snapToken)
-        ) {
-          o = await preparePayment(o);
-        }
         await syncPayment(o.id);
         send(200, await state(u));
         return;
@@ -858,6 +815,28 @@ export function createApp({
         }
         return;
       }
+      const preparePayment = async (order) => {
+        if (
+          !order.payment ||
+          order.payment.url ||
+          order.payment.status !== "pending"
+        )
+          return order;
+        if (!gateway) return order;
+        let url = "";
+        try {
+          url = await gateway.create(order);
+        } catch {
+          // Fallback to built-in inline payment gateway when remote Midtrans key is offline/invalid
+          url = "";
+        }
+        if (!url) return order;
+        const latest = await db.getOrder(order.id);
+        return await db.saveOrder({
+          ...latest,
+          payment: { ...latest.payment, url },
+        });
+      };
       if (path.startsWith("/api/auth/") || path.startsWith("/api/member/verify/")) {
         const now = Date.now();
         if (attempts.size > 500) {
@@ -1480,9 +1459,8 @@ export function createApp({
                   }
                 : m.security;
             const nextPhone = normalizePhone(data.phone || "");
-            const prevPhone = normalizeCanonicalPhone(m.phone || "");
-            const phoneChanged = nextPhone !== prevPhone;
-            if (nextPhone) {
+            const phoneChanged = nextPhone !== (m.phone || "");
+            if (phoneChanged && nextPhone) {
               const conflict = await db.findMemberByPhone(nextPhone);
               if (conflict && conflict.id !== u.id)
                 fail(409, "WhatsApp number is already registered");

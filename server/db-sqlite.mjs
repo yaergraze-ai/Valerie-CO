@@ -1,7 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { normalizeCanonicalPhone } from "./phone.mjs";
 
 export function createSqliteStore(dbPath) {
   if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
@@ -29,33 +28,7 @@ export function createSqliteStore(dbPath) {
     return r ? JSON.parse(r.data) : null;
   };
 
-    const findMemberConflictByPhone = (phone, excludeId = null) => {
-      const targetKey = normalizeCanonicalPhone(phone) || phone;
-      if (!targetKey) return null;
-      return (
-        list("members").find((m) => {
-          if (!m.phone || (excludeId && m.id === excludeId)) return false;
-          const memberKey = normalizeCanonicalPhone(m.phone);
-          return memberKey ? memberKey === targetKey : m.phone === targetKey;
-        }) || null
-      );
-    };
-
-    const assertUniqueMemberPhone = (member) => {
-      if (!member || typeof member !== "object") return member;
-      const normalized = member.phone
-        ? normalizeCanonicalPhone(member.phone) || member.phone
-        : "";
-      if (normalized && findMemberConflictByPhone(normalized, member.id)) {
-        throw Object.assign(
-          new Error("WhatsApp number is already linked to another account"),
-          { status: 409 },
-        );
-      }
-      return { ...member, phone: normalized };
-    };
-
-    const put = (kind, id, data) => {
+  const put = (kind, id, data) => {
     sql
       .prepare(
         "INSERT INTO records(kind,id,data) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data",
@@ -162,11 +135,10 @@ export function createSqliteStore(dbPath) {
       return { ...m, role: u?.role || "member" };
     },
     async findMemberByPhone(phone) {
-      return findMemberConflictByPhone(phone);
+      return list("members").find((m) => m.phone === phone) || null;
     },
     async putMember(m) {
-      const next = assertUniqueMemberPhone(m);
-      put("members", next.id, next);
+      put("members", m.id, m);
     },
 
     async listTickets() {
@@ -212,14 +184,10 @@ export function createSqliteStore(dbPath) {
         .run(sub, userId);
     },
     async createUserWithMember(user, member, googleSub = null, { ignoreConflict = false } = {}) {
-      const normalizedMember = assertUniqueMemberPhone(member);
       const enrichedMember =
-        normalizedMember && typeof normalizedMember === "object"
-          ? {
-              ...normalizedMember,
-              role: normalizedMember.role || user.role || "member",
-            }
-          : normalizedMember;
+        member && typeof member === "object"
+          ? { ...member, role: member.role || user.role || "member" }
+          : member;
       return tx(() => {
         if (ignoreConflict) {
           const info = sql

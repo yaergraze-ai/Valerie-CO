@@ -658,33 +658,4 @@ test("Vercel api/index.js fails closed with 503 JSON when VERCEL lacks Supabase 
   }
 });
 
-test("Supabase store enforces canonical unique phones across formatting variants", async () => {
-  const client = makeFakeSupabaseClient({ schemaReady: true });
-  const store = createSupabaseStore({ client });
-
-  await store.putMember({
-    id: "m-1",
-    email: "one@example.com",
-    name: "Member One",
-    phone: "0812-9988-7766",
-    addresses: [],
-  });
-  const foundByPlus = await store.findMemberByPhone("+6281299887766");
-  const foundBySixTwo = await store.findMemberByPhone("6281299887766");
-  assert.equal(foundByPlus?.id, "m-1");
-  assert.equal(foundByPlus?.phone, "+6281299887766");
-  assert.equal(foundBySixTwo?.id, "m-1");
-
-  await assert.rejects(
-    () =>
-      store.putMember({
-        id: "m-2",
-        email: "two@example.com",
-        name: "Member Two",
-        phone: "6281299887766",
-        addresses: [],
-      }),
-    (err) => err?.status === 409,
-  );
-});
 
