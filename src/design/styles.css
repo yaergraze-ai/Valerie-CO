@@ -17334,3 +17334,784 @@ body:has(.member-landing) {
     padding-bottom: 12px;
   }
 }
+
+
+/* ══ Shopee-Grade Accordion Payment Selector & Lifecycle Popups ═════════ */
+.shopee-pay-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shopee-pay-group {
+  border: 1px solid var(--line, #e6dfd5);
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.shopee-pay-group.has-active,
+.shopee-pay-group-row.is-single.is-selected {
+  border-color: #2f2219;
+  box-shadow: 0 2px 10px rgba(47, 34, 25, 0.08);
+}
+
+.shopee-pay-group-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 0;
+  background: #ffffff;
+  color: var(--ink, #171412);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.shopee-pay-group-row.is-single {
+  border: 1px solid var(--line, #e6dfd5);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.shopee-pay-group-row.is-single.is-selected {
+  background: #faf7f2;
+}
+
+.shopee-pay-group-left {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.shopee-pay-group-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #f5efe6;
+  color: #4a3525;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.shopee-pay-group-text {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.shopee-pay-group-text b {
+  font-size: 13.8px;
+  font-weight: 600;
+  color: var(--ink, #171412);
+}
+
+.shopee-pay-chosen-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2f2219;
+  color: #fdfbf7;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.shopee-pay-group-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.shopee-pay-tag {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #7c6d5f;
+  white-space: nowrap;
+}
+
+.shopee-pay-chevron {
+  color: #7c6d5f;
+  transition: transform 0.2s ease;
+}
+
+.shopee-pay-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.shopee-radio-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid #c6bbae;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #ffffff;
+  transition: all 0.16s ease;
+}
+
+.shopee-radio-dot.checked {
+  border-color: #2f2219;
+  background: #2f2219;
+  box-shadow: inset 0 0 0 3.5px #ffffff;
+}
+
+.shopee-pay-sublist {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #f0eae1;
+  background: #fdfbf8;
+}
+
+.shopee-pay-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 15px 11px 20px;
+  border-bottom: 1px solid #f2ece4;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.shopee-pay-subrow:last-child {
+  border-bottom: 0;
+}
+
+.shopee-pay-subrow:hover {
+  background: #f8f3eb;
+}
+
+.shopee-pay-subrow.is-selected {
+  background: #f5efe6;
+}
+
+.shopee-pay-subrow-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.shopee-pay-subrow-brand b {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink, #171412);
+}
+
+/* ── Live Shopee Payment Sheet ──────────────────────────────────── */
+.shopee-pay-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 660px;
+  margin: 0 auto;
+}
+
+.shopee-pay-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line, #e6dfd5);
+}
+
+.shopee-pay-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.shopee-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ea580c;
+  animation: shopeePulse 1.6s infinite;
+}
+
+@keyframes shopeePulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.25);
+  }
+}
+
+.shopee-pay-topbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.shopee-order-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted, #6d6258);
+}
+
+.shopee-pay-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #2b1e16 0%, #443125 100%);
+  color: #fdfbf7;
+  align-items: center;
+}
+
+.shopee-pay-hero-amount small,
+.shopee-pay-hero-timer small {
+  display: block;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(253, 251, 247, 0.72);
+  margin-bottom: 4px;
+}
+
+.shopee-pay-amount-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.shopee-pay-amount-line strong {
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.shopee-copy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.shopee-pay-hero-timer {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.shopee-timer-digits {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.shopee-timer-digits span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #9a3412;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.shopee-timer-digits i {
+  font-style: normal;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.shopee-deadline-label {
+  font-size: 11.5px;
+  color: rgba(253, 251, 247, 0.8);
+}
+
+.shopee-bill-card {
+  border: 1px solid var(--line, #e6dfd5);
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shopee-bill-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0eae1;
+}
+
+.shopee-autosync-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.shopee-qr-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.shopee-qr-frame {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid #e6dfd5;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(23, 20, 18, 0.05);
+}
+
+.shopee-qr-frame .inline-qris-live-img {
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.shopee-qr-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.shopee-qr-caption strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted, #6d6258);
+}
+
+.shopee-qr-caption span {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink, #171412);
+}
+
+.shopee-qr-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shopee-va-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shopee-bill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #ede6db;
+  background: #fcfaf7;
+}
+
+.shopee-bill-row.is-primary {
+  background: #faf6ef;
+  border-color: #d6c8b6;
+}
+
+.shopee-bill-row small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted, #6d6258);
+  margin-bottom: 3px;
+}
+
+.shopee-bill-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #171412;
+  overflow-wrap: anywhere;
+}
+
+.shopee-va-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted, #6d6258);
+  line-height: 1.5;
+}
+
+.shopee-snap-embed .inline-gateway-iframe {
+  width: 100%;
+  min-height: 540px;
+  border: 1px solid #ede6db;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.shopee-init-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 14px 10px;
+}
+
+.shopee-init-fallback p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted, #6d6258);
+}
+
+.shopee-howto-details {
+  border-top: 1px solid #f0eae1;
+  padding-top: 12px;
+}
+
+.shopee-howto-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #171412);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shopee-howto-details summary::after {
+  content: "+";
+  font-size: 16px;
+  color: var(--muted, #6d6258);
+}
+
+.shopee-howto-details[open] summary::after {
+  content: "−";
+}
+
+.shopee-howto-details ol {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.8px;
+  color: var(--muted, #6d6258);
+  line-height: 1.5;
+}
+
+.shopee-pay-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.shopee-pay-actions .button.dark {
+  flex: 1 1 220px;
+}
+
+/* ── Cancel Drawer ──────────────────────────────────────────────── */
+.shopee-cancel-drawer {
+  border: 1px solid #f3c6c6;
+  border-radius: 16px;
+  background: #fff9f9;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shopee-cancel-drawer-head b {
+  display: block;
+  font-size: 14.5px;
+  color: #7f1d1d;
+}
+
+.shopee-cancel-drawer-head small {
+  font-size: 12.5px;
+  color: #7c5c5c;
+}
+
+.shopee-cancel-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.shopee-cancel-reason {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid #eedbdb;
+  background: #ffffff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.shopee-cancel-reason.is-selected {
+  border-color: #991b1b;
+  background: #fef2f2;
+  color: #7f1d1d;
+  font-weight: 500;
+}
+
+.shopee-cancel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button.danger {
+  background: #991b1b;
+  color: #ffffff;
+  border-color: #991b1b;
+}
+
+.button.danger:hover {
+  background: #7f1d1d;
+}
+
+/* ── Dedicated Outcome Cards (Expired / Failed / Cancelled / Refunded) */
+.shopee-outcome-card {
+  max-width: 580px;
+  margin: 0 auto;
+  border: 1px solid var(--line, #e6dfd5);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 26px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.shopee-outcome-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shopee-outcome-icon.is-expired {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.shopee-outcome-icon.is-failed {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.shopee-outcome-icon.is-cancelled {
+  background: #f5f5f4;
+  color: #57534e;
+}
+
+.shopee-outcome-icon.is-refunded {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.shopee-outcome-card h3 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--ink, #171412);
+}
+
+.shopee-outcome-sub {
+  margin: 0;
+  max-width: 460px;
+  font-size: 13.5px;
+  color: var(--muted, #6d6258);
+  line-height: 1.55;
+}
+
+.shopee-outcome-meta {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #faf7f2;
+  border: 1px solid #eee6db;
+  text-align: left;
+  margin: 4px 0;
+}
+
+.shopee-outcome-meta span {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted, #6d6258);
+}
+
+.shopee-outcome-meta b {
+  font-size: 13px;
+  color: var(--ink, #171412);
+  overflow-wrap: anywhere;
+}
+
+.status-tag-expired {
+  color: #c2410c !important;
+}
+
+.status-tag-failed {
+  color: #b91c1c !important;
+}
+
+.shopee-outcome-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* ── Turnstile & Checkout Security Footnote ─────────────────────── */
+.vco-turnstile-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.vco-turnstile-slot {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.vco-turnstile-err {
+  margin: 0;
+  font-size: 12px;
+  color: #b91c1c;
+  text-align: center;
+}
+
+.auth-turnstile {
+  margin: 6px 0 2px;
+}
+
+.checkout-security-footnote {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted, #6d6258);
+}
+
+@keyframes shopeeSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: shopeeSpin 0.9s linear infinite;
+}
+
+@media (max-width: 640px) {
+  .shopee-pay-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 15px 16px;
+  }
+
+  .shopee-pay-hero-timer {
+    text-align: left;
+    align-items: flex-start;
+  }
+
+  .shopee-bill-card {
+    padding: 14px;
+  }
+
+  .shopee-bill-row {
+    flex-wrap: wrap;
+  }
+
+  .shopee-bill-row code {
+    font-size: 16px;
+  }
+
+  .shopee-pay-tag {
+    display: none;
+  }
+
+  .shopee-outcome-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shopee-pay-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

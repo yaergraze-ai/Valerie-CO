@@ -17,11 +17,36 @@ export function paymentState(data) {
     (data.transaction_status === "capture" && data.fraud_status === "accept")
   )
     return "paid";
-  if (["deny", "cancel", "expire", "failure"].includes(data.transaction_status))
+  if (
+    ["deny", "cancel", "expire", "failure"].includes(data.transaction_status) ||
+    (data.transaction_status === "capture" && data.fraud_status === "deny")
+  )
     return "failed";
   if (["refund", "partial_refund"].includes(data.transaction_status))
     return "refunded";
   return "pending";
+}
+export function paymentOutcome(data) {
+  const ts = String(data?.transaction_status || "").toLowerCase();
+  const fs = String(data?.fraud_status || "").toLowerCase();
+  if (ts === "settlement" || (ts === "capture" && fs === "accept")) return "paid";
+  if (ts === "expire") return "expired";
+  if (ts === "cancel") return "cancelled";
+  if (ts === "deny" || ts === "failure" || (ts === "capture" && fs === "deny"))
+    return "failed";
+  if (ts === "refund" || ts === "partial_refund") return "refunded";
+  return "pending";
+}
+export function paymentFailureReason(data) {
+  const ts = String(data?.transaction_status || "").toLowerCase();
+  const fs = String(data?.fraud_status || "").toLowerCase();
+  if (ts === "expire") return "Batas waktu pembayaran telah berakhir";
+  if (ts === "cancel") return "Pembayaran dibatalkan di sistem gateway";
+  if (ts === "deny" || (ts === "capture" && fs === "deny"))
+    return String(data?.status_message || "Pembayaran ditolak oleh bank / penerbit kartu");
+  if (ts === "failure")
+    return String(data?.status_message || "Terjadi kendala saat memproses pembayaran");
+  return "";
 }
 const SNAP_ENABLED_MAP = {
   qris: ["other_qris", "gopay"],
@@ -244,6 +269,7 @@ export function midtransClient(key, production = false) {
       return extractDirectCharge(data, channelId, api);
     },
     status: (id) => request(api + "/v2/" + encodeURIComponent(id) + "/status"),
+    cancel: (id) => request(api + "/v2/" + encodeURIComponent(id) + "/cancel", {}),
     refund: (id, { amount, reason, refundKey }) =>
       request(api + "/v2/" + encodeURIComponent(id) + "/refund", {
         refund_key: refundKey,

@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, LockKeyhole } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import { useStore, type Address, type Order } from "./store";
 import { api } from "./backend";
 import {
   AddressFields,
   InlinePaymentAndReceipt,
+  PAYMENT_CHANNELS,
   PaymentChannelOptions,
 } from "./Shopping";
-import { MidtransGatewayBadge, PaymentPartnersStrip } from "./PaymentLogos";
+import { MidtransGatewayBadge } from "./PaymentLogos";
+import { TurnstileWidget } from "./TurnstileWidget";
+
 type Quote = {
   subtotal: number;
   discount: number;
   shipping: number;
   total: number;
 };
+
 export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const { db, member, t, money, checkout, refresh, notify } = useStore();
   const [express, setExpress] = useState(false);
@@ -28,10 +32,16 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [order, setOrder] = useState<Order | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
   const key = useRef(crypto.randomUUID());
   const submitting = useRef(false);
   const savedAddress = member?.addresses.find((a) => a.id === addressId);
   const totalItems = db.bag.reduce((sum, line) => sum + line.quantity, 0);
+  const turnstileSiteKey = db.paymentConfig?.turnstileSiteKey || "";
+  const selectedChannelInfo =
+    PAYMENT_CHANNELS.find((c) => c.id === selectedChannel) || PAYMENT_CHANNELS[0];
+
   useEffect(() => {
     if (order) return;
     const lifecycle = new AbortController();
@@ -46,21 +56,26 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
       });
     return () => lifecycle.abort();
   }, [db.bag, code, express, order]);
+
   useEffect(() => {
     if (!order?.id) return;
     const live = db.orders.find((o) => o.id === order.id);
     if (live && live !== order) setOrder(live);
   }, [db.orders, order]);
+
   useEffect(() => {
-    if (!order || order.payment?.status !== "pending") return;
+    const orderId = order?.id;
+    const paymentStatus = order?.payment?.status;
+    if (!orderId || paymentStatus !== "pending") return;
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
-      void api("payments/status", { id: order.id })
+      void api("payments/status", { id: orderId })
         .then(() => refresh())
         .catch(() => {});
-    }, 6000);
+    }, 4000);
     return () => clearInterval(interval);
-  }, [order, refresh]);
+  }, [order?.id, order?.payment?.status, refresh]);
+
   if (order)
     return (
       <InlinePaymentAndReceipt
@@ -73,10 +88,6 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           try {
             await api("payments/status", { id: order.id });
             await refresh();
-            notify(
-              "Status pembayaran disinkronkan",
-              "Payment status synchronized",
-            );
           } catch (e) {
             notify((e as Error).message, (e as Error).message);
           } finally {
@@ -86,15 +97,26 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
         onDone={onDone}
       />
     );
+
   const applyPromoCode = () => {
     setCode(promoInput.trim().toUpperCase());
   };
+
   return (
     <form
       className="checkout-grid"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!quote || submitting.current) return;
+        if (turnstileSiteKey && !turnstileToken) {
+          setError(
+            t(
+              "Selesaikan centang keamanan Cloudflare sebelum membuat pesanan.",
+              "Complete the Cloudflare security check before placing your order.",
+            ),
+          );
+          return;
+        }
         submitting.current = true;
         setBusy(true);
         setError("");
@@ -117,10 +139,13 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
               key.current,
               quote.total,
               selectedChannel,
+              turnstileToken || undefined,
             ),
           );
-        } catch (e) {
-          setError((e as Error).message);
+        } catch (err) {
+          setError((err as Error).message);
+          setTurnstileToken("");
+          setTurnstileResetSignal((n) => n + 1);
         } finally {
           setBusy(false);
           submitting.current = false;
@@ -132,7 +157,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           <div className="checkout-step-head">
             <span className="checkout-step-num">01</span>
             <div>
-              <h3>{t("Alamat pengiriman", "Delivery address")}</h3>
+              <h3>{t("Alamat Pengiriman", "Delivery Address")}</h3>
               <p>
                 {t(
                   "Pilih alamat tersimpan atau isi tujuan pengiriman baru.",
@@ -176,11 +201,11 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           <div className="checkout-step-head">
             <span className="checkout-step-num">02</span>
             <div>
-              <h3>{t("Metode pengiriman", "Delivery method")}</h3>
+              <h3>{t("Opsi Pengiriman", "Shipping Option")}</h3>
               <p>
                 {t(
-                  "Setiap pasang dikemas dengan kotak atelier & dustbag beludru.",
-                  "Every pair is packed with an atelier box & velvet dustbag.",
+                  "Dikemas rapi dengan kotak atelier & dustbag beludru.",
+                  "Packed in our signature atelier box & velvet dustbag.",
                 )}
               </p>
             </div>
@@ -195,12 +220,9 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
                 onChange={() => setExpress(false)}
               />
               <span>
-                <b>{t("Standar", "Standard")}</b>
+                <b>{t("Reguler", "Standard")}</b>
                 <small>
-                  {t(
-                    "Estimasi pengiriman: 3–5 hari kerja",
-                    "Estimated delivery: 3–5 business days",
-                  )}
+                  {t("Estimasi 3–5 hari kerja", "Estimated 3–5 business days")}
                 </small>
               </span>
               <strong>
@@ -209,7 +231,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
                     ? t("Gratis", "Free")
                     : !express
                       ? money(quote.shipping, "IDR")
-                      : t("Standar", "Standard")
+                      : t("Reguler", "Standard")
                   : "…"}
               </strong>
             </label>
@@ -222,12 +244,9 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
                 onChange={() => setExpress(true)}
               />
               <span>
-                <b>{t("Ekspres", "Express")}</b>
+                <b>{t("Ekspres Prioritas", "Express Priority")}</b>
                 <small>
-                  {t(
-                    "Estimasi pengiriman: 1–2 hari kerja",
-                    "Estimated delivery: 1–2 business days",
-                  )}
+                  {t("Estimasi 1–2 hari kerja", "Estimated 1–2 business days")}
                 </small>
               </span>
               <strong>
@@ -244,37 +263,27 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             <span className="checkout-step-num">03</span>
             <div className="checkout-step-head-body">
               <div className="checkout-step-title-row">
-                <h3>Midtrans · QRIS / Virtual Account</h3>
+                <h3>{t("Metode Pembayaran", "Payment Method")}</h3>
                 <MidtransGatewayBadge compact />
               </div>
               <p>
                 {t(
-                  "Pembayaran resmi dalam Rupiah (IDR) langsung di jendela ini tanpa pindah halaman.",
-                  "Official Rupiah (IDR) inline checkout right here without leaving the page.",
+                  "Pilih metode pembayaran di bawah — tagihan tampil instan setelah pesanan dibuat.",
+                  "Select a payment method below — your bill appears immediately upon order creation.",
                 )}
               </p>
-              <PaymentPartnersStrip compact showGateway={false} />
             </div>
           </div>
           <PaymentChannelOptions
             selectedChannel={selectedChannel}
             onSelect={setSelectedChannel}
           />
-          <div className="notice checkout-payment-notice">
-            <LockKeyhole size={18} />
-            <p>
-              {t(
-                "Pembayaran terenkripsi dalam Rupiah (IDR). Struk resmi Valerie & CO diterbitkan otomatis begitu pembayaran dikonfirmasi.",
-                "Encrypted Rupiah (IDR) checkout. Your official Valerie & CO receipt is issued automatically upon payment confirmation.",
-              )}
-            </p>
-          </div>
         </section>
       </div>
 
       <aside className="checkout-summary">
         <div className="checkout-summary-head">
-          <h3>{t("Ringkasan pesanan", "Order summary")}</h3>
+          <h3>{t("Ringkasan Pesanan", "Order Summary")}</h3>
           <span className="checkout-summary-count">
             {totalItems} {t("item", "items")}
           </span>
@@ -303,12 +312,12 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
         </div>
         <div className="coupon-input">
           <label className="sr-only" htmlFor="midtrans-coupon">
-            {t("Kode promo", "Promo code")}
+            {t("Kode voucher", "Voucher code")}
           </label>
           <input
             id="midtrans-coupon"
             name="coupon"
-            placeholder={t("Kode promo", "Promo code")}
+            placeholder={t("Kode voucher Valerie & CO", "Valerie & CO voucher")}
             value={promoInput}
             onChange={(e) => setPromoInput(e.target.value)}
             onKeyDown={(e) => {
@@ -326,12 +335,6 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             {t("Pakai", "Apply")}
           </button>
         </div>
-        <small className="checkout-coupon-hint">
-          {t(
-            "Masukkan kode voucher Valerie & CO bila tersedia.",
-            "Have a Valerie & CO voucher code? Apply it before confirming.",
-          )}
-        </small>
         {quote && (
           <div className="order-totals">
             <div>
@@ -341,7 +344,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             {code && (
               <div>
                 <span>
-                  {code}{" "}
+                  Voucher {code}{" "}
                   <button
                     type="button"
                     onClick={() => {
@@ -356,18 +359,30 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
               </div>
             )}
             <div>
-              <span>{t("Ongkir", "Shipping")}</span>
+              <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
               <span>
                 {quote.shipping
                   ? money(quote.shipping, "IDR")
-                  : t("Gratis", "Complimentary")}
+                  : t("Gratis", "Free")}
               </span>
             </div>
+            <div>
+              <span>{t("Metode Dipilih", "Selected Method")}</span>
+              <span>{selectedChannelInfo.badge}</span>
+            </div>
             <div className="grand-total">
-              <b>Total IDR</b>
+              <b>{t("Total Pembayaran", "Total Payment")}</b>
               <b>{money(quote.total, "IDR")}</b>
             </div>
           </div>
+        )}
+        {turnstileSiteKey && (
+          <TurnstileWidget
+            siteKey={turnstileSiteKey}
+            resetSignal={turnstileResetSignal}
+            onToken={setTurnstileToken}
+            onExpired={() => setTurnstileToken("")}
+          />
         )}
         {error && (
           <p className="error-text" role="alert">
@@ -380,10 +395,24 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           type="submit"
         >
           {busy
-            ? t("Menyiapkan pembayaran…", "Preparing payment…")
-            : t("Lanjut ke Midtrans", "Continue to Midtrans")}
+            ? t("Membuat Pesanan…", "Placing Order…")
+            : t("Buat Pesanan & Bayar", "Place Order & Pay")}
           {!busy && <ArrowRight size={16} />}
         </button>
+        <div className="checkout-security-footnote">
+          <ShieldCheck size={13} aria-hidden="true" />
+          <span>
+            {turnstileSiteKey
+              ? t(
+                  "Dilindungi Cloudflare Security & Enkripsi Midtrans",
+                  "Protected by Cloudflare Security & Midtrans Encryption",
+                )
+              : t(
+                  "Pembayaran otomatis & stok terverifikasi",
+                  "Verified stock & automatic payment sync",
+                )}
+          </span>
+        </div>
       </aside>
     </form>
   );

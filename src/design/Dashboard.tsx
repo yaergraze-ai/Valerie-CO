@@ -2410,7 +2410,7 @@ function OrderModal({
               ))}
             </div>
           )}
-          {o.payment && <PaymentPanel order={o} />}
+          {o.payment && <PaymentPanel order={o} onCloseModal={onClose} />}
 
           {o.refund && (
             <div
@@ -6187,12 +6187,51 @@ function orderValues(
     .join(" / ");
 }
 
-function PaymentPanel({ order }: { order: Order }) {
+function PaymentPanel({
+  order,
+  onCloseModal,
+}: {
+  order: Order;
+  onCloseModal?: () => void;
+}) {
   const { t, refresh, money, notify } = useStore();
   const [busy, setBusy] = useState(false);
-  const [showInlineGateway, setShowInlineGateway] = useState(
-    order.payment?.status === "pending",
-  );
+  const outcome = order.payment?.outcome || order.payment?.status;
+  const isNonPaidLifecycle =
+    order.payment?.status === "pending" ||
+    order.payment?.status === "failed" ||
+    order.payment?.status === "refunded" ||
+    outcome === "expired" ||
+    outcome === "cancelled" ||
+    outcome === "failed" ||
+    outcome === "refunded";
+  const [manualOpen, setManualOpen] = useState(false);
+  const showInlineGateway = isNonPaidLifecycle || manualOpen;
+
+  useEffect(() => {
+    if (order.payment?.status !== "pending") return;
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void api("payments/status", { id: order.id })
+        .then(() => refresh())
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [order.id, order.payment?.status, refresh]);
+
+  const statusBadgeText =
+    outcome === "expired"
+      ? t("WAKTU HABIS", "EXPIRED")
+      : outcome === "cancelled"
+        ? t("DIBATALKAN", "CANCELLED")
+        : outcome === "refunded"
+          ? "REFUNDED"
+          : outcome === "failed"
+            ? t("GAGAL", "FAILED")
+            : outcome === "paid"
+              ? t("LUNAS", "PAID")
+              : t("MENUNGGU BAYAR", "UNPAID");
+
   return (
     <div className="notice payment-panel">
       <div style={{ width: "100%" }}>
@@ -6205,52 +6244,49 @@ function PaymentPanel({ order }: { order: Order }) {
         </div>
         <p>
           {t("Status pembayaran", "Payment status")}:{" "}
-          <b>{order.payment?.status?.toUpperCase()}</b>
-          {order.payment?.transactionId && ` · Tx: ${order.payment.transactionId}`}
+          <b>{statusBadgeText}</b>
+          {order.payment?.transactionId && ` · Ref: ${order.payment.transactionId}`}
           {order.payment?.paidAt &&
-            ` · ${t("Lunas", "Paid")}: ${new Date(order.payment.paidAt).toLocaleString()}`}
+            ` · ${t("Lunas", "Paid")}: ${new Date(order.payment.paidAt).toLocaleString("id-ID")}`}
           {order.payment?.refundedAt &&
-            ` · Refunded: ${new Date(order.payment.refundedAt).toLocaleString()}`}
+            ` · Refund: ${new Date(order.payment.refundedAt).toLocaleString("id-ID")}`}
         </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-          {order.payment?.status === "pending" && (
+        {!showInlineGateway && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             <button
               type="button"
               className="button dark small"
-              onClick={() => setShowInlineGateway((v) => !v)}
+              onClick={() => setManualOpen(true)}
             >
-              {showInlineGateway
-                ? t("Tutup Panel Pembayaran", "Hide Payment Panel")
-                : t(
-                    "Bayar Sekarang di Halaman Ini (QRIS / VA / Kartu)",
-                    "Pay Now Inline (QRIS / VA / Card)",
-                  )}
+              {order.payment?.status === "paid"
+                ? t("Lihat Struk Pembayaran", "View Official Receipt")
+                : t("Lihat Rincian Pembayaran", "View Payment Details")}
             </button>
-          )}
-          <button
-            type="button"
-            className="button small"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await api("payments/status", { id: order.id });
-                await refresh();
-              } catch (e) {
-                notify((e as Error).message, (e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t("Periksa status pembayaran", "Check payment status")}
-          </button>
-        </div>
-        {showInlineGateway && order.payment?.status === "pending" && (
-          <div style={{ marginTop: 16 }}>
+            <button
+              type="button"
+              className="button small"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await api("payments/status", { id: order.id });
+                  await refresh();
+                } catch (e) {
+                  notify((e as Error).message, (e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {t("Periksa Status", "Check Status")}
+            </button>
+          </div>
+        )}
+        {showInlineGateway && (
+          <div style={{ marginTop: 14 }}>
             <InlinePaymentAndReceipt
               order={order}
-              startInPaymentStage={true}
+              startInPaymentStage={order.payment?.status !== "paid"}
               checkingRemote={busy}
               onCheckRemoteStatus={async () => {
                 setBusy(true);
@@ -6261,7 +6297,8 @@ function PaymentPanel({ order }: { order: Order }) {
                   setBusy(false);
                 }
               }}
-              onDone={() => setShowInlineGateway(false)}
+              onReorderNavigate={() => onCloseModal?.()}
+              onDone={() => setManualOpen(false)}
             />
           </div>
         )}

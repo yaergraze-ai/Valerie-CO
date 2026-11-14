@@ -5,6 +5,8 @@ import { createApp } from "../server/app.mjs";
 import {
   idrQuote,
   midtransClient,
+  paymentFailureReason,
+  paymentOutcome,
   supportsCoreCharge,
   verifyNotification,
 } from "../server/midtrans.mjs";
@@ -872,4 +874,307 @@ test("Midtrans Core API direct charge populates custom checkout data and falls b
   assert.equal(upgraded.status, 200);
   assert.equal(upgraded.data.order.payment.directCharge.vaNumber, "77889900112");
   assert.equal(upgraded.data.order.payment.directCharge.channel, "bca_va");
+});
+
+
+test("Payment lifecycle outcomes, buyer cancellation stock restore & Cloudflare Turnstile verification", async (t) => {
+  assert.equal(paymentOutcome({ transaction_status: "expire" }), "expired");
+  assert.equal(paymentOutcome({ transaction_status: "cancel" }), "cancelled");
+  assert.equal(
+    paymentOutcome({ transaction_status: "capture", fraud_status: "deny" }),
+    "failed",
+  );
+  assert.equal(
+    paymentOutcome({ transaction_status: "settlement" }),
+    "paid",
+  );
+  assert.equal(
+    paymentOutcome({ transaction_status: "refund" }),
+    "refunded",
+  );
+  assert.ok(paymentFailureReason({ transaction_status: "expire" }).length > 0);
+  assert.ok(paymentFailureReason({ transaction_status: "deny" }).length > 0);
+
+  const serverKey = "turnstile-lifecycle-midtrans-key";
+  let remoteMap = new Map();
+  let gatewayCancelCalls = 0;
+  const turnstileCalls = [];
+
+  const app = createApp({
+    dbPath: ":memory:",
+    setupToken: "setup-ts",
+    midtransKey: serverKey,
+    turnstileSiteKey: "0x4AAAAAAA_TEST_SITE_KEY",
+    turnstileSecretKey: "0x4AAAAAAA_TEST_SECRET_KEY",
+    verifyTurnstile: async (token, ip) => {
+      turnstileCalls.push({ token, ip });
+      return { success: token === "valid-cf-token" };
+    },
+    gateway: {
+      create: async (order) =>
+        `https://app.sandbox.midtrans.com/snap/v4/${order.id}`,
+      charge: async (order, channel) => ({
+        channel,
+        paymentType: channel,
+        transactionId: `TX-${order.id}`,
+        expiryTime: "2026-11-16 00:37:07",
+        qrUrl: "https://api.sandbox.midtrans.com/v2/qris/ts/qr-code",
+      }),
+      status: async (orderId) =>
+        remoteMap.get(orderId) || { status_code: "404" },
+      cancel: async (orderId) => {
+        gatewayCancelCalls++;
+        return { order_id: orderId, transaction_status: "cancel" };
+      },
+      refund: async (orderId) => ({
+        transaction_id: `REF-${orderId}`,
+      }),
+    },
+  });
+
+  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
+  t.after(() => app.close());
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const call = async (path, body, cookie = "", method = body ? "POST" : "GET") => {
+    const r = await fetch(`${base}/api/${path}`, {
+      method,
+      headers: {
+        ...(body ? { "content-type": "application/json" } : {}),
+        ...(cookie ? { cookie } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return {
+      status: r.status,
+      cookie: r.headers.get("set-cookie")?.split(";")[0] || "",
+      data: await r.json().catch(() => null),
+    };
+  };
+
+  // Auth & state expose turnstileSiteKey safely without exposing secret key
+  const authCfg = await call("auth/config");
+  assert.equal(authCfg.status, 200);
+  assert.equal(authCfg.data.turnstileSiteKey, "0x4AAAAAAA_TEST_SITE_KEY");
+
+  const setupRes = await call("auth/setup", {
+    name: "Studio",
+    email: "studio-ts@test.com",
+    password: "studio-password-9",
+    setupToken: "setup-ts",
+  });
+  assert.equal(setupRes.status, 200);
+
+  // Registration & login reject missing or invalid Turnstile tokens
+  const missingReg = await call("auth/register", {
+    name: "Bot User",
+    email: "bot@test.com",
+    password: "member-password-9",
+  });
+  assert.equal(missingReg.status, 400);
+
+  const badReg = await call("auth/register", {
+    name: "Bot User",
+    email: "bot@test.com",
+    password: "member-password-9",
+    turnstileToken: "forged-token",
+  });
+  assert.equal(badReg.status, 403);
+
+  const okReg = await call("auth/register", {
+    name: "Buyer One",
+    email: "buyer-ts@test.com",
+    password: "member-password-9",
+    turnstileToken: "valid-cf-token",
+  });
+  assert.equal(okReg.status, 200);
+  assert.equal(okReg.data.paymentConfig.turnstileSiteKey, "0x4AAAAAAA_TEST_SITE_KEY");
+
+  const otherReg = await call("auth/register", {
+    name: "Other Buyer",
+    email: "other-ts@test.com",
+    password: "member-password-9",
+    turnstileToken: "valid-cf-token",
+  });
+  assert.equal(otherReg.status, 200);
+
+  // Configure IDR price on first product
+  const prod = { ...okReg.data.products[0], priceIdr: 150000, stock: 5 };
+  assert.equal(
+    (
+      await call(
+        "patch",
+        { changes: [{ kind: "products", data: prod }] },
+        setupRes.cookie,
+      )
+    ).status,
+    200,
+  );
+
+  // Checkout rejects missing or invalid Turnstile token
+  const orderPayload = {
+    payment: "midtrans",
+    channel: "qris",
+    expectedTotal: 175000,
+    key: "ts-cancel-order",
+    lines: [
+      {
+        productId: prod.id,
+        quantity: 1,
+        size: prod.sizes[0],
+        color: prod.colors[0].name,
+      },
+    ],
+    address: {
+      id: "addr-ts-1",
+      label: "Home",
+      name: "Buyer One",
+      phone: "08123456789",
+      street: "Jl. Senopati 10",
+      city: "Jakarta",
+      postal: "12190",
+    },
+  };
+  // Total = 150000 + 25000 = 175000
+  const noTurnstileOrder = await call("orders/create", orderPayload, okReg.cookie);
+  assert.equal(noTurnstileOrder.status, 400);
+
+  const badTurnstileOrder = await call(
+    "orders/create",
+    { ...orderPayload, turnstileToken: "expired-cf-token" },
+    okReg.cookie,
+  );
+  assert.equal(badTurnstileOrder.status, 403);
+
+  const validOrderRes = await call(
+    "orders/create",
+    { ...orderPayload, turnstileToken: "valid-cf-token" },
+    okReg.cookie,
+  );
+  assert.equal(validOrderRes.status, 200);
+  const createdOrder = validOrderRes.data.order;
+  assert.equal(createdOrder.payment.outcome, "pending");
+  assert.equal(createdOrder.payment.expiryTime, "2026-11-16 00:37:07");
+  assert.equal(
+    validOrderRes.data.state.products.find((p) => p.id === prod.id).stock,
+    4,
+  );
+
+  // Another member cannot cancel Buyer One's order
+  const crossCancel = await call(
+    "orders/cancel",
+    { id: createdOrder.id, reason: "Unauthorized" },
+    otherReg.cookie,
+  );
+  assert.equal(crossCancel.status, 403);
+
+  // Buyer One cancels unpaid order -> calls gateway.cancel + sets cancelled outcome + restores stock once
+  const cancelRes = await call(
+    "orders/cancel",
+    { id: createdOrder.id, reason: "Ingin mengubah metode pembayaran" },
+    okReg.cookie,
+  );
+  assert.equal(cancelRes.status, 200);
+  assert.equal(gatewayCancelCalls, 1);
+  assert.equal(cancelRes.data.order.status, "cancelled");
+  assert.equal(cancelRes.data.order.payment.status, "failed");
+  assert.equal(cancelRes.data.order.payment.outcome, "cancelled");
+  assert.equal(cancelRes.data.order.payment.cancelledBy, "buyer");
+  assert.equal(
+    cancelRes.data.order.payment.cancelReason,
+    "Ingin mengubah metode pembayaran",
+  );
+  assert.equal(
+    cancelRes.data.state.products.find((p) => p.id === prod.id).stock,
+    5,
+  );
+
+  // Idempotent second cancel does not double-restore stock
+  const cancelAgain = await call(
+    "orders/cancel",
+    { id: createdOrder.id, reason: "Duplicate" },
+    okReg.cookie,
+  );
+  assert.equal(cancelAgain.status, 200);
+  assert.equal(
+    cancelAgain.data.state.products.find((p) => p.id === prod.id).stock,
+    5,
+  );
+
+  // Webhook 'expire' records granular outcome="expired" + statusReason while preserving status="failed"
+  const expOrderRes = await call(
+    "orders/create",
+    {
+      ...orderPayload,
+      key: "ts-expire-order",
+      turnstileToken: "valid-cf-token",
+    },
+    okReg.cookie,
+  );
+  assert.equal(expOrderRes.status, 200);
+  const expOrder = expOrderRes.data.order;
+  remoteMap.set(expOrder.id, {
+    order_id: expOrder.id,
+    currency: "IDR",
+    gross_amount: "175000.00",
+    transaction_status: "expire",
+    payment_type: "qris",
+    transaction_id: "TX-EXPIRED-1",
+  });
+  const expWebhook = {
+    order_id: expOrder.id,
+    status_code: "202",
+    gross_amount: "175000.00",
+    transaction_status: "expire",
+  };
+  expWebhook.signature_key = createHash("sha512")
+    .update(
+      expWebhook.order_id +
+        expWebhook.status_code +
+        expWebhook.gross_amount +
+        serverKey,
+    )
+    .digest("hex");
+  const expWhRes = await call("payments/midtrans/notification", expWebhook);
+  assert.equal(expWhRes.status, 200);
+
+  const memberState = await call("state", undefined, okReg.cookie);
+  const syncedExpired = memberState.data.orders.find(
+    (x) => x.id === expOrder.id,
+  );
+  assert.equal(syncedExpired.status, "cancelled");
+  assert.equal(syncedExpired.payment.status, "failed");
+  assert.equal(syncedExpired.payment.outcome, "expired");
+  assert.ok(syncedExpired.payment.statusReason.length > 0);
+  assert.equal(
+    memberState.data.products.find((p) => p.id === prod.id).stock,
+    5,
+  );
+
+  // Cancel is rejected (409) if Midtrans already shows settled payment
+  const paidCheckRes = await call(
+    "orders/create",
+    {
+      ...orderPayload,
+      key: "ts-paid-no-cancel",
+      turnstileToken: "valid-cf-token",
+    },
+    okReg.cookie,
+  );
+  assert.equal(paidCheckRes.status, 200);
+  const paidTarget = paidCheckRes.data.order;
+  remoteMap.set(paidTarget.id, {
+    order_id: paidTarget.id,
+    currency: "IDR",
+    gross_amount: "175000.00",
+    transaction_status: "settlement",
+    payment_type: "qris",
+    transaction_id: "TX-PAID-99",
+  });
+  const lateCancelAttempt = await call(
+    "orders/cancel",
+    { id: paidTarget.id, reason: "Too late" },
+    okReg.cookie,
+  );
+  assert.equal(lateCancelAttempt.status, 409);
+  assert.ok(turnstileCalls.length >= 6);
 });

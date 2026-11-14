@@ -125,13 +125,23 @@ export function Experience() {
         setView("shop");
         return;
       }
+      if (v === "checkout") {
+        setView("shop");
+        setOverlay("checkout");
+        return;
+      }
       if (
         ["home", "shop", "wishlist", "member", "admin"].includes(v)
       )
         setView(v as View);
     };
+    const openCheckout = () => setOverlay("checkout");
     window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
+    window.addEventListener("solere:open-checkout", openCheckout);
+    return () => {
+      window.removeEventListener("hashchange", handler);
+      window.removeEventListener("solere:open-checkout", openCheckout);
+    };
   }, []);
   useEffect(() => {
     document.documentElement.lang = lang;

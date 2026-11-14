@@ -2,6 +2,8 @@ import {
   midtransClient,
   verifyNotification,
   paymentState,
+  paymentOutcome,
+  paymentFailureReason,
   idrQuote,
   supportsCoreCharge,
 } from "./midtrans.mjs";
@@ -33,7 +35,7 @@ const SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(self)",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; frame-src 'self' https://accounts.google.com https://app.midtrans.com https://app.sandbox.midtrans.com https://www.openstreetmap.org; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com https://*.tile.openstreetmap.org https://api.midtrans.com https://api.sandbox.midtrans.com; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://nominatim.openstreetmap.org;",
+    "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://challenges.cloudflare.com; frame-src 'self' https://accounts.google.com https://app.midtrans.com https://app.sandbox.midtrans.com https://challenges.cloudflare.com https://www.openstreetmap.org; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com https://*.tile.openstreetmap.org https://api.midtrans.com https://api.sandbox.midtrans.com; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://challenges.cloudflare.com https://nominatim.openstreetmap.org;",
 };
 const hashToken = (t) => createHash("sha256").update(t).digest("hex");
 const hashPassword = (p) => {
@@ -216,6 +218,10 @@ export function createApp({
   midtransKey = process.env.MIDTRANS_SERVER_KEY,
   paymentProduction = process.env.MIDTRANS_PRODUCTION === "true",
   gateway = midtransClient(midtransKey, paymentProduction),
+  turnstileSiteKey =
+    process.env.TURNSTILE_SITE_KEY || process.env.VITE_TURNSTILE_SITE_KEY || "",
+  turnstileSecretKey = process.env.TURNSTILE_SECRET_KEY || "",
+  verifyTurnstile = null,
   idrShipping = {
     standard: Number(process.env.SHIPPING_STANDARD_IDR || 25000),
     express: Number(process.env.SHIPPING_EXPRESS_IDR || 50000),
@@ -233,6 +239,48 @@ export function createApp({
   const googleClientId = googleClientSecretMisconfigured
     ? ""
     : trimmedGoogleClientId;
+  const trimmedTurnstileSiteKey = String(turnstileSiteKey || "").trim();
+  const trimmedTurnstileSecretKey = String(turnstileSecretKey || "").trim();
+  const checkTurnstile = async (token, remoteIp = "") => {
+    if (!trimmedTurnstileSecretKey) return;
+    const cleaned = str(token, 4096);
+    if (!cleaned) {
+      fail(400, "Selesaikan verifikasi keamanan Cloudflare terlebih dahulu");
+    }
+    const verifier =
+      typeof verifyTurnstile === "function"
+        ? verifyTurnstile
+        : async (responseToken, ip) => {
+            const form = new URLSearchParams({
+              secret: trimmedTurnstileSecretKey,
+              response: responseToken,
+              ...(ip ? { remoteip: ip } : {}),
+            });
+            const res = await fetch(
+              "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: form.toString(),
+                signal: AbortSignal.timeout(8000),
+              },
+            );
+            if (!res.ok) return { success: false };
+            return await res.json();
+          };
+    let verdict;
+    try {
+      verdict = await verifier(cleaned, remoteIp);
+    } catch {
+      fail(502, "Verifikasi Cloudflare sementara tidak tersedia. Coba lagi.");
+    }
+    if (!verdict || verdict.success !== true) {
+      fail(
+        403,
+        "Verifikasi keamanan Cloudflare gagal atau kedaluwarsa. Muat ulang centang keamanan.",
+      );
+    }
+  };
   if (Object.values(idrShipping).some((n) => !Number.isSafeInteger(n) || n < 0))
     throw Error("Invalid IDR shipping configuration");
   const db =
@@ -534,6 +582,7 @@ export function createApp({
         production: paymentProduction,
         shipping: idrShipping,
         coreApiEnabled: typeof gateway?.charge === "function",
+        turnstileSiteKey: trimmedTurnstileSiteKey || null,
       },
       ...(paymentQueue ? { paymentQueue } : {}),
       sales: salesTotals(
@@ -638,6 +687,7 @@ export function createApp({
           ...(googleClientSecretMisconfigured
             ? { googleIssue: "secret_in_client_id" }
             : {}),
+          turnstileSiteKey: trimmedTurnstileSiteKey || null,
           nonce,
           recovery: !!sendReset,
           emailOtp: !!sendReset,
@@ -679,6 +729,14 @@ export function createApp({
         requireUser();
         if (!isAdminRole(u.role)) fail(403, "Admin access required");
       };
+      const requestIp =
+        (trustProxy
+          ? String(forwardedFor || "")
+              .split(",")[0]
+              .trim()
+          : "") ||
+        remoteAddress ||
+        "";
       const finishUrl =
         useSecureCookie && host && !/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)
           ? `https://${host}/#member`
@@ -699,17 +757,29 @@ export function createApp({
         )
           fail(409, "Payment amount mismatch");
         const next = paymentState(remote);
+        const outcome = paymentOutcome(remote);
+        const rawStatus = String(remote.transaction_status || "").toLowerCase();
+        const statusReason = paymentFailureReason(remote);
+        const resolvedExpiry = String(
+          remote.expiry_time ||
+            order.payment.expiryTime ||
+            order.payment.directCharge?.expiryTime ||
+            "",
+        );
         if (
           order.payment.status === "refunded" ||
           (order.payment.status === "paid" && next !== "refunded") ||
           (order.payment.status === "failed" && next !== "paid")
-        )
+        ) {
           return order;
+        }
         if (order.payment.status === "failed" && next === "paid")
           fail(409, "Late settlement requires manual reconciliation");
         if (
           order.payment.status === next &&
-          (!remote.transaction_id || order.payment.transactionId === remote.transaction_id)
+          order.payment.outcome === outcome &&
+          (!remote.transaction_id || order.payment.transactionId === remote.transaction_id) &&
+          (!resolvedExpiry || order.payment.expiryTime === resolvedExpiry)
         )
           return order;
         const shouldRestore =
@@ -728,11 +798,24 @@ export function createApp({
           payment: {
             ...order.payment,
             status: next,
+            outcome,
+            ...(rawStatus ? { rawStatus } : {}),
+            ...(statusReason ? { statusReason } : {}),
+            ...(resolvedExpiry ? { expiryTime: resolvedExpiry } : {}),
             method: remote.payment_type || order.payment.method || "",
             transactionId:
               remote.transaction_id || order.payment.transactionId || "",
             ...(next === "paid" && !order.payment.paidAt
               ? { paidAt: now }
+              : {}),
+            ...(outcome === "expired" && !order.payment.expiredAt
+              ? { expiredAt: now }
+              : {}),
+            ...(outcome === "cancelled" && !order.payment.cancelledAt
+              ? {
+                  cancelledAt: now,
+                  cancelledBy: order.payment.cancelledBy || "gateway",
+                }
               : {}),
             ...(next === "refunded" ? { refundedAt: now } : {}),
             updatedAt: now,
@@ -1009,6 +1092,7 @@ export function createApp({
                   gatewayId: o.id,
                 }),
                 status: "paid",
+                outcome: "paid",
                 method: chosenMethod,
                 transactionId: txId,
                 paidAt,
@@ -1044,9 +1128,11 @@ export function createApp({
               const directCharge = await gateway.charge(latest, ch, { finishUrl });
               const patch = {
                 channel: ch,
+                outcome: "pending",
                 method: directCharge.paymentType || ch,
                 transactionId:
                   directCharge.transactionId || latest.payment.transactionId || "",
+                ...(directCharge.expiryTime ? { expiryTime: directCharge.expiryTime } : {}),
                 directCharge,
               };
               return typeof db.setOrderPaymentInitAtomic === "function"
@@ -1098,9 +1184,11 @@ export function createApp({
               const directCharge = await gateway.charge(latest, ch, { finishUrl });
               const patch = {
                 channel: ch,
+                outcome: "pending",
                 method: directCharge.paymentType || ch,
                 transactionId:
                   directCharge.transactionId || latest.payment.transactionId || "",
+                ...(directCharge.expiryTime ? { expiryTime: directCharge.expiryTime } : {}),
                 directCharge,
               };
               return typeof db.setOrderPaymentInitAtomic === "function"
@@ -1338,6 +1426,7 @@ export function createApp({
           }
         }
         if (path === "/api/auth/otp/request") {
+          await checkTurnstile(body.turnstileToken, requestIp);
           send(
             200,
             await deliverOtp({
@@ -1427,6 +1516,7 @@ export function createApp({
         return { channel, destination, memberEmail, phone };
       };
       if (path === "/api/auth/register/request") {
+        await checkTurnstile(body.turnstileToken, requestIp);
         validRegistrationName(body.name);
         validPassword(body.password);
         const { channel, destination } = await resolveRegistrationTarget(body);
@@ -1476,6 +1566,9 @@ export function createApp({
           path,
         )
       ) {
+        if (path !== "/api/auth/setup") {
+          await checkTurnstile(body.turnstileToken, requestIp);
+        }
         const phone = normalizePhone(body.phone || "");
         const e =
           typeof body.email === "string" && body.email.trim()
@@ -1844,6 +1937,7 @@ export function createApp({
           fail(400, "Choose Midtrans payment");
         if (body.payment === "midtrans" && !gateway)
           fail(503, "Midtrans is not configured");
+        await checkTurnstile(body.turnstileToken, requestIp);
         const m = await db.getMember(u.id);
         const created = await db.createOrderAtomic(u.id, key, (catalog, getCoupon) => {
           const lines = body.lines;
@@ -1960,6 +2054,7 @@ export function createApp({
                   payment: {
                     provider: "midtrans",
                     status: "pending",
+                    outcome: "pending",
                     sandbox: !paymentProduction,
                     ...(selectedChannel ? { channel: selectedChannel } : {}),
                   },
@@ -1969,6 +2064,93 @@ export function createApp({
         });
         const order = await preparePayment(created.order);
         send(200, { order, state: await state(u) });
+        return;
+      }
+      if (path === "/api/orders/cancel") {
+        requireUser();
+        const orderId = str(body.id, 80);
+        const reason =
+          str(body.reason, 200) ||
+          (isStaffRole(u.role)
+            ? "Dibatalkan oleh studio"
+            : "Dibatalkan oleh pembeli");
+        await enqueueOrderTask(orderId, async () => {
+          let o = await db.getOrder(orderId);
+          if (!o) fail(404, "Order not found");
+          if (!isStaffRole(u.role) && o.memberId !== u.id)
+            fail(403, "Order access denied");
+          if (
+            o.status === "cancelled" ||
+            o.payment?.outcome === "cancelled" ||
+            o.payment?.status === "refunded"
+          ) {
+            return;
+          }
+          if (o.status !== "processing")
+            fail(
+              409,
+              "Pesanan yang sudah diproses pengiriman tidak dapat dibatalkan",
+            );
+          if (o.payment?.status === "paid")
+            fail(
+              409,
+              "Pembayaran sudah terkonfirmasi lunas; ajukan pengembalian dana pada detail pesanan.",
+            );
+          if (o.payment && gateway) {
+            if (typeof gateway.status === "function") {
+              try {
+                const synced = await syncPaymentOnce(orderId);
+                if (synced) o = synced;
+              } catch (err) {
+                if (err?.status === 409) throw err;
+              }
+            }
+            if (o.payment?.status === "paid")
+              fail(
+                409,
+                "Pembayaran baru saja terkonfirmasi lunas. Muat ulang halaman untuk melihat struk.",
+              );
+            if (o.status === "cancelled" || o.payment?.status === "failed") {
+              return;
+            }
+            if (typeof gateway.cancel === "function") {
+              try {
+                await gateway.cancel(o.id);
+              } catch {
+                // Snap redirect orders that were never opened on Midtrans return 404/412 on /cancel; safe to proceed locally
+              }
+            }
+          }
+          const now = new Date().toISOString();
+          const actor =
+            isStaffRole(u.role) && o.memberId !== u.id ? "admin" : "buyer";
+          await db.transitionOrderAtomic({
+            orderId: o.id,
+            expectedStatus: o.status,
+            expectedPaymentStatus: o.payment?.status || "",
+            nextOrder: {
+              ...o,
+              status: "cancelled",
+              ...(o.payment
+                ? {
+                    payment: {
+                      ...o.payment,
+                      status: "failed",
+                      outcome: "cancelled",
+                      rawStatus: "cancel",
+                      statusReason: reason,
+                      cancelReason: reason,
+                      cancelledBy: actor,
+                      cancelledAt: now,
+                      updatedAt: now,
+                    },
+                  }
+                : {}),
+            },
+            restoreStock: true,
+          });
+        });
+        send(200, { order: await db.getOrder(orderId), state: await state(u) });
         return;
       }
       if (path === "/api/orders/update") {
@@ -2121,6 +2303,9 @@ export function createApp({
                     payment: {
                       ...latest.payment,
                       status: "refunded",
+                      outcome: "refunded",
+                      statusReason:
+                        latest.refund?.reason || reason || "Dana dikembalikan ke pembeli",
                       refundedAt: now,
                       updatedAt: now,
                     },

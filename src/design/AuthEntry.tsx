@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useStore } from "./store";
 import { api } from "./backend";
+import { TurnstileWidget } from "./TurnstileWidget";
 
 type GoogleIdentity = {
   initialize: (options: {
@@ -32,6 +33,7 @@ declare global {
 type AuthConfigResponse = {
   googleClientId?: string | null;
   googleIssue?: string;
+  turnstileSiteKey?: string | null;
   nonce?: string;
 };
 const GOOGLE_CHALLENGE_TTL_MS = 20 * 60 * 1000;
@@ -445,6 +447,7 @@ export function MemberEntry({
     verifyRegisterOtp,
     needsAdmin,
     serverMode,
+    db,
   } = useStore();
   const pillGroupId = useId();
   const [mode, setMode] = useState<
@@ -468,6 +471,27 @@ export function MemberEntry({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [authConfigSiteKey, setAuthConfigSiteKey] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
+
+  useEffect(() => {
+    if (!serverMode) return;
+    let active = true;
+    getGoogleAuthConfig()
+      .then((cfg) => {
+        if (active && cfg?.turnstileSiteKey) {
+          setAuthConfigSiteKey(String(cfg.turnstileSiteKey));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [serverMode]);
+
+  const effectiveTurnstileSiteKey =
+    authConfigSiteKey || db.paymentConfig?.turnstileSiteKey || "";
 
   const resetOtpState = () => {
     setOtpSent(false);
@@ -486,18 +510,24 @@ export function MemberEntry({
     resetOtpState();
     setError("");
     setMessage("");
+    setTurnstileToken("");
+    setTurnstileResetSignal((n) => n + 1);
   };
   const changeChannel = (next: "email" | "whatsapp") => {
     setChannel(next);
     resetOtpState();
     setError("");
     setMessage("");
+    setTurnstileToken("");
+    setTurnstileResetSignal((n) => n + 1);
   };
   const changeMethod = (next: "password" | "otp") => {
     setAuthMethod(next);
     resetOtpState();
     setError("");
     setMessage("");
+    setTurnstileToken("");
+    setTurnstileResetSignal((n) => n + 1);
   };
 
   const creating = mode === "register" || mode === "setup";
@@ -551,8 +581,11 @@ export function MemberEntry({
       channel: ch,
       email: ch === "email" ? target : undefined,
       phone: ch === "phone" ? target : undefined,
+      ...(turnstileToken ? { turnstileToken } : {}),
     });
     setOtpSent(true);
+    setTurnstileToken("");
+    setTurnstileResetSignal((n) => n + 1);
     applyOtpChallenge(target, display, res);
   };
 
@@ -564,8 +597,11 @@ export function MemberEntry({
       email: ch === "email" ? target : undefined,
       phone: ch === "phone" ? target : undefined,
       password: passwordDraft,
+      ...(turnstileToken ? { turnstileToken } : {}),
     });
     setRegisterOtpSent(true);
+    setTurnstileToken("");
+    setTurnstileResetSignal((n) => n + 1);
     applyOtpChallenge(target, display, res);
   };
 
@@ -701,6 +737,20 @@ export function MemberEntry({
             return;
           }
 
+          const needsTurnstileToken =
+            Boolean(effectiveTurnstileSiteKey) &&
+            !inOtpStep2 &&
+            (mode === "login" || mode === "register");
+          if (needsTurnstileToken && !turnstileToken) {
+            setError(
+              t(
+                "Selesaikan centang keamanan Cloudflare terlebih dahulu.",
+                "Complete the Cloudflare security check first.",
+              ),
+            );
+            return;
+          }
+
           setBusy(true);
           try {
             if (verifyingRegister) {
@@ -827,6 +877,7 @@ export function MemberEntry({
                 phone: channel === "whatsapp" && mode === "login" ? normalizedPhone : "",
                 password,
                 setupToken: String(f.get("token") || "").trim(),
+                ...(turnstileToken ? { turnstileToken } : {}),
               });
               setPasswordDraft("");
               setConfirmDraft("");
@@ -834,6 +885,8 @@ export function MemberEntry({
             }
           } catch (err) {
             setError(translateAuthError((err as Error).message, t));
+            setTurnstileToken("");
+            setTurnstileResetSignal((n) => n + 1);
           } finally {
             setBusy(false);
           }
@@ -931,6 +984,15 @@ export function MemberEntry({
                       disabled={busy}
                       onClick={async () => {
                         setError("");
+                        if (effectiveTurnstileSiteKey && !turnstileToken) {
+                          setError(
+                            t(
+                              "Selesaikan centang keamanan Cloudflare terlebih dahulu sebelum kirim ulang OTP.",
+                              "Complete the Cloudflare security check before resending OTP.",
+                            ),
+                          );
+                          return;
+                        }
                         setBusy(true);
                         try {
                           if (verifyingRegister) {
@@ -940,6 +1002,8 @@ export function MemberEntry({
                           }
                         } catch (err) {
                           setError(translateAuthError((err as Error).message, t));
+                          setTurnstileToken("");
+                          setTurnstileResetSignal((n) => n + 1);
                         } finally {
                           setBusy(false);
                         }
@@ -1072,6 +1136,17 @@ export function MemberEntry({
                 <input name="token" required autoComplete="off" />
               </label>
             )}
+
+            {effectiveTurnstileSiteKey &&
+              (mode === "login" || mode === "register") && (
+                <TurnstileWidget
+                  siteKey={effectiveTurnstileSiteKey}
+                  resetSignal={turnstileResetSignal}
+                  onToken={setTurnstileToken}
+                  onExpired={() => setTurnstileToken("")}
+                  className="auth-turnstile"
+                />
+              )}
 
             {error && (
               <p role="alert" className="error-text">

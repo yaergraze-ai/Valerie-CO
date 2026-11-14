@@ -111,6 +111,10 @@ export type Order = {
   payment?: {
     provider: "midtrans";
     status: "pending" | "paid" | "failed" | "refunded";
+    outcome?: "pending" | "paid" | "expired" | "cancelled" | "failed" | "refunded";
+    rawStatus?: string;
+    statusReason?: string;
+    expiryTime?: string;
     url?: string;
     sandbox: boolean;
     channel?: string;
@@ -118,6 +122,10 @@ export type Order = {
     method?: string;
     transactionId?: string;
     paidAt?: string;
+    expiredAt?: string;
+    cancelledAt?: string;
+    cancelledBy?: "buyer" | "admin" | "gateway";
+    cancelReason?: string;
     refundedAt?: string;
     updatedAt?: string;
   };
@@ -185,6 +193,7 @@ type Database = {
     production: boolean;
     shipping: { standard: number; express: number; freeAbove: number };
     coreApiEnabled?: boolean;
+    turnstileSiteKey?: string | null;
   };
   paymentQueue?: {
     summary: { pending: number; processing: number; done: number; failed: number };
@@ -627,6 +636,7 @@ function useStoreState() {
     key = crypto.randomUUID(),
     expectedTotal?: number,
     channel?: string,
+    turnstileToken?: string,
   ) => {
     if (serverMode) {
       const result = await api("orders/create", {
@@ -635,6 +645,7 @@ function useStoreState() {
         express,
         lines: dbRef.current.bag,
         key,
+        ...(turnstileToken ? { turnstileToken } : {}),
         ...(dbRef.current.paymentConfig?.enabled
           ? { payment: "midtrans", expectedTotal, ...(channel ? { channel } : {}) }
           : { currency }),
@@ -890,6 +901,7 @@ function useStoreState() {
       phone?: string;
       password: string;
       setupToken?: string;
+      turnstileToken?: string;
     },
   ) => {
     receive(await api(`auth/${mode}`, data));
@@ -898,6 +910,7 @@ function useStoreState() {
     channel: "email" | "phone";
     email?: string;
     phone?: string;
+    turnstileToken?: string;
   }): Promise<{ ok: boolean; channel: string; sent: boolean; previewCode?: string }> => {
     return api("auth/otp/request", data);
   };
@@ -919,6 +932,7 @@ function useStoreState() {
     email?: string;
     phone?: string;
     password: string;
+    turnstileToken?: string;
   }): Promise<{ ok: boolean; channel: string; sent: boolean; previewCode?: string }> => {
     return api("auth/register/request", data);
   };
@@ -995,6 +1009,111 @@ function useStoreState() {
     if (result?.state) receive(result.state);
     if (result?.chargeNotice) notify(result.chargeNotice, result.chargeNotice);
     return (result?.order as Order) || null;
+  };
+  const cancelOrder = async (
+    id: string,
+    reason = "Dibatalkan oleh pembeli",
+  ) => {
+    if (serverMode) {
+      const result = await api("orders/cancel", { id, reason });
+      if (result?.state) receive(result.state);
+      notify(
+        "Pesanan dibatalkan & stok dikembalikan",
+        "Order cancelled & stock restored",
+      );
+      return (result?.order as Order) || null;
+    }
+    const now = new Date().toISOString();
+    const existing = dbRef.current.orders.find((o) => o.id === id);
+    if (!existing) throw new Error("Pesanan tidak ditemukan");
+    if (existing.payment?.status === "paid")
+      throw new Error("Pesanan yang sudah dibayar tidak dapat dibatalkan langsung");
+    const updated: Order = {
+      ...existing,
+      status: "cancelled",
+      ...(existing.payment
+        ? {
+            payment: {
+              ...existing.payment,
+              status: "failed",
+              outcome: "cancelled",
+              statusReason: reason,
+              cancelReason: reason,
+              cancelledBy: "buyer",
+              cancelledAt: now,
+              updatedAt: now,
+            },
+          }
+        : {}),
+    };
+    setDb((d) => ({
+      ...d,
+      orders: d.orders.map((o) => (o.id === id ? updated : o)),
+      products: d.products.map((p) => {
+        const restoreQty = existing.items
+          .filter((i) => i.productId === p.id)
+          .reduce((s, i) => s + i.quantity, 0);
+        return restoreQty ? { ...p, stock: p.stock + restoreQty } : p;
+      }),
+    }));
+    notify(
+      "Pesanan dibatalkan & stok dikembalikan",
+      "Order cancelled & stock restored",
+    );
+    return updated;
+  };
+  const reorderOrderItems = (items: Order["items"]) => {
+    const cur = dbRef.current;
+    let added = 0;
+    let nextBag = [...cur.bag];
+    for (const item of items) {
+      const prod = cur.products.find((p) => p.id === item.productId && p.active);
+      if (!prod || prod.stock < 1) continue;
+      const size = prod.sizes.includes(item.size)
+        ? item.size
+        : prod.sizes[0] || item.size;
+      const color = prod.colors.some((c) => c.name === item.color)
+        ? item.color
+        : prod.colors[0]?.name || item.color;
+      const existingIdx = nextBag.findIndex(
+        (l) =>
+          l.productId === prod.id && l.size === size && l.color === color,
+      );
+      if (existingIdx >= 0) {
+        const mergedQty = Math.min(
+          prod.stock,
+          nextBag[existingIdx].quantity + item.quantity,
+        );
+        nextBag[existingIdx] = {
+          ...nextBag[existingIdx],
+          quantity: Math.max(1, mergedQty),
+        };
+      } else {
+        nextBag = [
+          ...nextBag,
+          {
+            productId: prod.id,
+            size,
+            color,
+            quantity: Math.max(1, Math.min(prod.stock, item.quantity)),
+          },
+        ];
+      }
+      added++;
+    }
+    if (added > 0) {
+      write({ ...cur, bag: nextBag });
+      notify(
+        "Item pesanan dimasukkan ke tas belanja",
+        "Order items added to your bag",
+      );
+    } else {
+      notify(
+        "Stok produk pada pesanan ini sedang habis",
+        "Items from this order are currently out of stock",
+      );
+    }
+    return added;
   };
   const logout = async () => {
     if (typeof window !== "undefined") {
@@ -1089,6 +1208,8 @@ function useStoreState() {
     authenticateGoogle,
     completeOrderPayment,
     chargeOrderPayment,
+    cancelOrder,
+    reorderOrderItems,
     requestAuthOtp,
     verifyAuthOtp,
     requestRegisterOtp,
