@@ -1,5 +1,6 @@
 import {
   midtransClient,
+  extractSnapToken,
   verifyNotification,
   paymentState,
   idrQuote,
@@ -515,11 +516,16 @@ export function createApp({
       isAdminRole(role) ? db.listCoupons() : [],
       isSuperAdminRole(role) ? db.listSubscribers() : [],
     ]);
+    const snapScriptUrl = paymentProduction
+      ? "https://app.midtrans.com/snap/snap.js"
+      : "https://app.sandbox.midtrans.com/snap/snap.js";
     return {
       paymentConfig: {
         enabled: !!gateway,
         production: paymentProduction,
         shipping: idrShipping,
+        clientKey: process.env.MIDTRANS_CLIENT_KEY?.trim() || "",
+        snapScriptUrl,
       },
       sales: salesTotals(
         allOrders.filter(
@@ -726,6 +732,45 @@ export function createApp({
           restoreStock: shouldRestore,
         });
       };
+      const preparePayment = async (order) => {
+        if (!order.payment || order.payment.status !== "pending") return order;
+        const existingUrl = order.payment.url || "";
+        const existingToken =
+          order.payment.snapToken || extractSnapToken(existingUrl);
+        if (existingUrl) {
+          if (existingToken && !order.payment.snapToken) {
+            const latest = await db.getOrder(order.id);
+            return await db.saveOrder({
+              ...latest,
+              payment: { ...latest.payment, snapToken: existingToken },
+            });
+          }
+          return order;
+        }
+        if (!gateway) return order;
+        let url = "";
+        let snapToken = "";
+        try {
+          if (typeof gateway.createSnap === "function") {
+            const snap = await gateway.createSnap(order);
+            url = snap?.redirectUrl || "";
+            snapToken = snap?.token || extractSnapToken(url);
+          } else {
+            url = await gateway.create(order);
+            snapToken = extractSnapToken(url);
+          }
+        } catch {
+          // Leave pending without failing checkout if remote gateway is unreachable
+          url = "";
+          snapToken = "";
+        }
+        if (!url && !snapToken) return order;
+        const latest = await db.getOrder(order.id);
+        return await db.saveOrder({
+          ...latest,
+          payment: { ...latest.payment, url, snapToken },
+        });
+      };
       if (webhook) {
         if (!verifyNotification(body, midtransKey))
           fail(403, "Invalid payment signature");
@@ -735,9 +780,15 @@ export function createApp({
       }
       if (path === "/api/payments/status") {
         requireUser();
-        const o = await db.getOrder(str(body.id, 80));
+        let o = await db.getOrder(str(body.id, 80));
         if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
           fail(403, "Order access denied");
+        if (
+          o.payment?.status === "pending" &&
+          (!o.payment.url || !o.payment.snapToken)
+        ) {
+          o = await preparePayment(o);
+        }
         await syncPayment(o.id);
         send(200, await state(u));
         return;
@@ -807,28 +858,6 @@ export function createApp({
         }
         return;
       }
-      const preparePayment = async (order) => {
-        if (
-          !order.payment ||
-          order.payment.url ||
-          order.payment.status !== "pending"
-        )
-          return order;
-        if (!gateway) return order;
-        let url = "";
-        try {
-          url = await gateway.create(order);
-        } catch {
-          // Fallback to built-in inline payment gateway when remote Midtrans key is offline/invalid
-          url = "";
-        }
-        if (!url) return order;
-        const latest = await db.getOrder(order.id);
-        return await db.saveOrder({
-          ...latest,
-          payment: { ...latest.payment, url },
-        });
-      };
       if (path.startsWith("/api/auth/") || path.startsWith("/api/member/verify/")) {
         const now = Date.now();
         if (attempts.size > 500) {

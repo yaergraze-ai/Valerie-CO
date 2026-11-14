@@ -33,37 +33,16 @@ import { Showcase } from "./Showcase";
 import { showcaseImage } from "./showcase-data";
 import { CutoutImg } from "./bg-remove";
 const Dashboard = lazy(() => import("./Dashboard"));
-type View = "home" | "shop" | "wishlist" | "member" | "admin" | "detail";
-
-/** Interleave active footwear across core silhouettes so curated grids stay varied. */
-function pickCurated(items: Item[], category: string, limit = 8): Item[] {
-  if (category !== "All") {
-    return items.filter((p) => p.category === category).slice(0, limit);
-  }
-  const order = ["Boots", "Heels", "Sneakers", "Flatshoes"];
-  const picked: Item[] = [];
-  const seen = new Set<string>();
-  for (let round = 0; picked.length < limit && round < limit; round += 1) {
-    let added = false;
-    for (const cat of order) {
-      const match = items.filter((p) => p.category === cat)[round];
-      if (match && !seen.has(match.id) && picked.length < limit) {
-        seen.add(match.id);
-        picked.push(match);
-        added = true;
-      }
-    }
-    if (!added) break;
-  }
-  for (const p of items) {
-    if (picked.length >= limit) break;
-    if (!seen.has(p.id)) {
-      seen.add(p.id);
-      picked.push(p);
-    }
-  }
-  return picked;
-}
+type View =
+  | "home"
+  | "shop"
+  | "atelier"
+  | "wishlist"
+  | "member"
+  | "admin"
+  | "detail";
+type AtelierTab = "layanan" | "promo" | "pengiriman" | "vip";
+const CATALOG_PAGE_SIZE = 8;
 
 export function Experience() {
   const s = useStore();
@@ -78,19 +57,23 @@ export function Experience() {
           ? "member"
           : location.hash === "#shop" || location.hash === "#categories"
             ? "shop"
-            : location.hash === "#wishlist"
-              ? "wishlist"
-              : "home",
+            : location.hash === "#atelier" || location.hash === "#about"
+              ? "atelier"
+              : location.hash === "#wishlist"
+                ? "wishlist"
+                : "home",
   );
+  const [atelierTab, setAtelierTab] = useState<AtelierTab>("layanan");
   const [category, setCategory] = useState("All");
-  const [homeCat, setHomeCat] = useState("All");
+  const [shopPage, setShopPage] = useState(1);
+  const [wishPage, setWishPage] = useState(1);
   const [selected, setSelected] = useState<string | null>(() =>
     location.hash.startsWith("#product/")
       ? decodeURIComponent(location.hash.slice(9))
       : null,
   );
   const [overlay, setOverlay] = useState<
-    "search" | "bag" | "checkout" | "entry" | "about" | null
+    "search" | "bag" | "checkout" | "entry" | null
   >(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("featured");
@@ -102,6 +85,10 @@ export function Experience() {
     location.hash = v;
     window.scrollTo({ top: 0, behavior: "instant" });
   };
+  const goAtelier = (tab: AtelierTab = "layanan") => {
+    setAtelierTab(tab);
+    go("atelier");
+  };
   useEffect(() => {
     const handler = () => {
       const v = location.hash.slice(1);
@@ -110,9 +97,8 @@ export function Experience() {
         setView("home");
         return;
       }
-      if (v === "about") {
-        setView("home");
-        setOverlay("about");
+      if (v === "about" || v === "atelier") {
+        setView("atelier");
         return;
       }
       if (v.startsWith("product/")) {
@@ -125,7 +111,7 @@ export function Experience() {
         return;
       }
       if (
-        ["home", "shop", "wishlist", "member", "admin"].includes(v)
+        ["home", "shop", "atelier", "wishlist", "member", "admin"].includes(v)
       )
         setView(v as View);
     };
@@ -138,6 +124,7 @@ export function Experience() {
     const pageTitles: Record<View, string> = {
       home: `${brandName} — ${t("Koleksi Alas Kaki Kurasi", "Curated Footwear")}`,
       shop: `${t("Koleksi", "Collection")} — ${brandName}`,
+      atelier: `Atelier — ${brandName}`,
       wishlist: `${t("Favorit Saya", "Wishlist")} — ${brandName}`,
       member: `${t("Area Member", "Member Space")} — ${brandName}`,
       admin: `${t("Studio Admin", "Admin Studio")} — ${brandName}`,
@@ -156,6 +143,7 @@ export function Experience() {
   const shop = (cat = "All", nextSort = "featured") => {
     setCategory(cat);
     setSort(nextSort);
+    setShopPage(1);
     setQuery("");
     go("shop");
   };
@@ -170,6 +158,25 @@ export function Experience() {
             ? Number(b.fresh) - Number(a.fresh)
             : 0,
     );
+  const totalShopPages = Math.max(
+    1,
+    Math.ceil(filtered.length / CATALOG_PAGE_SIZE),
+  );
+  const safeShopPage = Math.min(shopPage, totalShopPages);
+  const paginatedShop = filtered.slice(
+    (safeShopPage - 1) * CATALOG_PAGE_SIZE,
+    safeShopPage * CATALOG_PAGE_SIZE,
+  );
+  const wishItems = products.filter((p) => db.favorites.includes(p.id));
+  const totalWishPages = Math.max(
+    1,
+    Math.ceil(wishItems.length / CATALOG_PAGE_SIZE),
+  );
+  const safeWishPage = Math.min(wishPage, totalWishPages);
+  const paginatedWish = wishItems.slice(
+    (safeWishPage - 1) * CATALOG_PAGE_SIZE,
+    safeWishPage * CATALOG_PAGE_SIZE,
+  );
   const bagCount = db.bag.reduce((n, l) => n + l.quantity, 0);
   const language = (
     <button
@@ -243,8 +250,9 @@ export function Experience() {
               {t("TERBARU", "NEW IN")}
             </button>
             <button
-              className={`reference-nav-link ${overlay === "about" ? "active-nav" : ""}`}
-              onClick={() => setOverlay("about")}
+              className={`reference-nav-link ${view === "atelier" ? "active-nav" : ""}`}
+              aria-current={view === "atelier" ? "page" : undefined}
+              onClick={() => goAtelier("layanan")}
             >
               {t("ATELIER", "ATELIER")}
             </button>
@@ -357,8 +365,11 @@ export function Experience() {
         tabIndex={-1}
       >
         {view === "home" && (
-          <>
-            <MobileHome onShop={shop} />
+          <div className="home-focused-canvas">
+            <MobileHome
+              onShop={shop}
+              onAtelier={() => goAtelier("promo")}
+            />
             <Showcase
               onOpenBag={() => setOverlay("bag")}
               renderDetail={(p, close) => (
@@ -373,148 +384,27 @@ export function Experience() {
                 />
               )}
             />
-            <button
-              type="button"
-              className="editorial-divider"
-              onClick={() =>
-                document
-                  .getElementById("curated-section")
-                  ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth" })
-              }
-            >
-              <span>VALERIE & CO ATELIER / KOLEKSI EKSKLUSIF 2026</span>
-              <span>
-                {t(
-                  "Langkah elegan dimulai di sini · Kulit Italia pilihan · Bantalan empuk seharian · Garansi tukar ukuran 14 hari.",
-                  "Elegance begins with every step · Artisanal leather · All-day cloud cushioning · 14-day complimentary size exchange.",
-                )}
-              </span>
-              <ArrowDown />
-            </button>
-            <section className="section curated-section" id="curated-section">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">
-                    {t("KOLEKSI TERLARIS & PILIHAN UTAMA", "MOST COVETED · ATELIER SIGNATURE")}
-                  </span>
-                  <h2>
-                    {t(
-                      "Sepatu yang langsung mencuri perhatian.",
-                      "Crafted to turn every head.",
-                    )}
-                  </h2>
-                  <p className="section-lead-copy">
-                    {t(
-                      "Dirancang khusus dengan proporsi presisi dan bantalan anatomis lembut—nyaman dipakai dari pagi hingga malam tanpa kompromi gaya.",
-                      "Engineered with architectural proportions and anatomical cushioning—effortless luxury from morning meetings to evening soirées.",
-                    )}
-                  </p>
-                </div>
-                <button className="text-link" onClick={() => shop(homeCat)}>
-                  {t("Lihat seluruh koleksi", "Explore full archive")}
-                  <ArrowUpRight size={16} />
+            <div className="home-bottom-bar">
+              <span>VALERIE &amp; CO · EDISI 2026</span>
+              <div className="home-bottom-actions">
+                <button
+                  type="button"
+                  className="button dark small"
+                  onClick={() => shop()}
+                >
+                  {t("Jelajahi Koleksi", "Browse Collection")}
+                  <ArrowUpRight size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="button ghost small"
+                  onClick={() => goAtelier("layanan")}
+                >
+                  {t("Layanan Atelier & Promo", "Atelier & Offers")}
                 </button>
               </div>
-              <div className="curated-filter-pills" role="tablist" aria-label={t("Filter pilihan rumah", "Curated filter")}>
-                {["All", "Sneakers", "Heels", "Boots", "Flatshoes"].map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    role="tab"
-                    aria-selected={homeCat === cat}
-                    className={homeCat === cat ? "active" : ""}
-                    onClick={() => setHomeCat(cat)}
-                  >
-                    {categoryCopy[cat][lang]}
-                  </button>
-                ))}
-              </div>
-              <div className="product-grid">
-                {pickCurated(products, homeCat, 8).map((p) => (
-                    <ProductCard
-                      key={p.id}
-                      product={p}
-                      onSelect={() => detail(p)}
-                    />
-                  ))}
-              </div>
-            </section>
-            <motion.section
-              className="campaign section"
-              style={{ transformPerspective: 1200 }}
-              initial={reduced ? false : { opacity: 0, y: 30, rotateX: 5 }}
-              whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-              viewport={{ once: true, amount: 0.05 }}
-              transition={{ duration: reduced ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <div className="campaign-copy">
-                <span className="eyebrow">
-                  {t("EDISI TERBATAS · CRAFTSMANSHIP TINGKAT TINGGI", "LIMITED ATELIER RELEASE · MASTER CRAFTSMANSHIP")}
-                </span>
-                <h2>
-                  {t(
-                    "Keanggunan yang\nterasa di setiap pijakan.",
-                    "Unforgettable poise\nin every stride.",
-                  )}
-                </h2>
-                <p>
-                  {t(
-                    "Setiap pasang Valerie & CO dibuat dalam jumlah terbatas dengan kulit premium pilihan, jahitan tangan presisi, dan sol anti-selip. Gunakan kode promo SOLERE10 saat checkout untuk potongan eksklusif 10%.",
-                    "Each pair is crafted in small batches using supple full-grain materials, precision hand-finishing, and slip-resistant outsoles. Apply code SOLERE10 at checkout for 10% off your order.",
-                  )}
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                  <button className="button light" onClick={() => shop()}>
-                    {t("Miliki Koleksi Sekarang", "Claim Your Pair Now")}
-                    <ArrowUpRight size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="campaign-voucher-chip"
-                    onClick={() => {
-                      navigator.clipboard?.writeText("SOLERE10");
-                      s.notify(
-                        "Kode voucher SOLERE10 disalin! Gunakan saat checkout untuk diskon 10%.",
-                        "Voucher code SOLERE10 copied! Apply at checkout for 10% off.",
-                      );
-                    }}
-                  >
-                    {t("Salin Voucher: SOLERE10 (-10%)", "Copy Voucher: SOLERE10 (-10%)")}
-                  </button>
-                </div>
-              </div>
-              <motion.button
-                type="button"
-                className="campaign-image"
-                whileHover={reduced ? undefined : { scale: 1.012 }}
-                whileTap={reduced ? undefined : { scale: 0.99 }}
-                transition={{ type: "spring", stiffness: 280, damping: 24 }}
-                onClick={() => {
-                  const featured =
-                    products.find((p) => p.id === "vco-zavira-espresso-ankle") ||
-                    products[0];
-                  if (featured) detail(featured);
-                }}
-              >
-                <span>{t("01 / EDISI ATELIER 2026", "01 / THE 2026 ATELIER EDIT")}</span>
-                <CutoutImg
-                  src="/shoes/02_Boots/03_zavira_espresso_ankle/03_zavira_espresso_ankle.webp"
-                  alt="Valerie & CO Zavira Espresso Ankle Boot"
-                  loading="lazy"
-                />
-                <span className="campaign-caption">
-                  {t("Lihat Detail", "View Piece")}
-                  <ArrowUpRight size={15} />
-                </span>
-              </motion.button>
-            </motion.section>
-            <Benefits
-              onOpenAbout={() => setOverlay("about")}
-              onShop={() => shop()}
-              onCare={() => go("member")}
-            />
-            <Newsletter />
-          </>
+            </div>
+          </div>
         )}
         {view === "shop" && (
           <section className="section catalog-page">
@@ -526,12 +416,15 @@ export function Experience() {
             <div className="section-heading">
               <div>
                 <span className="eyebrow">
-                  {t("PILIHAN VALERIE & CO", "THE VALERIE & CO EDIT")}
+                  {t("KATALOG VALERIE & CO", "VALERIE & CO CATALOGUE")}
                 </span>
-                <h1>{t("Koleksi pilihan.", "The considered collection.")}</h1>
+                <h1>{t("Koleksi sepatu.", "Footwear collection.")}</h1>
               </div>
               <span>
-                {filtered.length} {t("produk pilihan", "curated pieces")}
+                {filtered.length} {t("produk", "pieces")}
+                {totalShopPages > 1
+                  ? ` · ${t("Hal.", "Page")} ${safeShopPage}/${totalShopPages}`
+                  : ""}
               </span>
             </div>
             <div className="catalog-controls">
@@ -540,7 +433,10 @@ export function Experience() {
                   <button
                     key={cat}
                     className={category === cat ? "active" : ""}
-                    onClick={() => setCategory(cat)}
+                    onClick={() => {
+                      setCategory(cat);
+                      setShopPage(1);
+                    }}
                   >
                     {categoryCopy[cat][lang]}
                   </button>
@@ -553,7 +449,10 @@ export function Experience() {
                     id="shop-sort-select"
                     name="sort"
                     value={sort}
-                    onChange={(e) => setSort(e.target.value)}
+                    onChange={(e) => {
+                      setSort(e.target.value);
+                      setShopPage(1);
+                    }}
                   >
                     <option value="featured">
                       {t("Pilihan kami", "Our selection")}
@@ -569,16 +468,32 @@ export function Experience() {
                 </label>
               </div>
             </div>
-            {filtered.length ? (
-              <div className="product-grid">
-                {filtered.map((p) => (
-                  <ProductCard
-                    key={p.id}
-                    product={p}
-                    onSelect={() => detail(p)}
+            {paginatedShop.length ? (
+              <>
+                <div className="product-grid">
+                  {paginatedShop.map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      onSelect={() => detail(p)}
+                    />
+                  ))}
+                </div>
+                {totalShopPages > 1 && (
+                  <CatalogPagination
+                    page={safeShopPage}
+                    totalPages={totalShopPages}
+                    onChange={(p) => {
+                      setShopPage(p);
+                      window.scrollTo({
+                        top: 0,
+                        behavior: reduced ? "auto" : "smooth",
+                      });
+                    }}
+                    t={t}
                   />
-                ))}
-              </div>
+                )}
+              </>
             ) : (
               <Empty
                 title={t("Belum ada yang cocok", "No matching pieces")}
@@ -589,11 +504,26 @@ export function Experience() {
                 action={t("Reset filter", "Clear filters")}
                 onAction={() => {
                   setCategory("All");
+                  setShopPage(1);
                   setQuery("");
                 }}
               />
             )}
           </section>
+        )}
+        {view === "atelier" && (
+          <AtelierPage
+            activeTab={atelierTab}
+            onTabChange={setAtelierTab}
+            onShop={shop}
+            onCare={() => go("member")}
+            onDetail={() => {
+              const featured =
+                products.find((p) => p.id === "vco-zavira-espresso-ankle") ||
+                products[0];
+              if (featured) detail(featured);
+            }}
+          />
         )}
         {view === "detail" && !current && (
           <Empty
@@ -619,37 +549,54 @@ export function Experience() {
             <div className="section-heading">
               <div>
                 <span className="eyebrow">
-                  {t("KOLEKSI PERSONAL ANDA", "YOUR PERSONAL EDIT")}
+                  {t("KOLEKSI PERSONAL", "PERSONAL EDIT")}
                 </span>
-                <h1>{t("Favorit Anda.", "Saved for you.")}</h1>
+                <h1>{t("Favorit Saya.", "My Wishlist.")}</h1>
               </div>
               <span>
-                {db.favorites.length} {t("tersimpan", "saved pieces")}
+                {wishItems.length} {t("tersimpan", "saved")}
+                {totalWishPages > 1
+                  ? ` · ${t("Hal.", "Page")} ${safeWishPage}/${totalWishPages}`
+                  : ""}
               </span>
             </div>
-            {products.filter((p) => db.favorites.includes(p.id)).length ? (
-              <div className="product-grid">
-                {products
-                  .filter((p) => db.favorites.includes(p.id))
-                  .map((p) => (
+            {paginatedWish.length ? (
+              <>
+                <div className="product-grid">
+                  {paginatedWish.map((p) => (
                     <ProductCard
                       key={p.id}
                       product={p}
                       onSelect={() => detail(p)}
                     />
                   ))}
-              </div>
+                </div>
+                {totalWishPages > 1 && (
+                  <CatalogPagination
+                    page={safeWishPage}
+                    totalPages={totalWishPages}
+                    onChange={(p) => {
+                      setWishPage(p);
+                      window.scrollTo({
+                        top: 0,
+                        behavior: reduced ? "auto" : "smooth",
+                      });
+                    }}
+                    t={t}
+                  />
+                )}
+              </>
             ) : (
               <Empty
                 title={t(
-                  "Ruang untuk favorit Anda",
-                  "A space for your favourites",
+                  "Belum ada produk favorit",
+                  "Your wishlist is empty",
                 )}
                 body={t(
-                  "Sentuh ikon hati untuk menyimpan koleksi pilihan.",
-                  "Tap the heart on any piece to make it part of your edit.",
+                  "Ketuk ikon hati pada produk untuk menyimpannya.",
+                  "Tap the heart icon on any piece to save it.",
                 )}
-                action={t("Jelajahi koleksi", "Explore the collection")}
+                action={t("Jelajahi koleksi", "Explore collection")}
                 onAction={() => shop()}
               />
             )}
@@ -708,7 +655,7 @@ export function Experience() {
               <button onClick={() => go("member")}>
                 {t("Pesanan saya", "My orders")}
               </button>
-              <button onClick={() => setOverlay("about")}>
+              <button onClick={() => goAtelier("pengiriman")}>
                 {t("Pengiriman & retur", "Shipping & returns")}
               </button>
               <button onClick={() => go("member")}>
@@ -942,91 +889,6 @@ export function Experience() {
           />
         </Modal>
       )}
-      {overlay === "about" && (
-        <Modal
-          title={t("Dunia Valerie & CO", "The world of Valerie & CO")}
-          onClose={() => setOverlay(null)}
-        >
-          <div className="story">
-            <div className="story-hero-card">
-              <span className="eyebrow">
-                {t("ATELIER & FILOSOFI KURASI", "ATELIER & CURATION PHILOSOPHY")}
-              </span>
-              <h2>
-                {t("Setiap langkah punya cerita.", "Every step tells a story.")}
-              </h2>
-              <p>
-                {t(
-                  "Valerie & CO mempertemukan siluet arsitektural dan keahlian kriya kontemporer melalui kurasi alas kaki yang dirancang untuk karakter personal Anda.",
-                  "Valerie & CO brings architectural silhouettes and contemporary craftsmanship together through a footwear edit curated for your personal point of view.",
-                )}
-              </p>
-            </div>
-            <div className="story-pillars">
-              <div className="story-pillar">
-                <ShieldCheck size={18} />
-                <strong>{t("100% Terkurasi Resmi", "100% Authenticated")}</strong>
-                <small>
-                  {t(
-                    "Setiap pasang melalui inspeksi kualitas dan keaslian berlapis di studio kami.",
-                    "Every pair undergoes multi-point quality and authenticity inspection.",
-                  )}
-                </small>
-              </div>
-              <div className="story-pillar">
-                <Truck size={18} />
-                <strong>{t("Pengiriman Prioritas", "Priority Fulfilment")}</strong>
-                <small>
-                  {t(
-                    "Dikemas eksklusif dengan pelindung debu dan pelacakan pengiriman penuh.",
-                    "Packaged in signature dust-bag protection with full door-to-door tracking.",
-                  )}
-                </small>
-              </div>
-              <div className="story-pillar">
-                <Headphones size={18} />
-                <strong>{t("Layanan Concierge", "Personal Concierge")}</strong>
-                <small>
-                  {t(
-                    "Konsultasi ukuran EU dan perawatan material langsung bersama spesialis kami.",
-                    "EU sizing consultation and material care guidance with our specialists.",
-                  )}
-                </small>
-              </div>
-            </div>
-            <details open>
-              <summary>{t("Pengiriman & Estimasi", "Shipping & Delivery")}</summary>
-              <p>
-                {t(
-                  `Pengiriman standar: ${money(SHIPPING_RATES[currency].standard)} (3–5 hari kerja), gratis untuk subtotal minimal ${money(SHIPPING_RATES[currency].freeAbove)}. Pengiriman ekspres prioritas: ${money(SHIPPING_RATES[currency].express)} (1–2 hari kerja).`,
-                  `Standard shipping: ${money(SHIPPING_RATES[currency].standard)} (3–5 business days), complimentary on subtotals of ${money(SHIPPING_RATES[currency].freeAbove)} or more. Priority express shipping: ${money(SHIPPING_RATES[currency].express)} (1–2 business days).`,
-                )}
-              </p>
-            </details>
-            <details>
-              <summary>{t("Garansi Penukaran Ukuran & Retur", "Size Exchange & Returns")}</summary>
-              <p>
-                {t(
-                  "Penukaran ukuran tersedia dalam 14 hari sejak pesanan diterima selama sepatu dalam kondisi belum dikenakan di luar ruangan beserta kemasan aslinya.",
-                  "Complimentary size exchanges within 14 days of delivery, provided footwear remains unworn outdoors in original packaging.",
-                )}
-              </p>
-            </details>
-            <button
-              type="button"
-              className="button dark full"
-              style={{ marginTop: 18 }}
-              onClick={() => {
-                setOverlay(null);
-                shop();
-              }}
-            >
-              {t("Jelajahi Koleksi 2026", "Explore the 2026 Collection")}
-              <ArrowUpRight size={16} />
-            </button>
-          </div>
-        </Modal>
-      )}
       {s.pending && (
         <div role="status" className="saving-indicator">
           {t("Menyimpan ke server…", "Saving to server…")}
@@ -1065,9 +927,6 @@ export function Experience() {
       )}
     </div>
   );
-}
-function ArrowDown() {
-  return <ArrowRight size={16} style={{ transform: "rotate(90deg)" }} />;
 }
 export function ProductCard({
   product: p,
@@ -1480,187 +1339,335 @@ function ProductDetail({
     </section>
   );
 }
-function Benefits({
-  onOpenAbout,
-  onShop,
-  onCare,
+
+/** Compact numbered pagination bar for long product grids. */
+function CatalogPagination({
+  page,
+  totalPages,
+  onChange,
+  t,
 }: {
-  onOpenAbout: () => void;
-  onShop: () => void;
-  onCare: () => void;
+  page: number;
+  totalPages: number;
+  onChange: (nextPage: number) => void;
+  t: (idText: string, enText: string) => string;
 }) {
-  const { t, currency, money } = useStore();
-  const reduced = useReducedMotion();
+  const pages = Array.from({ length: totalPages }, (_, idx) => idx + 1);
   return (
-    <section className="benefits section">
-      {[
-        {
-          Icon: Truck,
-          title: t("Pengiriman Prioritas & Aman", "Priority Insured Delivery"),
-          text: t(
-            `Gratis ongkir mulai ${money(SHIPPING_RATES[currency].freeAbove)} · Dikemas eksklusif dengan dustbag`,
-            `Complimentary from ${money(SHIPPING_RATES[currency].freeAbove)} · Signature dustbag packaging`,
-          ),
-          action: onOpenAbout,
-        },
-        {
-          Icon: RefreshCw,
-          title: t("Garansi Tukar Ukuran 14 Hari", "14-Day Free Size Exchange"),
-          text: t(
-            "Kebesaran atau kekecilan? Tukar ukuran mudah langsung dari akun Anda",
-            "Need another size? Effortless exchange directly from your member lounge",
-          ),
-          action: onCare,
-        },
-        {
-          Icon: ShieldCheck,
-          title: t("100% Kurasi Asli & Bergaransi", "100% Authenticated & Guaranteed"),
-          text: t(
-            "Inspeksi kualitas berlapis + pembayaran resmi terenkripsi (QRIS, VA, Kartu)",
-            "Multi-point atelier inspection + encrypted instant checkout",
-          ),
-          action: onShop,
-        },
-        {
-          Icon: Headphones,
-          title: t("Concierge Pribadi & Ukuran EU", "Personal Stylist & Fit Concierge"),
-          text: t(
-            "Konsultasi ukuran kaki & rekomendasi model 24/7 bersama tim kami",
-            "Bespoke EU sizing advice & styling recommendations whenever you need",
-          ),
-          action: onCare,
-        },
-      ].map(({ Icon, title, text, action }, idx) => (
-        <motion.button
-          type="button"
-          key={title}
-          className="benefit-card"
-          onClick={action}
-          initial={reduced ? false : { opacity: 0, y: 18 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-20px" }}
-          whileHover={reduced ? undefined : { y: -4, scale: 1.015 }}
-          whileTap={reduced ? undefined : { scale: 0.985 }}
-          transition={{
-            duration: reduced ? 0 : 0.42,
-            delay: reduced ? 0 : idx * 0.05,
-            ease: [0.22, 1, 0.36, 1],
-          }}
-        >
-          <span className="benefit-icon-halo" aria-hidden="true">
-            <Icon size={22} strokeWidth={1.5} />
-          </span>
-          <span>
-            <em className="benefit-index">0{idx + 1} · ATELIER</em>
-            <strong>{title}</strong>
-            <small>{text}</small>
-          </span>
-        </motion.button>
-      ))}
-    </section>
+    <nav
+      className="catalog-pagination"
+      aria-label={t("Navigasi halaman katalog", "Catalog page navigation")}
+    >
+      <button
+        type="button"
+        className="catalog-page-btn"
+        disabled={page <= 1}
+        onClick={() => onChange(page - 1)}
+      >
+        <ArrowLeft size={14} />
+        {t("Sebelumnya", "Prev")}
+      </button>
+      <div className="catalog-page-numbers">
+        {pages.map((num) => (
+          <button
+            key={num}
+            type="button"
+            className={`catalog-page-num ${num === page ? "is-active" : ""}`}
+            aria-current={num === page ? "page" : undefined}
+            onClick={() => onChange(num)}
+          >
+            {num}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="catalog-page-btn"
+        disabled={page >= totalPages}
+        onClick={() => onChange(page + 1)}
+      >
+        {t("Berikutnya", "Next")}
+        <ArrowRight size={14} />
+      </button>
+    </nav>
   );
 }
-function Newsletter() {
-  const { t, db, setDb, notify } = useStore();
+
+/** Focused multi-tab Atelier hub replacing stacked Home marketing essays. */
+function AtelierPage({
+  activeTab,
+  onTabChange,
+  onShop,
+  onCare,
+  onDetail,
+}: {
+  activeTab: AtelierTab;
+  onTabChange: (tab: AtelierTab) => void;
+  onShop: (cat?: string) => void;
+  onCare: () => void;
+  onDetail: () => void;
+}) {
+  const { t, currency, money, db, setDb, notify } = useStore();
+  const reduced = useReducedMotion();
+
+  const tabs: { id: AtelierTab; label: string }[] = [
+    { id: "layanan", label: `01 · ${t("Layanan", "Services")}` },
+    { id: "promo", label: `02 · ${t("Edisi & Promo", "Edition & Promo")}` },
+    { id: "pengiriman", label: `03 · ${t("Pengiriman & Retur", "Shipping & Returns")}` },
+    { id: "vip", label: `04 · ${t("VIP Club", "VIP Club")}` },
+  ];
+
   return (
-    <section className="newsletter section">
-      <div>
-        <span className="eyebrow">
-          {t("UNDANGAN PRIVAT · AKSES AWAL & VOUCHER", "PRIVATE INVITATION · VIP EARLY ACCESS")}
-        </span>
-        <h2>
-          {t(
-            "Dapatkan Akses Rilis Terbatas & Keistimewaan Member.",
-            "Unlock Private Releases & Member Privileges.",
-          )}
-        </h2>
-        <p>
-          {t(
-            "Bergabunglah dengan daftar VIP Valerie & CO untuk menerima undangan koleksi baru 48 jam lebih awal beserta penawaran khusus member.",
-            "Join the Valerie & CO private list to receive 48-hour early access to limited drops and bespoke member invitations.",
-          )}
-        </p>
+    <section className="section atelier-page">
+      <div className="atelier-head">
+        <div>
+          <span className="eyebrow">VALERIE &amp; CO ATELIER</span>
+          <h1>{t("Rumah Kriya & Layanan", "Atelier & Concierge")}</h1>
+          <p className="atelier-lead">
+            {t(
+              "Standar kurasi, promo edisi, kebijakan kirim, dan akses VIP dalam empat halaman ringkas.",
+              "Curation standards, edition offers, delivery policy, and VIP access across four focused tabs.",
+            )}
+          </p>
+        </div>
+        <div className="atelier-tabs" role="tablist">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={`atelier-tab-btn ${activeTab === tab.id ? "is-active" : ""}`}
+              onClick={() => onTabChange(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget);
-          const email = String(f.get("email")).trim().toLowerCase();
-          if (!db.subscribers.includes(email))
-            setDb((d) => ({ ...d, subscribers: [...d.subscribers, email] }));
-          notify(
-            "Email Anda terdaftar untuk pembaruan koleksi Valerie & CO",
-            "Your email is registered for Valerie & CO collection updates",
-          );
-          e.currentTarget.reset();
-        }}
-      >
-        <label className="sr-only" htmlFor="newsletter-email">
-          Email
-        </label>
-        <input
-          id="newsletter-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          placeholder={t("Alamat email Anda", "Your email address")}
-        />
-        <button type="submit">
-          {t("Daftar", "Subscribe")}
-          <ArrowUpRight size={17} />
-        </button>
-      </form>
+
+      {activeTab === "layanan" && (
+        <section className="benefits atelier-tab-panel">
+          {[
+            {
+              Icon: Truck,
+              title: t("Pengiriman Diasuransikan", "Insured Delivery"),
+              text: t(
+                `Gratis mulai ${money(SHIPPING_RATES[currency].freeAbove)} · Kotak & dustbag eksklusif.`,
+                `Free from ${money(SHIPPING_RATES[currency].freeAbove)} · Signature dustbag packaging.`,
+              ),
+              action: () => onTabChange("pengiriman"),
+            },
+            {
+              Icon: RefreshCw,
+              title: t("Tukar Ukuran 14 Hari", "14-Day Size Exchange"),
+              text: t(
+                "Ajukan penukaran ukuran langsung dari akun Member.",
+                "Instant exchange directly from your Member dashboard.",
+              ),
+              action: onCare,
+            },
+            {
+              Icon: ShieldCheck,
+              title: t("Pembayaran Midtrans Resmi", "Official Midtrans Gateway"),
+              text: t(
+                "QRIS, GoPay, VA Bank & Kartu 3DS terverifikasi otomatis.",
+                "QRIS, e-Wallet, Bank VA & 3DS Cards verified automatically.",
+              ),
+              action: () => onShop(),
+            },
+            {
+              Icon: Headphones,
+              title: t("Konsultasi Fit EU", "EU Fit Concierge"),
+              text: t(
+                "Panduan ukuran EU/cm dan perawatan kulit bersama spesialis.",
+                "Bespoke EU/cm sizing and leather care guidance.",
+              ),
+              action: onCare,
+            },
+          ].map(({ Icon, title, text, action }, idx) => (
+            <motion.button
+              type="button"
+              key={title}
+              className="benefit-card"
+              onClick={action}
+              initial={reduced ? false : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: reduced ? 0 : 0.3, delay: idx * 0.04 }}
+            >
+              <span className="benefit-icon-halo" aria-hidden="true">
+                <Icon size={20} strokeWidth={1.6} />
+              </span>
+              <span>
+                <em className="benefit-index">0{idx + 1} · ATELIER</em>
+                <strong>{title}</strong>
+                <small>{text}</small>
+              </span>
+            </motion.button>
+          ))}
+        </section>
+      )}
+
+      {activeTab === "promo" && (
+        <div className="campaign atelier-promo-card">
+          <div className="campaign-copy">
+            <span className="eyebrow">01 / EDISI ATELIER 2026</span>
+            <h2>
+              {t(
+                "Keanggunan dalam setiap pijakan.",
+                "Unforgettable poise in every stride.",
+              )}
+            </h2>
+            <p>
+              {t(
+                "Kulit pilihan dengan sol presisi. Gunakan voucher SOLERE10 untuk potongan 10% saat checkout.",
+                "Supple curated leather with precision soles. Apply code SOLERE10 for 10% off at checkout.",
+              )}
+            </p>
+            <div className="atelier-promo-actions">
+              <button
+                type="button"
+                className="button light"
+                onClick={() => onShop()}
+              >
+                {t("Belanja Koleksi", "Shop Collection")}
+                <ArrowUpRight size={15} />
+              </button>
+              <button
+                type="button"
+                className="campaign-voucher-chip"
+                onClick={() => {
+                  navigator.clipboard?.writeText("SOLERE10");
+                  notify(
+                    "Voucher SOLERE10 disalin (-10%)",
+                    "Voucher SOLERE10 copied (-10%)",
+                  );
+                }}
+              >
+                {t("Salin Kode: SOLERE10 (-10%)", "Copy Code: SOLERE10 (-10%)")}
+              </button>
+            </div>
+          </div>
+          <button type="button" className="campaign-image" onClick={onDetail}>
+            <span>ZAVIRA ESPRESSO ANKLE</span>
+            <CutoutImg
+              src="/shoes/02_Boots/03_zavira_espresso_ankle/03_zavira_espresso_ankle.webp"
+              alt="Valerie & CO Zavira Espresso Ankle Boot"
+              loading="lazy"
+            />
+            <span className="campaign-caption">
+              {t("Lihat Detail", "View Piece")}
+              <ArrowUpRight size={15} />
+            </span>
+          </button>
+        </div>
+      )}
+
+      {activeTab === "pengiriman" && (
+        <div className="atelier-policy-grid">
+          <article className="atelier-policy-card">
+            <span className="eyebrow">{t("PENGIRIMAN", "DELIVERY")}</span>
+            <h3>{t("Standar & Ekspres", "Standard & Express")}</h3>
+            <p>
+              {t(
+                `Standar ${money(SHIPPING_RATES[currency].standard)} (3–5 hari, gratis mulai ${money(SHIPPING_RATES[currency].freeAbove)}). Ekspres ${money(SHIPPING_RATES[currency].express)} (1–2 hari kerja).`,
+                `Standard ${money(SHIPPING_RATES[currency].standard)} (3–5 days, free over ${money(SHIPPING_RATES[currency].freeAbove)}). Express ${money(SHIPPING_RATES[currency].express)} (1–2 business days).`,
+              )}
+            </p>
+          </article>
+          <article className="atelier-policy-card">
+            <span className="eyebrow">{t("GARANSI", "WARRANTY")}</span>
+            <h3>{t("Tukar Ukuran 14 Hari", "14-Day Size Exchange")}</h3>
+            <p>
+              {t(
+                "Tukar ukuran EU gratis dalam 14 hari selama produk belum dipakai di luar ruangan dan kotak asli utuh.",
+                "Complimentary EU size exchange within 14 days when unworn outdoors in original box.",
+              )}
+            </p>
+          </article>
+        </div>
+      )}
+
+      {activeTab === "vip" && (
+        <section className="newsletter atelier-vip-card">
+          <div>
+            <span className="eyebrow">VIP PRIVATE LIST</span>
+            <h2>
+              {t(
+                "Akses Awal Rilis Terbatas.",
+                "Early Access to Limited Drops.",
+              )}
+            </h2>
+            <p>
+              {t(
+                "Daftarkan email Anda untuk undangan koleksi baru 48 jam lebih awal.",
+                "Register your email for 48-hour early invitations to new drops.",
+              )}
+            </p>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const email = String(f.get("email")).trim().toLowerCase();
+              if (!db.subscribers.includes(email))
+                setDb((d) => ({ ...d, subscribers: [...d.subscribers, email] }));
+              notify(
+                "Email terdaftar di VIP List Valerie & CO",
+                "Email registered on Valerie & CO VIP List",
+              );
+              e.currentTarget.reset();
+            }}
+          >
+            <label className="sr-only" htmlFor="newsletter-email">
+              Email
+            </label>
+            <input
+              id="newsletter-email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              placeholder={t("Alamat email Anda", "Your email address")}
+            />
+            <button type="submit">
+              {t("Daftar VIP", "Join VIP")}
+              <ArrowUpRight size={16} />
+            </button>
+          </form>
+        </section>
+      )}
     </section>
   );
 }
 
 function MobileHome({
   onShop,
+  onAtelier,
 }: {
   onShop: (category?: string) => void;
+  onAtelier: () => void;
 }) {
-  const { db, t, notify } = useStore();
+  const { db, t } = useStore();
   const activeCount = db.products.filter((p) => p.active).length;
   return (
     <div className="mobile-store-home">
-      <div className="mobile-atelier-banner">
-        <div>
-          <span>ATELIER EDIT 2026 · KOLEKSI EKSKLUSIF</span>
-          <strong>
-            {t(
-              "Siluet Mewah yang Nyaman Dipakai Seharian",
-              "Architectural Luxury, Cloud-Like Comfort",
-            )}
-          </strong>
-        </div>
+      <div className="mobile-quick-bar">
         <button
           type="button"
-          className="mobile-atelier-cta"
+          className="mobile-quick-pill is-primary"
           onClick={() => onShop("All")}
         >
-          {activeCount} {t("Koleksi", "Pieces")}
+          <span>{t("Koleksi", "Shop")} ({activeCount})</span>
           <ArrowUpRight size={12} />
         </button>
-      </div>
-      <div className="mobile-promo-ticker">
         <button
           type="button"
-          className="mobile-promo-pill"
-          onClick={() => {
-            navigator.clipboard?.writeText("SOLERE10");
-            notify(
-              "Kode voucher SOLERE10 disalin! Diskon 10% siap digunakan saat checkout.",
-              "Voucher SOLERE10 copied! 10% off ready at checkout.",
-            );
-          }}
+          className="mobile-quick-pill"
+          onClick={onAtelier}
         >
-          <strong>VOUCHER: SOLERE10</strong>
-          <span>{t("Diskon 10% · Ketuk untuk salin", "10% Off · Tap to copy")}</span>
+          <span>{t("Atelier & Promo", "Atelier & Offers")}</span>
         </button>
-        <span className="mobile-promo-meta">
-          {t("✓ Garansi Tukar Ukuran 14 Hari · ✓ QRIS & VA Instan", "✓ 14-Day Size Exchange · ✓ Instant QRIS & VA")}
-        </span>
       </div>
     </div>
   );
@@ -1724,7 +1731,7 @@ function StoreSkeleton({
         </div>
       </div>
     </section>
-  ) : view === "shop" || view === "wishlist" ? (
+  ) : view === "shop" || view === "wishlist" || view === "atelier" ? (
     <section className="section catalog-page skeleton-catalog" aria-hidden="true">
       <div className="skeleton-catalog-head">
         <span className="sk-bar sk-eyebrow" />

@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createApp } from "../server/app.mjs";
-import { idrQuote, verifyNotification } from "../server/midtrans.mjs";
+import {
+  extractSnapToken,
+  idrQuote,
+  verifyNotification,
+} from "../server/midtrans.mjs";
 test("IDR quote rejects missing prices and preserves rupiah integer totals", () => {
   const lines = [{ productId: "p", quantity: 3 }];
   const shipping = { standard: 25000, express: 50000, freeAbove: 2000000 };
@@ -20,6 +24,16 @@ test("IDR quote rejects missing prices and preserves rupiah integer totals", () 
     295003,
   );
   assert.equal(verifyNotification({ signature_key: "bad" }, "test"), false);
+  assert.equal(
+    extractSnapToken(
+      "https://app.sandbox.midtrans.com/snap/v4/redirection/tok_abc123",
+    ),
+    "tok_abc123",
+  );
+  assert.equal(
+    extractSnapToken("https://app.midtrans.com/snap/v2/vtweb/tok_live_999"),
+    "tok_live_999",
+  );
 });
 test("Midtrans reservations, signed notifications and payment ownership", async (t) => {
   let remote = {};
@@ -30,7 +44,7 @@ test("Midtrans reservations, signed notifications and payment ownership", async 
     setupToken: "setup",
     midtransKey: key,
     gateway: {
-      create: async (o) => {
+      create: async () => {
         created++;
         return "https://app.sandbox.midtrans.com/snap/test";
       },
@@ -308,4 +322,100 @@ test("Midtrans reservations, signed notifications and payment ownership", async 
     (await call("state")).data.products.find((x) => x.id === p.id).stock,
     stockBeforeRefund + 1,
   );
+  assert.equal(
+    approved.data.paymentConfig.snapScriptUrl,
+    "https://app.sandbox.midtrans.com/snap/snap.js",
+  );
+});
+
+test("Midtrans createSnap persists snapToken & payments/status leaves single creation idempotent", async (t) => {
+  let createCalls = 0;
+  const app = createApp({
+    dbPath: ":memory:",
+    setupToken: "setup",
+    midtransKey: "snap-test-key",
+    gateway: {
+      createSnap: async () => {
+        createCalls += 1;
+        return {
+          token: "snap-token-xyz-789",
+          redirectUrl:
+            "https://app.sandbox.midtrans.com/snap/v4/redirection/snap-token-xyz-789",
+        };
+      },
+      create: async () =>
+        "https://app.sandbox.midtrans.com/snap/v4/redirection/snap-token-xyz-789",
+      status: async (id) => ({
+        order_id: id,
+        status_code: "404",
+      }),
+    },
+  });
+  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
+  t.after(() => app.close());
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const call = async (path, body, cookie = "") => {
+    const r = await fetch(base + "/api/" + path, {
+      method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json", cookie },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return {
+      status: r.status,
+      data: await r.json(),
+      cookie: r.headers.get("set-cookie")?.split(";")[0] || "",
+    };
+  };
+  const admin = await call("auth/setup", {
+    name: "Admin",
+    email: "atelier@solere.com",
+    password: "password123",
+    token: "setup",
+  });
+  const products = (await call("state")).data.products;
+  const p = { ...products[0], priceIdr: 200000, stock: 5 };
+  await call("patch", { changes: [{ kind: "products", data: p }] }, admin.cookie);
+  const member = await call("auth/register", {
+    email: "snapmember@example.com",
+    password: "password123",
+    name: "Snap Member",
+  });
+  const lines = [
+    {
+      productId: p.id,
+      quantity: 1,
+      size: p.sizes[0],
+      color: p.colors[0].name,
+    },
+  ];
+  const quote = await call("payments/quote", { lines, express: false }, member.cookie);
+  assert.equal(quote.status, 200);
+  const created = await call(
+    "orders/create",
+    {
+      payment: "midtrans",
+      expectedTotal: quote.data.total,
+      key: "snap-key-1",
+      lines,
+      address: {
+        id: "addr-1",
+        label: "Home",
+        name: "Snap Member",
+        phone: "0812888999",
+        street: "Jl. Senopati 10",
+        city: "Jakarta",
+        postal: "12190",
+      },
+    },
+    member.cookie,
+  );
+  assert.equal(created.status, 200);
+  assert.equal(created.data.order.payment.snapToken, "snap-token-xyz-789");
+  const statusSync = await call(
+    "payments/status",
+    { id: created.data.order.id },
+    member.cookie,
+  );
+  assert.equal(statusSync.status, 200);
+  assert.equal(createCalls, 1);
 });

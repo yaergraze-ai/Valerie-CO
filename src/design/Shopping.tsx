@@ -1,11 +1,10 @@
 import { MidtransCheckout } from "./MidtransCheckout";
+import { MidtransSnapEmbed } from "./MidtransSnapEmbed";
 import { useState, useRef, useEffect } from "react";
 import confetti from "canvas-confetti";
 import {
   ArrowRight,
   Check,
-  Copy,
-  CreditCard,
   Download,
   ExternalLink,
   LocateFixed,
@@ -14,13 +13,13 @@ import {
   Minus,
   Plus,
   Printer,
-  QrCode,
   Search,
   Sparkles,
   Trash2,
   Truck,
 } from "lucide-react";
 import { useStore, type Address, type Order } from "./store";
+import { api } from "./backend";
 import { lineKey, SHIPPING_RATES, totals, validateBag } from "./commerce";
 import { Empty } from "./ui";
 export function Bag({
@@ -190,187 +189,6 @@ export function Checkout({ onDone }: { onDone: () => void }) {
     );
   return <SimulationCheckout onDone={onDone} />;
 }
-export type PaymentCategory =
-  | "all"
-  | "qris_ewallet"
-  | "va"
-  | "card"
-  | "retail"
-  | "paylater";
-
-export type PaymentChannelSpec = {
-  id: string;
-  category: Exclude<PaymentCategory, "all">;
-  badge: string;
-  label: string;
-  sub: string;
-  vaPrefix: string;
-  billerCode?: string;
-};
-
-export const PAYMENT_CHANNELS: readonly PaymentChannelSpec[] = [
-  {
-    id: "qris",
-    category: "qris_ewallet",
-    badge: "QRIS",
-    label: "QRIS Dinamis (Semua Bank & E-Wallet)",
-    sub: "Scan instan dari BCA Mobile, Livin', BRImo, Wondr, GoPay, OVO, DANA, ShopeePay",
-    vaPrefix: "",
-  },
-  {
-    id: "gopay",
-    category: "qris_ewallet",
-    badge: "GOPAY",
-    label: "GoPay / GoPay Tabungan",
-    sub: "Pembayaran instan via QR GoPay atau aplikasi Gojek",
-    vaPrefix: "",
-  },
-  {
-    id: "ovo",
-    category: "qris_ewallet",
-    badge: "OVO",
-    label: "OVO (Push Notification & QR)",
-    sub: "Kirim tagihan langsung ke nomor OVO atau scan QRIS OVO",
-    vaPrefix: "",
-  },
-  {
-    id: "shopeepay",
-    category: "qris_ewallet",
-    badge: "SHOPEEPAY",
-    label: "ShopeePay / SPayLater",
-    sub: "Konfirmasi otomatis via aplikasi Shopee",
-    vaPrefix: "",
-  },
-  {
-    id: "dana",
-    category: "qris_ewallet",
-    badge: "DANA",
-    label: "DANA Dompet Digital",
-    sub: "Saldo DANA & QRIS DANA terverifikasi instan",
-    vaPrefix: "",
-  },
-  {
-    id: "linkaja",
-    category: "qris_ewallet",
-    badge: "LINKAJA",
-    label: "LinkAja",
-    sub: "Pembayaran instan via aplikasi LinkAja",
-    vaPrefix: "",
-  },
-  {
-    id: "bca_va",
-    category: "va",
-    badge: "BCA VA",
-    label: "BCA Virtual Account",
-    sub: "Verifikasi otomatis m-BCA, KlikBCA & ATM BCA",
-    vaPrefix: "88010",
-  },
-  {
-    id: "mandiri_va",
-    category: "va",
-    badge: "MANDIRI",
-    label: "Mandiri Bill Payment / VA",
-    sub: "Verifikasi otomatis Livin' by Mandiri & ATM Mandiri",
-    vaPrefix: "89022",
-    billerCode: "70012",
-  },
-  {
-    id: "bni_va",
-    category: "va",
-    badge: "BNI VA",
-    label: "BNI Virtual Account",
-    sub: "Verifikasi otomatis Wondr by BNI & Mobile Banking BNI",
-    vaPrefix: "88081",
-  },
-  {
-    id: "bri_va",
-    category: "va",
-    badge: "BRIVA",
-    label: "BRI Virtual Account (BRIVA)",
-    sub: "Verifikasi otomatis BRImo & ATM BRI",
-    vaPrefix: "88810",
-  },
-  {
-    id: "bsi_va",
-    category: "va",
-    badge: "BSI VA",
-    label: "BSI (Bank Syariah Indonesia) VA",
-    sub: "Verifikasi otomatis BYOND by BSI & BSI Net",
-    vaPrefix: "90012",
-  },
-  {
-    id: "permata_va",
-    category: "va",
-    badge: "PERMATA",
-    label: "Permata Virtual Account",
-    sub: "Verifikasi otomatis PermataME & jaringan Alto",
-    vaPrefix: "85280",
-  },
-  {
-    id: "cimb_va",
-    category: "va",
-    badge: "CIMB VA",
-    label: "CIMB Niaga Virtual Account",
-    sub: "Verifikasi otomatis OCTO Mobile & OCTO Clicks",
-    vaPrefix: "80590",
-  },
-  {
-    id: "danamon_va",
-    category: "va",
-    badge: "DANAMON",
-    label: "Danamon / ATM Bersama Virtual Account",
-    sub: "Verifikasi otomatis D-Bank PRO & seluruh jaringan ATM Bersama",
-    vaPrefix: "79110",
-  },
-  {
-    id: "card",
-    category: "card",
-    badge: "CARD 3DS",
-    label: "Kartu Kredit / Debit Online (Visa · Mastercard · JCB · Amex)",
-    sub: "Otorisasi 3D Secure 2.0 langsung di halaman ini + opsi Cicilan 0%",
-    vaPrefix: "",
-  },
-  {
-    id: "indomaret",
-    category: "retail",
-    badge: "INDOMARET",
-    label: "Indomaret / Ceriamart",
-    sub: "Bayar di kasir Indomaret terdekat dengan Kode Barcode Pembayaran",
-    vaPrefix: "IDM",
-  },
-  {
-    id: "alfamart",
-    category: "retail",
-    badge: "ALFAMART",
-    label: "Alfamart / Alfamidi / Dan+Dan",
-    sub: "Bayar di kasir Alfamart terdekat dengan Kode Barcode Pembayaran",
-    vaPrefix: "ALF",
-  },
-  {
-    id: "kredivo",
-    category: "paylater",
-    badge: "KREDIVO",
-    label: "Kredivo PayLater",
-    sub: "Bayar dalam 30 Hari (Bunga 0%) atau Cicilan 3, 6, 12 Bulan",
-    vaPrefix: "",
-  },
-  {
-    id: "akulaku",
-    category: "paylater",
-    badge: "AKULAKU",
-    label: "Akulaku PayLater",
-    sub: "Cicilan instan tanpa kartu kredit hingga 12 bulan",
-    vaPrefix: "",
-  },
-  {
-    id: "indodana",
-    category: "paylater",
-    badge: "INDODANA",
-    label: "Indodana PayLater",
-    sub: "Cicilan praktis 30 Hari, 3, 6, atau 12 Bulan",
-    vaPrefix: "",
-  },
-];
 
 function formatReceiptDateTime(iso: string, lang: "id" | "en") {
   const d = new Date(iso);
@@ -495,7 +313,6 @@ function downloadOfficialReceiptHtml(
 
 export function InlinePaymentAndReceipt({
   order,
-  initialChannel = "qris",
   startInPaymentStage = true,
   onCheckRemoteStatus,
   checkingRemote = false,
@@ -508,48 +325,20 @@ export function InlinePaymentAndReceipt({
   checkingRemote?: boolean;
   onDone: () => void;
 }) {
-  const { db, t, lang, money, completeOrderPayment, notify } = useStore();
+  const { db, t, lang, money, completeOrderPayment, refresh, notify } =
+    useStore();
   const liveOrder = db.orders.find((o) => o.id === order.id) || order;
-  const [channelId, setChannelId] = useState(initialChannel);
-  const [catFilter, setCatFilter] = useState<PaymentCategory>("all");
   const [stage, setStage] = useState<"pay" | "receipt">(
-    startInPaymentStage ? "pay" : "receipt",
+    !startInPaymentStage || liveOrder.payment?.status === "paid"
+      ? "receipt"
+      : "pay",
   );
   const [confirming, setConfirming] = useState(false);
-  const [verifyMsg, setVerifyMsg] = useState("");
-  const [showGatewayFrame, setShowGatewayFrame] = useState(
-    Boolean(order.payment?.url),
-  );
+  const [internalChecking, setInternalChecking] = useState(false);
   const [showReceiptMap, setShowReceiptMap] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(15 * 60);
+  const autoPreparedOrderRef = useRef<string>("");
+  const celebratedRef = useRef(false);
 
-  // Interactive states for specific payment gateway channels
-  const [ovoPhone, setOvoPhone] = useState(order.address.phone || "0812");
-  const [ovoPushed, setOvoPushed] = useState(false);
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
-  const [cardHolder, setCardHolder] = useState(order.address.name || "");
-  const [cardInstallment, setCardInstallment] = useState<1 | 3 | 6 | 12>(1);
-  const [paylaterTenor, setPaylaterTenor] = useState<1 | 3 | 6 | 12>(1);
-  const [paylaterPhone, setPaylaterPhone] = useState(
-    order.address.phone || "0812",
-  );
-
-  useEffect(() => {
-    if (stage !== "pay") return;
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [stage]);
-
-  const activeChannel =
-    PAYMENT_CHANNELS.find((c) => c.id === channelId) || PAYMENT_CHANNELS[0];
-  const filteredChannels =
-    catFilter === "all"
-      ? PAYMENT_CHANNELS
-      : PAYMENT_CHANNELS.filter((c) => c.category === catFilter);
   const cur = liveOrder.currency || "IDR";
   const receiptNo =
     liveOrder.receiptNumber ||
@@ -557,652 +346,241 @@ export function InlinePaymentAndReceipt({
   const txId =
     liveOrder.payment?.transactionId ||
     `VCO-TX-${liveOrder.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
-  const vaDigits =
-    liveOrder.address.phone.replace(/\D/g, "").slice(-10).padStart(10, "8") ||
-    "0812994028";
-  const virtualAccountNumber = `${activeChannel.vaPrefix}${vaDigits}`;
-  const retailPaymentCode = `${activeChannel.vaPrefix}-${liveOrder.id.replace(/[^A-Z0-9]/gi, "").slice(-6).toUpperCase()}-${vaDigits.slice(-4)}`;
-  const qrisPayloadString = `00020101021226680016ID.CO.VALERIE.WWW01189360089902026889100215${liveOrder.id.slice(0, 15)}0303UMI52045661530336054${String(Math.round(liveOrder.total)).length.toString().padStart(2, "0")}${Math.round(liveOrder.total)}5802ID5919VALERIE & CO ATELIER6007JAKARTA6304A1B9`;
-  const countdownText = `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
 
-  const downloadQrisSvg = () => {
-    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 280" width="480" height="560">
-      <rect width="240" height="280" rx="16" fill="#ffffff" stroke="#171412" stroke-width="2"/>
-      <text x="20" y="30" font-family="sans-serif" font-size="14" font-weight="bold" fill="#171412">QRIS · VALERIE &amp; CO</text>
-      <text x="20" y="46" font-family="sans-serif" font-size="9" fill="#6d6258">NMID: ID202608891029A01 · ${liveOrder.id}</text>
-      <g transform="translate(30, 60) scale(1.5)">
-        <rect width="120" height="120" rx="8" fill="#ffffff"/>
-        <rect x="10" y="10" width="30" height="30" fill="#171412"/>
-        <rect x="15" y="15" width="20" height="20" fill="#ffffff"/>
-        <rect x="20" y="20" width="10" height="10" fill="#171412"/>
-        <rect x="80" y="10" width="30" height="30" fill="#171412"/>
-        <rect x="85" y="15" width="20" height="20" fill="#ffffff"/>
-        <rect x="90" y="20" width="10" height="10" fill="#171412"/>
-        <rect x="10" y="80" width="30" height="30" fill="#171412"/>
-        <rect x="15" y="85" width="20" height="20" fill="#ffffff"/>
-        <rect x="20" y="90" width="10" height="10" fill="#171412"/>
-        <rect x="48" y="14" width="8" height="8" fill="#171412"/>
-        <rect x="62" y="14" width="8" height="16" fill="#171412"/>
-        <rect x="48" y="28" width="8" height="14" fill="#171412"/>
-        <rect x="14" y="48" width="16" height="8" fill="#171412"/>
-        <rect x="36" y="48" width="14" height="14" fill="#171412"/>
-        <rect x="56" y="48" width="12" height="12" fill="#8b6f47"/>
-        <rect x="74" y="48" width="14" height="8" fill="#171412"/>
-        <rect x="94" y="48" width="16" height="16" fill="#171412"/>
-        <rect x="20" y="62" width="10" height="10" fill="#171412"/>
-        <rect x="48" y="68" width="16" height="8" fill="#171412"/>
-        <rect x="70" y="64" width="10" height="18" fill="#171412"/>
-        <rect x="48" y="84" width="12" height="12" fill="#171412"/>
-        <rect x="66" y="88" width="16" height="8" fill="#171412"/>
-        <rect x="88" y="78" width="22" height="12" fill="#171412"/>
-        <rect x="84" y="96" width="12" height="14" fill="#171412"/>
-        <rect x="102" y="96" width="8" height="14" fill="#171412"/>
-      </g>
-      <text x="120" y="262" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="#171412">${money(liveOrder.total, cur)}</text>
-    </svg>`;
-    const blob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `QRIS-Valerie-CO-${liveOrder.id}.svg`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  const syncGatewayStatus = async () => {
+    if (onCheckRemoteStatus) {
+      await onCheckRemoteStatus();
+      return;
+    }
+    setInternalChecking(true);
+    try {
+      await api("payments/status", { id: liveOrder.id });
+      await refresh();
+    } catch (e) {
+      notify((e as Error).message, (e as Error).message);
+    } finally {
+      setInternalChecking(false);
+    }
   };
 
-  const handleConfirmPayment = async () => {
+  // Auto-fetch Snap token when opening an older pending Midtrans order that lacks snapToken
+  useEffect(() => {
+    if (
+      stage !== "pay" ||
+      !db.paymentConfig?.enabled ||
+      liveOrder.payment?.status !== "pending" ||
+      liveOrder.payment?.snapToken ||
+      autoPreparedOrderRef.current === liveOrder.id
+    ) {
+      return;
+    }
+    autoPreparedOrderRef.current = liveOrder.id;
+    void api("payments/status", { id: liveOrder.id })
+      .then(() => refresh())
+      .catch(() => {});
+  }, [
+    stage,
+    db.paymentConfig?.enabled,
+    liveOrder.id,
+    liveOrder.payment?.status,
+    liveOrder.payment?.snapToken,
+    refresh,
+  ]);
+
+  const effectiveStage: "pay" | "receipt" =
+    liveOrder.payment?.status === "paid" ? "receipt" : stage;
+
+  // Celebrate automatically when Midtrans status updates to paid
+  useEffect(() => {
+    if (liveOrder.payment?.status === "paid" && !celebratedRef.current) {
+      celebratedRef.current = true;
+      try {
+        confetti({ particleCount: 65, spread: 70, origin: { y: 0.6 } });
+      } catch {}
+    }
+  }, [liveOrder.payment?.status]);
+
+  const handleDemoSettlement = async () => {
     if (confirming) return;
     setConfirming(true);
-    setVerifyMsg(
-      t(
-        "Menghubungkan ke Gerbang Switching Midtrans…",
-        "Connecting to Midtrans Switching Gateway…",
-      ),
-    );
     try {
-      await new Promise((r) => setTimeout(r, 380));
-      setVerifyMsg(
-        t(
-          `Memvalidasi Settlement ${activeChannel.badge} & Menerbitkan Struk…`,
-          `Validating ${activeChannel.badge} Settlement & Issuing Receipt…`,
-        ),
-      );
-      const detailSuffix =
-        activeChannel.category === "card" && cardInstallment > 1
-          ? ` (Cicilan 0% ${cardInstallment} Bulan)`
-          : activeChannel.category === "paylater"
-            ? paylaterTenor === 1
-              ? " (Bayar 30 Hari · Bunga 0%)"
-              : ` (Cicilan ${paylaterTenor} Bulan)`
-            : "";
-      await completeOrderPayment(
-        liveOrder.id,
-        `${activeChannel.label}${detailSuffix}`,
-      );
+      await completeOrderPayment(liveOrder.id, "Midtrans Sandbox Demo");
       setStage("receipt");
-      try {
-        confetti({
-          particleCount: 65,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch {}
+      if (!celebratedRef.current) {
+        celebratedRef.current = true;
+        try {
+          confetti({ particleCount: 65, spread: 70, origin: { y: 0.6 } });
+        } catch {}
+      }
     } catch (e) {
       notify((e as Error).message, (e as Error).message);
     } finally {
       setConfirming(false);
-      setVerifyMsg("");
     }
   };
 
-  if (stage === "pay") {
+  if (effectiveStage === "pay") {
+    const itemsSubtotal = liveOrder.items.reduce(
+      (s, i) => s + i.price * i.quantity,
+      0,
+    );
+    const totalPairs = liveOrder.items.reduce((s, i) => s + i.quantity, 0);
+    const midtransActive = Boolean(db.paymentConfig?.enabled);
+
     return (
       <div className="inline-payment-stage">
-        <div className="inline-gateway-trust-bar">
-          <span className="inline-gateway-trust-pill">
-            <LockKeyhole size={13} />
-            MIDTRANS SANDBOX × VALERIE &amp; CO
+        <nav className="checkout-stepper" aria-label={t("Tahap Checkout", "Checkout Steps")}>
+          <span className="checkout-step-pill is-done">
+            <b>01</b> {t("Pengiriman", "Delivery")}
           </span>
-          <span className="inline-gateway-trust-meta">
-            256-BIT SSL ENCRYPTED · PCI-DSS LEVEL 1 ·{" "}
-            {t("VERIFIKASI OTOMATIS", "AUTO-SETTLEMENT")}
+          <span className="checkout-step-line is-done" aria-hidden="true" />
+          <span className="checkout-step-pill is-active">
+            <b>02</b> {t("Midtrans Snap", "Midtrans Snap")}
           </span>
-        </div>
+          <span className="checkout-step-line" aria-hidden="true" />
+          <span className="checkout-step-pill">
+            <b>03</b> {t("Struk Resmi", "Official Receipt")}
+          </span>
+        </nav>
 
-        <div className="inline-payment-header">
-          <div>
-            <span className="eyebrow">
-              {t(
-                "PAYMENT GATEWAY TERINTEGRASI · TETAP DI HALAMAN INI",
-                "INTEGRATED IN-PAGE PAYMENT GATEWAY · NO NEW TAB",
-              )}
-            </span>
-            <h2>
-              {t(
-                "Pilih Metode & Selesaikan Pembayaran",
-                "Choose Method & Complete Payment",
-              )}
-            </h2>
-            <p>
-              {t(
-                "Mendukung QRIS Dinamis, GoPay, OVO, ShopeePay, DANA, LinkAja, 8 Bank Virtual Account, Kartu Kredit/Debit 3DS, Indomaret/Alfamart, dan PayLater — langsung di halaman ini tanpa pindah tab.",
-                "Supports Dynamic QRIS, GoPay, OVO, ShopeePay, DANA, LinkAja, 8 Bank Virtual Accounts, 3DS Cards, Retail Stores, and PayLater — 100% inline on this page.",
-              )}
-            </p>
-          </div>
-          <div className="inline-payment-timer-box">
-            <small>{t("Batas Waktu Sesi", "Session Timer")}</small>
-            <strong>{countdownText}</strong>
-            <span>{liveOrder.id}</span>
-          </div>
-        </div>
-
-        <div className="inline-payment-amount-banner">
-          <div>
-            <span>{t("Total Tagihan Pesanan", "Total Amount Due")}</span>
-            <strong>{money(liveOrder.total, cur)}</strong>
-          </div>
-          <div className="inline-payment-amount-meta">
-            <span>{receiptNo}</span>
-            <small>
-              {liveOrder.items.reduce((s, i) => s + i.quantity, 0)}{" "}
-              {t("pasang sepatu atelier", "atelier pairs")}
-            </small>
-          </div>
-        </div>
-
-        <div className="inline-channel-selector">
-          <div className="inline-category-tabs" role="tablist">
-            {(
-              [
-                ["all", t("Semua Metode (19)", "All Methods (19)")],
-                ["qris_ewallet", t("QRIS & E-Wallet", "QRIS & E-Wallet")],
-                ["va", t("Virtual Account Bank", "Bank Virtual Account")],
-                ["card", t("Kartu Kredit / Debit", "Credit / Debit Card")],
-                ["retail", t("Indomaret & Alfamart", "Retail Stores")],
-                ["paylater", t("PayLater & Cicilan", "PayLater")],
-              ] as const
-            ).map(([catKey, catLabel]) => (
-              <button
-                key={catKey}
-                type="button"
-                role="tab"
-                aria-selected={catFilter === catKey}
-                className={`inline-category-tab ${catFilter === catKey ? "active" : ""}`}
-                onClick={() => setCatFilter(catKey)}
-              >
-                {catLabel}
-              </button>
-            ))}
-          </div>
-
-          <div className="inline-channel-grid">
-            {filteredChannels.map((ch) => (
-              <button
-                key={ch.id}
-                type="button"
-                className={`inline-channel-chip ${channelId === ch.id ? "active" : ""}`}
-                onClick={() => setChannelId(ch.id)}
-              >
-                <div className="inline-channel-chip-top">
-                  <span className="inline-channel-badge">{ch.badge}</span>
-                  {channelId === ch.id && <Check size={14} />}
-                </div>
-                <b>{ch.label}</b>
-                <small>{ch.sub}</small>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="inline-payment-instruction-card">
-          {activeChannel.category === "qris_ewallet" ? (
-            <div className="inline-qris-box">
-              <div className="inline-qris-visual" aria-label={`QRIS ${activeChannel.label}`}>
-                <div className="inline-qris-top">
-                  <strong>{activeChannel.badge} · QRIS</strong>
-                  <span>NMID: ID202608891029A01</span>
-                </div>
-                <svg
-                  viewBox="0 0 120 120"
-                  className="inline-qris-svg"
-                  role="img"
-                  aria-label="QR Code"
-                >
-                  <rect width="120" height="120" rx="8" fill="#ffffff" />
-                  <rect x="10" y="10" width="30" height="30" fill="#171412" />
-                  <rect x="15" y="15" width="20" height="20" fill="#ffffff" />
-                  <rect x="20" y="20" width="10" height="10" fill="#171412" />
-                  <rect x="80" y="10" width="30" height="30" fill="#171412" />
-                  <rect x="85" y="15" width="20" height="20" fill="#ffffff" />
-                  <rect x="90" y="20" width="10" height="10" fill="#171412" />
-                  <rect x="10" y="80" width="30" height="30" fill="#171412" />
-                  <rect x="15" y="85" width="20" height="20" fill="#ffffff" />
-                  <rect x="20" y="90" width="10" height="10" fill="#171412" />
-                  <rect x="48" y="14" width="8" height="8" fill="#171412" />
-                  <rect x="62" y="14" width="8" height="16" fill="#171412" />
-                  <rect x="48" y="28" width="8" height="14" fill="#171412" />
-                  <rect x="14" y="48" width="16" height="8" fill="#171412" />
-                  <rect x="36" y="48" width="14" height="14" fill="#171412" />
-                  <rect x="52" y="46" width="16" height="16" rx="3" fill="#8b6f47" />
-                  <rect x="74" y="48" width="14" height="8" fill="#171412" />
-                  <rect x="94" y="48" width="16" height="16" fill="#171412" />
-                  <rect x="20" y="62" width="10" height="10" fill="#171412" />
-                  <rect x="48" y="68" width="16" height="8" fill="#171412" />
-                  <rect x="70" y="64" width="10" height="18" fill="#171412" />
-                  <rect x="48" y="84" width="12" height="12" fill="#171412" />
-                  <rect x="66" y="88" width="16" height="8" fill="#171412" />
-                  <rect x="88" y="78" width="22" height="12" fill="#171412" />
-                  <rect x="84" y="96" width="12" height="14" fill="#171412" />
-                  <rect x="102" y="96" width="8" height="14" fill="#171412" />
-                </svg>
-                <small>VALERIE &amp; CO ATELIER · {money(liveOrder.total, cur)}</small>
-                <div className="inline-qris-mini-btns">
-                  <button
-                    type="button"
-                    className="button ghost small"
-                    onClick={downloadQrisSvg}
-                  >
-                    <Download size={12} />
-                    {t("Unduh QRIS", "Download QRIS")}
-                  </button>
-                  <button
-                    type="button"
-                    className="button ghost small"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(qrisPayloadString);
-                      notify("Kode QRIS disalin", "QRIS payload copied");
-                    }}
-                  >
-                    <Copy size={12} />
-                    {t("Salin Kode", "Copy Code")}
-                  </button>
-                </div>
-              </div>
-              <div className="inline-qris-steps">
-                <h4>
-                  <QrCode size={18} /> {activeChannel.label}
-                </h4>
-                {activeChannel.id === "ovo" && (
-                  <div className="inline-ewallet-phone-box">
-                    <label>
-                      {t(
-                        "Nomor Handphone Terdaftar OVO (Push Notification):",
-                        "Registered OVO Phone Number (Push Notification):",
-                      )}
-                      <div className="inline-ewallet-phone-row">
-                        <input
-                          type="tel"
-                          value={ovoPhone}
-                          onChange={(e) => setOvoPhone(e.target.value)}
-                          placeholder="0812xxxxxxxx"
-                        />
-                        <button
-                          type="button"
-                          className="button dark small"
-                          onClick={() => {
-                            setOvoPushed(true);
-                            notify(
-                              `Notifikasi tagihan dikirim ke OVO (${ovoPhone})`,
-                              `Payment notification sent to OVO (${ovoPhone})`,
-                            );
-                          }}
-                        >
-                          {ovoPushed
-                            ? t("Terkirim ke OVO ✓", "Sent to OVO ✓")
-                            : t("Kirim Tagihan ke OVO", "Push to OVO App")}
-                        </button>
-                      </div>
-                    </label>
+        <div className="midtrans-vitrine-layout">
+          <div className="midtrans-vitrine-main">
+            {midtransActive ? (
+              <MidtransSnapEmbed
+                orderId={liveOrder.id}
+                snapToken={liveOrder.payment?.snapToken}
+                paymentUrl={liveOrder.payment?.url}
+                clientKey={db.paymentConfig?.clientKey}
+                snapScriptUrl={db.paymentConfig?.snapScriptUrl}
+                sandbox={
+                  liveOrder.payment?.sandbox ?? !db.paymentConfig?.production
+                }
+                totalText={money(liveOrder.total, cur)}
+                checkingStatus={checkingRemote || internalChecking}
+                onSyncStatus={syncGatewayStatus}
+                onSettled={() => {
+                  window.setTimeout(() => {
+                    void syncGatewayStatus();
+                  }, 1200);
+                }}
+                t={(text) => t(text, text)}
+              />
+            ) : (
+              <div className="midtrans-atelier-frame">
+                <div className="midtrans-atelier-frame-head">
+                  <div className="midtrans-atelier-brand">
+                    <span className="midtrans-atelier-eyebrow">
+                      VALERIE &amp; CO · SANDBOX PREVIEW
+                    </span>
+                    <div className="midtrans-atelier-badges">
+                      <span className="midtrans-lock-pill">
+                        <LockKeyhole size={12} /> DEMO MODE
+                      </span>
+                    </div>
                   </div>
-                )}
-                <ol>
-                  <li>
-                    {t(
-                      `Buka aplikasi ${activeChannel.id === "qris" ? "m-Banking (BCA Mobile, Livin', BRImo, Wondr) atau E-Wallet (GoPay, OVO, DANA, ShopeePay, LinkAja)" : activeChannel.label} di ponsel Anda.`,
-                      `Open your ${activeChannel.label} or mobile banking app on your phone.`,
-                    )}
-                  </li>
-                  <li>
-                    {t(
-                      "Pindai kode QRIS Dinamis di samping (atau unggah gambar QRIS yang diunduh). Nominal tagihan terisi otomatis.",
-                      "Scan the Dynamic QRIS code on the left (or upload the downloaded QRIS image). The total amount is pre-filled automatically.",
-                    )}
-                  </li>
-                  <li>
-                    {t(
-                      "Selesaikan otorisasi PIN di ponsel Anda, lalu klik tombol Konfirmasi Pembayaran di bawah untuk langsung menerbitkan Struk Resmi di halaman ini.",
-                      "Authorize with your PIN, then click Confirm Payment below to immediately issue your Official Receipt on this page.",
-                    )}
-                  </li>
-                </ol>
-              </div>
-            </div>
-          ) : activeChannel.category === "va" ? (
-            <div className="inline-va-box">
-              <div className="inline-va-head">
-                <span>
-                  <span className="inline-channel-badge">{activeChannel.badge}</span>{" "}
-                  {activeChannel.label}
-                </span>
-                <small>{t("Verifikasi Otomatis 24 Jam", "24/7 Auto Verification")}</small>
-              </div>
-              {activeChannel.billerCode && (
-                <div className="inline-va-number-row">
-                  <div>
-                    <small className="inline-va-sublabel">
-                      {t("Kode Perusahaan / Biller Mandiri", "Mandiri Company / Biller Code")}
-                    </small>
-                    <code>{activeChannel.billerCode} (VALERIE &amp; CO)</code>
+                  <div className="midtrans-atelier-amount">
+                    <div>
+                      <small>{t("No. Pesanan", "Order ID")}</small>
+                      <strong>
+                        #{liveOrder.id.replace(/^SOL-/, "").slice(0, 8)}
+                      </strong>
+                    </div>
+                    <div className="is-right">
+                      <small>{t("Total Tagihan", "Total Due")}</small>
+                      <strong>{money(liveOrder.total, cur)}</strong>
+                    </div>
                   </div>
+                </div>
+                <div className="midtrans-demo-body">
+                  <h3>{t("Pratinjau Sesi Pembayaran", "Payment Session Preview")}</h3>
+                  <p>
+                    {t(
+                      "Kunci Midtrans live belum aktif di server lokal ini. Konfirmasi untuk menerbitkan Struk Resmi.",
+                      "Live Midtrans keys are not active on this local environment. Confirm to issue your Official Receipt.",
+                    )}
+                  </p>
                   <button
                     type="button"
-                    className="button ghost small"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(activeChannel.billerCode!);
-                      notify("Kode Perusahaan disalin", "Biller code copied");
-                    }}
+                    className="btn-atelier-primary"
+                    disabled={confirming}
+                    onClick={() => void handleDemoSettlement()}
                   >
-                    <Copy size={14} />
-                    {t("Salin Kode", "Copy Code")}
+                    <Check size={16} />
+                    {confirming
+                      ? t("Memproses Struk…", "Issuing Receipt…")
+                      : t("Konfirmasi Pembayaran & Terbitkan Struk", "Confirm & Issue Receipt")}
                   </button>
                 </div>
-              )}
-              <div className="inline-va-number-row">
-                <div>
-                  <small className="inline-va-sublabel">
-                    {t("Nomor Virtual Account", "Virtual Account Number")}
-                  </small>
-                  <code>{virtualAccountNumber}</code>
-                </div>
-                <button
-                  type="button"
-                  className="button ghost small"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(virtualAccountNumber);
-                    notify(
-                      "Nomor Virtual Account disalin",
-                      "Virtual Account number copied",
-                    );
-                  }}
-                >
-                  <Copy size={14} />
-                  {t("Salin Nomor VA", "Copy VA")}
-                </button>
               </div>
-              <div className="inline-va-number-row">
-                <div>
-                  <small className="inline-va-sublabel">
-                    {t("Nominal Transfer (Tepat Hingga Digit Terakhir)", "Exact Transfer Amount")}
-                  </small>
-                  <code>{money(liveOrder.total, cur)}</code>
-                </div>
-                <button
-                  type="button"
-                  className="button ghost small"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(String(Math.round(liveOrder.total)));
-                    notify("Nominal tagihan disalin", "Amount copied");
-                  }}
-                >
-                  <Copy size={14} />
-                  {t("Salin Nominal", "Copy Amount")}
-                </button>
+            )}
+          </div>
+
+          <aside className="midtrans-vitrine-aside">
+            <div className="midtrans-aside-card">
+              <span className="midtrans-aside-label">
+                {t("Ringkasan Pesanan", "Order Summary")} · {receiptNo}
+              </span>
+              <div className="midtrans-aside-recipient">
+                <b>
+                  {liveOrder.address.name} · {liveOrder.address.phone}
+                </b>
+                <p>
+                  {liveOrder.address.street}, {liveOrder.address.city}{" "}
+                  {liveOrder.address.postal}
+                </p>
               </div>
-              <p className="inline-va-hint">
-                {t(
-                  `Buka menu Pembayaran / Transfer Virtual Account pada aplikasi ${activeChannel.label}, tempel nomor ${virtualAccountNumber}, lalu klik Konfirmasi Pembayaran di bawah.`,
-                  `Open Virtual Account Transfer in ${activeChannel.label}, paste ${virtualAccountNumber}, then click Confirm Payment below.`,
-                )}
-              </p>
-            </div>
-          ) : activeChannel.category === "card" ? (
-            <div className="inline-va-box">
-              <div className="inline-va-head">
-                <span>
-                  <CreditCard size={16} /> {activeChannel.label}
-                </span>
-                <small>3D Secure 2.0 · PCI-DSS Level 1</small>
-              </div>
-              <div className="inline-card-form-grid">
-                <label className="span-two">
-                  {t("Nomor Kartu Kredit / Debit", "Card Number")}
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="4532 •••• •••• ••••"
-                    value={cardNumber}
-                    onChange={(e) =>
-                      setCardNumber(
-                        e.target.value
-                          .replace(/\D/g, "")
-                          .slice(0, 16)
-                          .replace(/(\d{4})(?=\d)/g, "$1 "),
-                      )
-                    }
-                  />
-                </label>
-                <label>
-                  {t("Masa Berlaku (MM/YY)", "Expiry Date (MM/YY)")}
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="08/29"
-                    value={cardExpiry}
-                    onChange={(e) => {
-                      const d = e.target.value.replace(/\D/g, "").slice(0, 4);
-                      setCardExpiry(d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d);
-                    }}
-                  />
-                </label>
-                <label>
-                  CVV / CVC
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    placeholder="•••"
-                    maxLength={4}
-                    value={cardCvv}
-                    onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  />
-                </label>
-                <label>
-                  {t("Nama Pemegang Kartu", "Cardholder Name")}
-                  <input
-                    type="text"
-                    placeholder="VALERIE MEMBER"
-                    value={cardHolder}
-                    onChange={(e) => setCardHolder(e.target.value)}
-                  />
-                </label>
-                <label>
-                  {t("Pilihan Pembayaran / Cicilan 0%", "Installment Plan")}
-                  <select
-                    value={cardInstallment}
-                    onChange={(e) =>
-                      setCardInstallment(Number(e.target.value) as 1 | 3 | 6 | 12)
-                    }
+              <div className="midtrans-aside-items">
+                {liveOrder.items.map((item, idx) => (
+                  <div
+                    className="midtrans-aside-item"
+                    key={`${item.productId}-${item.size}-${idx}`}
                   >
-                    <option value={1}>
-                      {t("Bayar Penuh (100%)", "Full Payment (100%)")} —{" "}
-                      {money(liveOrder.total, cur)}
-                    </option>
-                    <option value={3}>
-                      {t("Cicilan 0% · 3 Bulan", "0% Installment · 3 Months")} —{" "}
-                      {money(Math.ceil(liveOrder.total / 3), cur)}/bln
-                    </option>
-                    <option value={6}>
-                      {t("Cicilan 0% · 6 Bulan", "0% Installment · 6 Months")} —{" "}
-                      {money(Math.ceil(liveOrder.total / 6), cur)}/bln
-                    </option>
-                    <option value={12}>
-                      {t("Cicilan 0% · 12 Bulan", "0% Installment · 12 Months")} —{" "}
-                      {money(Math.ceil(liveOrder.total / 12), cur)}/bln
-                    </option>
-                  </select>
-                </label>
-              </div>
-            </div>
-          ) : activeChannel.category === "retail" ? (
-            <div className="inline-va-box">
-              <div className="inline-va-head">
-                <span>
-                  <span className="inline-channel-badge">{activeChannel.badge}</span>{" "}
-                  {activeChannel.label}
-                </span>
-                <small>{t("Kode Barcode Kasir Instan", "Instant Cashier Barcode")}</small>
-              </div>
-              <div className="inline-retail-barcode-box">
-                <svg
-                  viewBox="0 0 260 56"
-                  className="inline-barcode-svg"
-                  role="img"
-                  aria-label="Payment Barcode"
-                >
-                  <rect width="260" height="56" fill="#ffffff" />
-                  {[
-                    8, 14, 22, 26, 34, 42, 46, 54, 62, 68, 76, 82, 90, 96, 106,
-                    112, 120, 128, 134, 144, 150, 158, 166, 174, 180, 188, 196,
-                    204, 210, 218, 226, 234, 240, 248,
-                  ].map((x, i) => (
-                    <rect
-                      key={x}
-                      x={x}
-                      y="6"
-                      width={i % 3 === 0 ? "4" : "2"}
-                      height="44"
-                      fill="#171412"
-                    />
-                  ))}
-                </svg>
-                <div className="inline-va-number-row">
-                  <div>
-                    <small className="inline-va-sublabel">
-                      {t("Kode Pembayaran Kasir", "Cashier Payment Code")}
-                    </small>
-                    <code>{retailPaymentCode}</code>
+                    <img src={item.image} alt={item.name} />
+                    <div>
+                      <b>{item.name}</b>
+                      <small>
+                        EU {item.size}
+                        {item.color ? ` · ${item.color}` : ""} × {item.quantity}
+                      </small>
+                    </div>
+                    <strong>{money(item.price * item.quantity, cur)}</strong>
                   </div>
-                  <button
-                    type="button"
-                    className="button ghost small"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(retailPaymentCode);
-                      notify("Kode pembayaran kasir disalin", "Payment code copied");
-                    }}
-                  >
-                    <Copy size={14} />
-                    {t("Salin Kode Bayar", "Copy Code")}
-                  </button>
-                </div>
-              </div>
-              <p className="inline-va-hint">
-                {t(
-                  `Tunjukkan barcode atau sebutkan Kode Pembayaran ${retailPaymentCode} (Merchant: Valerie & CO / Midtrans) kepada kasir ${activeChannel.label}, lalu klik Konfirmasi Pembayaran di bawah.`,
-                  `Show the barcode or state Payment Code ${retailPaymentCode} to the ${activeChannel.label} cashier, then click Confirm Payment below.`,
-                )}
-              </p>
-            </div>
-          ) : (
-            <div className="inline-va-box">
-              <div className="inline-va-head">
-                <span>
-                  <span className="inline-channel-badge">{activeChannel.badge}</span>{" "}
-                  {activeChannel.label}
-                </span>
-                <small>{t("Persetujuan Instan Tanpa Kartu", "Instant Cardless Approval")}</small>
-              </div>
-              <div className="inline-paylater-options">
-                {([1, 3, 6, 12] as const).map((months) => (
-                  <button
-                    key={months}
-                    type="button"
-                    className={`inline-channel-chip ${paylaterTenor === months ? "active" : ""}`}
-                    onClick={() => setPaylaterTenor(months)}
-                  >
-                    <b>
-                      {months === 1
-                        ? t("Bayar 30 Hari Lagi (Bunga 0%)", "Pay in 30 Days (0% Interest)")
-                        : t(`Cicilan ${months} Bulan`, `${months}-Month Installment`)}
-                    </b>
-                    <small>
-                      {money(Math.ceil(liveOrder.total / months), cur)} /{" "}
-                      {months === 1 ? t("tagihan", "bill") : t("bulan", "mo")}
-                    </small>
-                  </button>
                 ))}
               </div>
-              <label className="inline-paylater-phone">
-                {t(
-                  `Nomor Handphone Akun ${activeChannel.badge}:`,
-                  `Registered ${activeChannel.badge} Phone Number:`,
+              <div className="midtrans-aside-totals">
+                <div>
+                  <span>
+                    Subtotal ({totalPairs} {t("pasang", "pairs")})
+                  </span>
+                  <span>{money(itemsSubtotal, cur)}</span>
+                </div>
+                {liveOrder.discount > 0 && (
+                  <div>
+                    <span>{t("Diskon", "Discount")}</span>
+                    <span>−{money(liveOrder.discount, cur)}</span>
+                  </div>
                 )}
-                <input
-                  type="tel"
-                  value={paylaterPhone}
-                  onChange={(e) => setPaylaterPhone(e.target.value)}
-                  placeholder="0812xxxxxxxx"
-                />
-              </label>
-            </div>
-          )}
-
-          {liveOrder.payment?.url && (
-            <div className="inline-gateway-embed-wrap">
-              <div className="inline-gateway-embed-bar">
-                <span>
-                  {t(
-                    "Modul Midtrans Snap Live (Tertanam di Halaman Ini — Tanpa Tab Baru)",
-                    "Midtrans Snap Live Module (Embedded In-Page — No New Tab)",
-                  )}
-                </span>
-                <button
-                  type="button"
-                  className="button ghost small"
-                  onClick={() => setShowGatewayFrame((v) => !v)}
-                >
-                  {showGatewayFrame
-                    ? t("Sembunyikan Modul Snap", "Hide Snap Module")
-                    : t("Tampilkan Modul Snap di Sini", "Show Snap Module Inline")}
-                </button>
+                <div>
+                  <span>{t("Pengiriman", "Shipping")}</span>
+                  <span>
+                    {liveOrder.shipping
+                      ? money(liveOrder.shipping, cur)
+                      : t("Gratis", "Free")}
+                  </span>
+                </div>
+                <div className="midtrans-aside-grand">
+                  <b>Total</b>
+                  <b>{money(liveOrder.total, cur)}</b>
+                </div>
               </div>
-              {showGatewayFrame && (
-                <iframe
-                  src={liveOrder.payment.url}
-                  title="Midtrans Inline Payment"
-                  className="inline-gateway-iframe"
-                />
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="inline-payment-actions">
-          <button
-            type="button"
-            className="button dark full inline-confirm-pay-btn"
-            disabled={confirming}
-            onClick={() => void handleConfirmPayment()}
-          >
-            <Check size={18} />
-            {confirming
-              ? verifyMsg ||
-                t("Memverifikasi & Menerbitkan Struk…", "Verifying & Issuing Receipt…")
-              : t(
-                  `Selesaikan Pembayaran via ${activeChannel.badge} & Terbitkan Struk`,
-                  `Complete Payment via ${activeChannel.badge} & Issue Receipt`,
+              <p className="midtrans-aside-hint">
+                {t(
+                  "Semua metode (QRIS, GoPay, ShopeePay, VA Bank, Kartu & PayLater) dikelola langsung oleh Midtrans.",
+                  "All channels (QRIS, e-Wallet, VA, Card & PayLater) run directly inside Midtrans.",
                 )}
-          </button>
-          {onCheckRemoteStatus && (
-            <button
-              type="button"
-              className="button ghost"
-              disabled={checkingRemote}
-              onClick={() => void onCheckRemoteStatus()}
-            >
-              {checkingRemote
-                ? t("Mengecek…", "Checking…")
-                : t("Sinkronkan Status Gateway", "Sync Gateway Status")}
-            </button>
-          )}
+              </p>
+            </div>
+          </aside>
         </div>
       </div>
     );
@@ -1254,7 +632,7 @@ export function InlinePaymentAndReceipt({
           <strong>
             {liveOrder.payment?.method ||
               liveOrder.paymentMethod ||
-              activeChannel.label}
+              "Midtrans Snap"}
           </strong>
         </div>
         <div className="inline-receipt-meta-item">
@@ -1394,7 +772,6 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState("");
   const [applied, setApplied] = useState("");
   const [express, setExpress] = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState<string>("qris");
   const [finished, setFinished] = useState<Order | null>(null);
   const [addressId, setAddressId] = useState(
     () => member?.addresses[0]?.id || "new",
@@ -1409,7 +786,6 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     return (
       <InlinePaymentAndReceipt
         order={finished}
-        initialChannel={selectedChannel}
         startInPaymentStage={true}
         onDone={onDone}
       />
@@ -1559,46 +935,12 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
               <strong>{money(rates.express)}</strong>
             </label>
           </div>
-        </section>
-
-        <section className="checkout-step-card">
-          <div className="checkout-step-head">
-            <span className="checkout-step-num">03</span>
-            <div>
-              <h3>{t("Pembayaran", "Payment")}</h3>
-              <p>
-                {t(
-                  "Pilih kanal pembayaran — tampil langsung di halaman ini tanpa pindah tab.",
-                  "Choose your payment channel — opens inline right here without leaving the page.",
-                )}
-              </p>
-            </div>
-          </div>
-          <div className="delivery-options-list payment-channel-options">
-            {PAYMENT_CHANNELS.map((ch) => (
-              <label
-                key={ch.id}
-                className={`delivery-option ${selectedChannel === ch.id ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="paymentChannel"
-                  checked={selectedChannel === ch.id}
-                  onChange={() => setSelectedChannel(ch.id)}
-                />
-                <span>
-                  <b>{ch.label}</b>
-                  <small>{ch.sub}</small>
-                </span>
-              </label>
-            ))}
-          </div>
           <div className="notice checkout-payment-notice">
             <LockKeyhole size={18} />
             <p>
               {t(
-                "Pembayaran terintegrasi langsung di jendela ini. Setelah konfirmasi, Struk Pembayaran Resmi Valerie & CO langsung terbit otomatis.",
-                "Inline payment right inside this window. Upon confirmation, your official Valerie & CO payment receipt is issued immediately.",
+                "Setelah konfirmasi pesanan, Anda langsung masuk ke panel penyelesaian pembayaran & struk resmi Valerie & CO.",
+                "After confirming your order, you move directly to payment settlement & official Valerie & CO receipt issuance.",
               )}
             </p>
           </div>

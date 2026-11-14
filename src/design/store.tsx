@@ -97,6 +97,7 @@ export type Order = {
     provider: "midtrans";
     status: "pending" | "paid" | "failed" | "refunded";
     url?: string;
+    snapToken?: string;
     sandbox: boolean;
     method?: string;
     transactionId?: string;
@@ -166,6 +167,8 @@ type Database = {
   paymentConfig?: {
     enabled: boolean;
     production: boolean;
+    clientKey?: string;
+    snapScriptUrl?: string;
     shipping: { standard: number; express: number; freeAbove: number };
   };
   sales?: Record<string, number>;
