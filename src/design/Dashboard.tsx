@@ -68,6 +68,7 @@ import {
 } from "./store";
 import type { Item } from "./catalog";
 import { Modal, Empty, Status, csvDownload } from "./ui";
+import { euFootCm, euUsLabel } from "./commerce";
 import {
   AddressFields,
   InlinePaymentAndReceipt,
@@ -79,6 +80,58 @@ import {
   CutoutImg,
   removeBackgroundFromImageElement,
 } from "./bg-remove";
+const PREFERRED_EU_SIZES = [36, 37, 38, 39, 40, 41, 42, 43, 44, 45];
+
+/** Visual EU shoe size tile selector synced with hidden form field for ProfilePanel. */
+function PreferredSizePicker({
+  defaultSize,
+  t,
+}: {
+  defaultSize: number;
+  t: (id: string, en: string) => string;
+}) {
+  const [selected, setSelected] = useState<number>(() =>
+    PREFERRED_EU_SIZES.includes(Number(defaultSize)) ? Number(defaultSize) : 39,
+  );
+  useEffect(() => {
+    const next = Number(defaultSize);
+    if (PREFERRED_EU_SIZES.includes(next)) setSelected(next);
+  }, [defaultSize]);
+
+  return (
+    <div className="profile-size-field">
+      <div className="profile-size-head">
+        <span>{t("Ukuran sepatu favorit (EU)", "Preferred EU shoe size")}</span>
+        <span className="profile-size-badge">
+          EU {selected} · ±{euFootCm(selected)} cm ({euUsLabel(selected)})
+        </span>
+      </div>
+      <input type="hidden" name="preferredSize" value={selected} />
+      <div
+        className="profile-size-grid"
+        role="group"
+        aria-label={t("Pilih ukuran sepatu favorit", "Choose preferred shoe size")}
+      >
+        {PREFERRED_EU_SIZES.map((s) => {
+          const active = selected === s;
+          return (
+            <button
+              type="button"
+              key={s}
+              className={active ? "selected" : ""}
+              aria-pressed={active}
+              onClick={() => setSelected(s)}
+            >
+              <strong>{s}</strong>
+              <span>{euFootCm(s)} cm</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   mode: "member" | "admin";
   onShop: () => void;
@@ -246,12 +299,14 @@ export default function Dashboard({
       ["overview", t("Ringkasan", "Overview"), LayoutDashboard],
       ["orders", t("Pesanan", "Orders"), ShoppingBag],
       ["products", t("Produk", "Products"), Package],
-      ["customers", t("Pelanggan", "Clients"), Users],
-      ...(isAdminRole(activeStudioRole)
+      ...(isSuperAdminRole(activeStudioRole)
         ? ([
-            ["coupons", t("Promo", "Promotions"), Tag],
+            ["customers", t("Pelanggan", "Clients"), Users],
             ["team", t("Tim & Akses", "Team & Access"), ShieldCheck],
           ] as const)
+        : []),
+      ...(isAdminRole(activeStudioRole)
+        ? ([["coupons", t("Promo", "Promotions"), Tag]] as const)
         : []),
       ["support", t("Pesan", "Messages"), MessageSquare],
       ...(isAdminRole(activeStudioRole)
@@ -4862,19 +4917,10 @@ function ProfilePanel() {
               readOnly={serverMode || !isPlaceholderEmail}
             />
           </label>
-          <label>
-            {t("Ukuran sepatu favorit (EU)", "Preferred EU shoe size")}
-            <select
-              name="preferredSize"
-              defaultValue={member.preferredSize || 39}
-            >
-              {[36, 37, 38, 39, 40, 41, 42, 43, 44, 45].map((s) => (
-                <option key={s} value={s}>
-                  EU {s}
-                </option>
-              ))}
-            </select>
-          </label>
+          <PreferredSizePicker
+            defaultSize={member.preferredSize || 39}
+            t={t}
+          />
         </div>
         <label>
           {t("Catatan gaya & preferensi", "Style note & fit preference")}

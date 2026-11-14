@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { normalizeCanonicalPhone, phoneLookupCandidates } from "./phone.mjs";
 
 const PAGE_SIZE = 1000;
 
@@ -95,6 +96,36 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
       if (page.length < PAGE_SIZE) break;
     }
     return rows;
+  }
+
+  async function findMemberPhoneConflict(phone, excludeId = null) {
+    const candidates = phoneLookupCandidates(phone);
+    if (!candidates.length) return null;
+    const results = await Promise.all(
+      candidates.map((cand) =>
+        sb.from("members").select("id,data").eq("phone", cand).limit(2),
+      ),
+    );
+    for (const res of results) {
+      const rows = unwrap(res) || [];
+      const hit = rows.find((r) => !excludeId || (r.id || r.data?.id) !== excludeId);
+      if (hit?.data) return hit.data;
+    }
+    return null;
+  }
+
+  async function assertUniqueMemberPhone(member) {
+    if (!member || typeof member !== "object") return member;
+    const normalized = member.phone
+      ? normalizeCanonicalPhone(member.phone) || member.phone
+      : "";
+    if (normalized) {
+      const conflict = await findMemberPhoneConflict(normalized, member.id);
+      if (conflict) {
+        throw fail(409, "WhatsApp number is already linked to another account");
+      }
+    }
+    return { ...member, phone: normalized };
   }
 
   return {
@@ -250,30 +281,25 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
       return { ...m, role };
     },
     async findMemberByPhone(phone) {
-      const row = unwrap(
-        await sb
-          .from("members")
-          .select("data")
-          .eq("phone", phone)
-          .limit(1)
-          .maybeSingle(),
-      );
-      return row?.data || null;
+      return findMemberPhoneConflict(phone);
     },
     async putMember(m) {
-      unwrap(
-        await sb.from("members").upsert(
-          {
-            id: m.id,
-            email: m.email,
-            phone: m.phone || "",
-            name: m.name || "",
-            data: m,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" },
-        ),
+      const nextMember = await assertUniqueMemberPhone(m);
+      const res = await sb.from("members").upsert(
+        {
+          id: nextMember.id,
+          email: nextMember.email,
+          phone: nextMember.phone || "",
+          name: nextMember.name || "",
+          data: nextMember,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
       );
+      if (res.error && String(res.error.code || "") === "23505") {
+        throw fail(409, "WhatsApp number is already linked to another account");
+      }
+      unwrap(res);
     },
 
     async listTickets() {
@@ -414,10 +440,14 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
         user.role === "admin" || user.role === "super_admin"
           ? "admin"
           : "member";
+      const normalizedMember = await assertUniqueMemberPhone(member);
       const enrichedMember =
-        member && typeof member === "object"
-          ? { ...member, role: member.role || user.role || "member" }
-          : member;
+        normalizedMember && typeof normalizedMember === "object"
+          ? {
+              ...normalizedMember,
+              role: normalizedMember.role || user.role || "member",
+            }
+          : normalizedMember;
       try {
         unwrap(
           await sb.rpc("vco_create_user_tx", {

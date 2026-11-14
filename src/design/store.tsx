@@ -279,13 +279,20 @@ function load(): Database {
     settings: { ...d.settings, name: normalizedName },
   };
 }
+const serverBagKey = (uid?: string | null) =>
+  uid ? `solere.server.bag.${uid}` : "solere.server.bag.guest";
+const serverFavKey = (uid?: string | null) =>
+  uid ? `solere.server.favorites.${uid}` : "solere.server.favorites.guest";
+
 function useStoreState() {
+  const initialServerUid = read<string | null>("solere.member", null);
+  const activeBagUidRef = useRef<string | null>(initialServerUid);
   const [db, setDbLocal] = useState<Database>(() =>
     serverMode
       ? {
           ...initial,
-          bag: read("solere.server.bag", []),
-          favorites: read("solere.server.favorites", []),
+          bag: read(serverBagKey(initialServerUid), []),
+          favorites: read(serverFavKey(initialServerUid), []),
         }
       : load(),
   );
@@ -318,6 +325,29 @@ function useStoreState() {
   };
   const receive = (data: any) => {
     const local = dbRef.current;
+    const nextUid: string | null = data.currentUser?.id || null;
+    const prevUid = activeBagUidRef.current;
+    let nextBag = local.bag;
+    let nextFavorites = local.favorites;
+    if (nextUid !== prevUid) {
+      const storedBag = read<BagLine[]>(serverBagKey(nextUid), []);
+      const storedFav = read<string[]>(serverFavKey(nextUid), []);
+      nextBag =
+        nextUid && !prevUid && !storedBag.length && local.bag.length
+          ? local.bag
+          : storedBag;
+      nextFavorites =
+        nextUid && !prevUid && !storedFav.length && local.favorites.length
+          ? local.favorites
+          : storedFav;
+      if (nextUid && !prevUid) {
+        try {
+          localStorage.removeItem(serverBagKey(null));
+          localStorage.removeItem(serverFavKey(null));
+        } catch {}
+      }
+      activeBagUidRef.current = nextUid;
+    }
     const incomingSettings = data.settings
       ? {
           ...data.settings,
@@ -337,9 +367,10 @@ function useStoreState() {
     write({
       ...local,
       ...data,
+      subscribers: data.subscribers ?? [],
       settings: incomingSettings,
-      bag: local.bag,
-      favorites: local.favorites,
+      bag: nextBag,
+      favorites: nextFavorites,
     });
     setBackendUser(data.currentUser);
     setMemberId(data.currentUser?.id || null);
@@ -412,11 +443,9 @@ function useStoreState() {
   useEffect(() => {
     try {
       if (serverMode) {
-        localStorage.setItem("solere.server.bag", JSON.stringify(db.bag));
-        localStorage.setItem(
-          "solere.server.favorites",
-          JSON.stringify(db.favorites),
-        );
+        const uid = activeBagUidRef.current;
+        localStorage.setItem(serverBagKey(uid), JSON.stringify(db.bag));
+        localStorage.setItem(serverFavKey(uid), JSON.stringify(db.favorites));
       } else localStorage.setItem(KEY, JSON.stringify(db));
     } catch {
       setStorageError(true);
@@ -530,21 +559,32 @@ function useStoreState() {
     }
   };
   const normalizeWaPhone = (raw = "") => {
-    const digits = raw.replace(/[^\d+]/g, "");
+    const cleaned = raw.replace(/[^\d+]/g, "");
+    let digits = cleaned.replace(/^\+/, "");
     if (!digits) return "";
-    if (digits.startsWith("08")) return `+62${digits.slice(1)}`;
-    if (digits.startsWith("62")) return `+${digits}`;
-    if (digits.startsWith("+")) return digits;
+    if (digits.startsWith("00")) digits = digits.slice(2);
+    if (digits.startsWith("6208")) digits = `62${digits.slice(3)}`;
+    else if (digits.startsWith("08")) digits = `62${digits.slice(1)}`;
+    else if (digits.startsWith("8")) digits = `62${digits}`;
     return `+${digits}`;
   };
   const enter = (name: string, email: string, phone = "") => {
     const normalized = email.trim().toLowerCase();
     const normalizedPhone = normalizeWaPhone(phone);
-    const exists = db.members.find(
-      (m) =>
-        (normalized && m.email === normalized) ||
-        (normalizedPhone && normalizeWaPhone(m.phone) === normalizedPhone),
-    );
+    const emailOwner = normalized
+      ? db.members.find((m) => m.email === normalized)
+      : undefined;
+    const phoneOwner = normalizedPhone
+      ? db.members.find((m) => m.phone && normalizeWaPhone(m.phone) === normalizedPhone)
+      : undefined;
+    if (emailOwner && phoneOwner && emailOwner.id !== phoneOwner.id) {
+      notify(
+        "Nomor WhatsApp sudah terhubung ke akun lain.",
+        "This WhatsApp number is already linked to another account.",
+      );
+      return;
+    }
+    const exists = emailOwner || phoneOwner;
     if (exists) {
       if (normalizedPhone && !exists.phone) {
         setDb((d) => ({
@@ -576,6 +616,21 @@ function useStoreState() {
   };
   const saveMember = (value: Member) => {
     const normalizedPhone = value.phone ? normalizeWaPhone(value.phone) : "";
+    if (normalizedPhone) {
+      const conflict = dbRef.current.members.find(
+        (m) =>
+          m.id !== value.id &&
+          m.phone &&
+          normalizeWaPhone(m.phone) === normalizedPhone,
+      );
+      if (conflict) {
+        notify(
+          "Nomor WhatsApp ini sudah digunakan oleh akun lain.",
+          "This WhatsApp number is already linked to another account.",
+        );
+        return;
+      }
+    }
     setDb((d) => ({
       ...d,
       members: d.members.map((m) => {
@@ -966,12 +1021,23 @@ function useStoreState() {
     setStudioRolePreview(null);
     setBackendUser(null);
     setMemberId(null);
+    activeBagUidRef.current = null;
+    try {
+      localStorage.removeItem("solere.server.bag");
+      localStorage.removeItem("solere.server.favorites");
+      localStorage.removeItem(serverBagKey(null));
+      localStorage.removeItem(serverFavKey(null));
+    } catch {}
     if (serverMode) {
       write({
         ...dbRef.current,
+        bag: [],
+        favorites: [],
         orders: [],
         tickets: [],
         members: [],
+        subscribers: [],
+        coupons: [],
       });
       notify("Anda telah keluar dari akun", "You have signed out");
       try {
@@ -985,10 +1051,7 @@ function useStoreState() {
   };
   const studioRole: UserRole = !serverMode
     ? studioRolePreview || "super_admin"
-    : isAdminRole(backendUser?.role) &&
-        studioRolePreview &&
-        (backendUser?.role === "super_admin" ||
-          studioRolePreview !== "super_admin")
+    : isSuperAdminRole(backendUser?.role) && studioRolePreview
       ? studioRolePreview
       : isStudioRole(backendUser?.role)
         ? (backendUser?.role as UserRole)

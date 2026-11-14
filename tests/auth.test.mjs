@@ -630,3 +630,158 @@ test("Google multi-challenge cookies preserve active nonces and Login OTP requir
   });
   assert.equal(otpLogin.status, 200);
 });
+
+test("canonical duplicate phone guard and single-user dashboard isolation (except super_admin)", async (t) => {
+  const setupToken = "test-isolation-setup-token";
+  const app = createApp({
+    dbPath: ":memory:",
+    setupToken,
+    allowOtpPreview: true,
+    sendReset: async () => {},
+    sendWhatsApp: async () => ({ provider: "test" }),
+  });
+  await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+  t.after(() => app.close());
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const request = async (path, body, cookie = "") => {
+    const res = await fetch(`${base}/api/${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(cookie ? { cookie } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return {
+      status: res.status,
+      data: await res.json(),
+      cookie: (res.headers.get("set-cookie") || "").split(";")[0],
+    };
+  };
+
+  // Founding non-super admin setup
+  const founder = await request("auth/setup", {
+    setupToken,
+    name: "Founder Admin",
+    email: "founder@example.com",
+    password: "password123",
+  });
+  assert.equal(founder.status, 200);
+  const founderId = founder.data.currentUser.id;
+
+  // User A registers with formatted 0812-3456-7890 phone
+  const userA = await request("auth/register", {
+    name: "User Alpha",
+    email: "alpha@example.com",
+    phone: "0812-3456-7890",
+    password: "password123",
+  });
+  assert.equal(userA.status, 200);
+  const userAId = userA.data.currentUser.id;
+  assert.equal(userA.data.members[0].phone, "+6281234567890");
+
+  // Alternate phone formats must be blocked across register and register/request
+  for (const variant of [
+    "+6281234567890",
+    "6281234567890",
+    "+62 0812-3456-7890",
+    "81234567890",
+  ]) {
+    const dupReg = await request("auth/register", {
+      name: "Duplicate User",
+      email: `dup-${variant.replace(/\D/g, "")}@example.com`,
+      phone: variant,
+      password: "password123",
+    });
+    assert.equal(dupReg.status, 409);
+
+    const dupOtpReq = await request("auth/register/request", {
+      name: "Duplicate OTP",
+      channel: "phone",
+      phone: variant,
+      password: "password123",
+    });
+    assert.equal(dupOtpReq.status, 409);
+  }
+
+  // User B registers without phone, then tries to claim User A's phone via profile patch -> blocked 409
+  const userB = await request("auth/register", {
+    name: "User Beta",
+    email: "beta@example.com",
+    password: "password123",
+  });
+  assert.equal(userB.status, 200);
+  const userBId = userB.data.currentUser.id;
+  const conflictPatch = await request(
+    "patch",
+    {
+      changes: [
+        {
+          kind: "members",
+          data: {
+            id: userBId,
+            name: "User Beta",
+            email: "beta@example.com",
+            phone: "+62 812-3456-7890",
+            addresses: [],
+          },
+        },
+      ],
+    },
+    userB.cookie,
+  );
+  assert.equal(conflictPatch.status, 409);
+
+  // Regular member dashboard only receives own 1 member profile & cannot patch another user's profile
+  const stateA = await request("state", undefined, userA.cookie);
+  assert.equal(stateA.data.members.length, 1);
+  assert.equal(stateA.data.members[0].id, userAId);
+  assert.deepEqual(stateA.data.subscribers, []);
+
+  const crossPatch = await request(
+    "patch",
+    {
+      changes: [
+        {
+          kind: "members",
+          data: {
+            id: userAId,
+            name: "Hijack",
+            email: "alpha@example.com",
+            phone: "",
+            addresses: [],
+          },
+        },
+      ],
+    },
+    userB.cookie,
+  );
+  assert.equal(crossPatch.status, 403);
+
+  // Founding non-super admin also sees only 1 member profile & empty subscribers (only super_admin accesses all users)
+  const adminState = await request("state", undefined, founder.cookie);
+  assert.equal(adminState.data.members.length, 1);
+  assert.equal(adminState.data.members[0].id, founderId);
+  assert.deepEqual(adminState.data.subscribers, []);
+
+  // Promote founder to super_admin -> super_admin can now see all registered members
+  const promoted = await request(
+    "admin/role",
+    { userId: founderId, role: "super_admin" },
+    founder.cookie,
+  );
+  assert.equal(promoted.status, 200);
+  assert.equal(promoted.data.members.length, 3);
+
+  // Promote User B to staff -> staff still sees ONLY their own 1 member profile (never multi-user directory)
+  const makeStaff = await request(
+    "admin/role",
+    { userId: userBId, role: "staff" },
+    founder.cookie,
+  );
+  assert.equal(makeStaff.status, 200);
+  const staffState = await request("state", undefined, userB.cookie);
+  assert.equal(staffState.data.members.length, 1);
+  assert.equal(staffState.data.members[0].id, userBId);
+  assert.deepEqual(staffState.data.subscribers, []);
+});

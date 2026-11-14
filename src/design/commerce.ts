@@ -104,3 +104,26 @@ export function validateBag(lines: BagLine[], products: Item[]) {
     );
   });
 }
+
+/** Approximate anatomical foot length (cm) for standard European (EU) shoe sizes. */
+export function euFootCm(eu: number): string {
+  return (22.5 + (eu - 36) * 0.65).toFixed(1);
+}
+
+const EU_US_EQUIV: Record<number, string> = {
+  36: "W 6 / UK 3.5",
+  37: "W 6.5 / UK 4",
+  38: "W 7.5 / UK 5",
+  39: "W 8.5 / M 6.5",
+  40: "M 7.5 / UK 6.5",
+  41: "M 8 / UK 7",
+  42: "M 9 / UK 8",
+  43: "M 10 / UK 9",
+  44: "M 10.5 / UK 9.5",
+  45: "M 11.5 / UK 10.5",
+};
+
+/** Equivalent US / UK sizing label for a European (EU) shoe size. */
+export function euUsLabel(eu: number): string {
+  return EU_US_EQUIV[eu] || `US ~${(eu - 33).toFixed(0)}`;
+}

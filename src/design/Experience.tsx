@@ -25,7 +25,7 @@ import {
   Globe,
 } from "lucide-react";
 import { useStore, isStudioRole } from "./store";
-import { itemPrice, SHIPPING_RATES } from "./commerce";
+import { itemPrice, SHIPPING_RATES, euFootCm, euUsLabel } from "./commerce";
 import { categoryCopy, type Item } from "./catalog";
 import { Modal, Empty } from "./ui";
 import { Bag, Checkout, MemberEntry } from "./Shopping";
@@ -1219,25 +1219,71 @@ function ProductDetail({
             )}
           </div>
           <p>{p.description[lang]}</p>
-          <div className="size-heading">
-            <span>
-              {t("Ukuran", "Size")} (EU){size && ` · ${size}`}
-            </span>
-            <button className="text-link" onClick={() => setGuide(true)}>
-              {t("Panduan ukuran", "Size guide")}
-            </button>
-          </div>
-          <div className="size-options">
-            {p.sizes.map((n) => (
+          <div className="size-picker-wrap">
+            <div className="size-heading">
+              <div className="size-heading-main">
+                <span className="size-heading-label">
+                  {t("Pilih Ukuran", "Select Size")} (EU)
+                </span>
+                {size ? (
+                  <span className="size-selected-chip">
+                    <Check size={12} aria-hidden="true" />
+                    EU {size} · ±{euFootCm(size)} cm
+                  </span>
+                ) : (
+                  <span className="size-fit-pill">
+                    {t("Standar EU · True to size", "Standard EU · True to size")}
+                  </span>
+                )}
+              </div>
               <button
-                key={n}
-                className={size === n ? "selected" : ""}
-                aria-pressed={size === n}
-                onClick={() => setSize(n)}
+                type="button"
+                className="size-guide-trigger"
+                onClick={() => setGuide(true)}
               >
-                {n}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
+                  <path d="m14.5 12.5 2-2" />
+                  <path d="m11.5 9.5 2-2" />
+                  <path d="m8.5 6.5 2-2" />
+                  <path d="m17.5 15.5 2-2" />
+                </svg>
+                {t("Panduan ukuran", "Size guide")}
               </button>
-            ))}
+            </div>
+            <div className="size-options" role="group" aria-label={t("Pilihan ukuran EU", "EU size options")}>
+              {p.sizes.map((n) => (
+                <button
+                  type="button"
+                  key={n}
+                  className={size === n ? "selected" : ""}
+                  aria-pressed={size === n}
+                  aria-label={`EU ${n} (${euFootCm(n)} cm)`}
+                  onClick={() => setSize(n)}
+                >
+                  <span className="size-tile-eu">{n}</span>
+                  <span className="size-tile-cm">{euFootCm(n)} cm</span>
+                </button>
+              ))}
+            </div>
+            {size && (
+              <p className="size-fit-note">
+                {t(
+                  `Cocok untuk panjang telapak kaki sekitar ${euFootCm(size)} cm (${euUsLabel(size)}).`,
+                  `Recommended for foot length around ${euFootCm(size)} cm (${euUsLabel(size)}).`,
+                )}
+              </p>
+            )}
           </div>
           <span className="stock-note">
             <i className={p.stock ? "" : "sold"} />
@@ -1359,31 +1405,71 @@ function ProductDetail({
       </div>
       {guide && (
         <Modal
-          title={t("Panduan ukuran EU", "EU size guide")}
+          title={t("Panduan ukuran EU & panjang kaki", "EU Size & Fit Guide")}
           onClose={() => setGuide(false)}
         >
-          <p>
-            {t(
-              "Panduan perkiraan panjang kaki standar EU.",
-              "Approximate EU foot length measurements.",
-            )}
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>EU</th>
-                <th>{t("Panjang kaki (cm)", "Foot length (cm)")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.sizes.map((n) => (
-                <tr key={n}>
-                  <td>{n}</td>
-                  <td>{(22.5 + (n - 36) * 0.65).toFixed(1)}</td>
+          <div className="size-guide-tip">
+            <strong>{t("Cara ukur akurat", "How to measure")}</strong>
+            <p>
+              {t(
+                "Ukur telapak kaki dari tumit hingga ujung jari terpanjang saat berdiri. Ketuk baris di bawah untuk langsung memilih ukuran.",
+                "Measure your foot from heel to longest toe while standing. Tap any row below to select that size.",
+              )}
+            </p>
+          </div>
+          <div className="size-guide-table-wrap">
+            <table className="size-guide-table">
+              <thead>
+                <tr>
+                  <th>EU</th>
+                  <th>{t("Panjang kaki", "Foot length")}</th>
+                  <th>US / UK</th>
+                  <th>{t("Status", "Pick")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {p.sizes.map((n) => {
+                  const active = size === n;
+                  return (
+                    <tr
+                      key={n}
+                      className={active ? "is-selected" : ""}
+                      onClick={() => {
+                        setSize(n);
+                        setGuide(false);
+                      }}
+                    >
+                      <td>
+                        <strong>EU {n}</strong>
+                      </td>
+                      <td>{euFootCm(n)} cm</td>
+                      <td className="size-guide-us">{euUsLabel(n)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className={`size-guide-pick ${active ? "active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSize(n);
+                            setGuide(false);
+                          }}
+                        >
+                          {active ? (
+                            <>
+                              <Check size={12} aria-hidden="true" />
+                              {t("Dipilih", "Selected")}
+                            </>
+                          ) : (
+                            t("Pilih", "Select")
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Modal>
       )}
       {zoom && (
