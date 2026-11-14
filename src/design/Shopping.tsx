@@ -621,57 +621,34 @@ export function InlinePaymentAndReceipt({
   const retailPaymentCode =
     (chargeMatchesChannel && directCharge?.paymentCode) ||
     `${activeChannel.vaPrefix}-${liveOrder.id.replace(/[^A-Z0-9]/gi, "").slice(-6).toUpperCase()}-${vaDigits.slice(-4)}`;
-  const qrisPayloadString = `00020101021226680016ID.CO.VALERIE.WWW01189360089902026889100215${liveOrder.id.slice(0, 15)}0303UMI52045661530336054${String(Math.round(liveOrder.total)).length.toString().padStart(2, "0")}${Math.round(liveOrder.total)}5802ID5919VALERIE & CO ATELIER6007JAKARTA6304A1B9`;
-  const activeQrString =
-    (chargeMatchesChannel && directCharge?.qrString) || qrisPayloadString;
   const liveQrImageUrl = chargeMatchesChannel ? directCharge?.qrUrl || "" : "";
+  const activeQrString = chargeMatchesChannel ? directCharge?.qrString || "" : "";
   const liveDeeplinkUrl = chargeMatchesChannel
     ? directCharge?.deeplinkUrl || ""
     : "";
   const countdownText = `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
 
-  const downloadQrisSvg = () => {
-    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 280" width="480" height="560">
-      <rect width="240" height="280" rx="16" fill="#ffffff" stroke="#171412" stroke-width="2"/>
-      <text x="20" y="30" font-family="sans-serif" font-size="14" font-weight="bold" fill="#171412">QRIS · VALERIE &amp; CO</text>
-      <text x="20" y="46" font-family="sans-serif" font-size="9" fill="#6d6258">NMID: ID202608891029A01 · ${liveOrder.id}</text>
-      <g transform="translate(30, 60) scale(1.5)">
-        <rect width="120" height="120" rx="8" fill="#ffffff"/>
-        <rect x="10" y="10" width="30" height="30" fill="#171412"/>
-        <rect x="15" y="15" width="20" height="20" fill="#ffffff"/>
-        <rect x="20" y="20" width="10" height="10" fill="#171412"/>
-        <rect x="80" y="10" width="30" height="30" fill="#171412"/>
-        <rect x="85" y="15" width="20" height="20" fill="#ffffff"/>
-        <rect x="90" y="20" width="10" height="10" fill="#171412"/>
-        <rect x="10" y="80" width="30" height="30" fill="#171412"/>
-        <rect x="15" y="85" width="20" height="20" fill="#ffffff"/>
-        <rect x="20" y="90" width="10" height="10" fill="#171412"/>
-        <rect x="48" y="14" width="8" height="8" fill="#171412"/>
-        <rect x="62" y="14" width="8" height="16" fill="#171412"/>
-        <rect x="48" y="28" width="8" height="14" fill="#171412"/>
-        <rect x="14" y="48" width="16" height="8" fill="#171412"/>
-        <rect x="36" y="48" width="14" height="14" fill="#171412"/>
-        <rect x="56" y="48" width="12" height="12" fill="#8b6f47"/>
-        <rect x="74" y="48" width="14" height="8" fill="#171412"/>
-        <rect x="94" y="48" width="16" height="16" fill="#171412"/>
-        <rect x="20" y="62" width="10" height="10" fill="#171412"/>
-        <rect x="48" y="68" width="16" height="8" fill="#171412"/>
-        <rect x="70" y="64" width="10" height="18" fill="#171412"/>
-        <rect x="48" y="84" width="12" height="12" fill="#171412"/>
-        <rect x="66" y="88" width="16" height="8" fill="#171412"/>
-        <rect x="88" y="78" width="22" height="12" fill="#171412"/>
-        <rect x="84" y="96" width="12" height="14" fill="#171412"/>
-        <rect x="102" y="96" width="8" height="14" fill="#171412"/>
-      </g>
-      <text x="120" y="262" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="#171412">${money(liveOrder.total, cur)}</text>
-    </svg>`;
-    const blob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `QRIS-Valerie-CO-${liveOrder.id}.svg`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  const downloadQrisImage = async () => {
+    if (!liveQrImageUrl) {
+      notify(
+        "Klik Buat Tagihan QRIS Langsung untuk membuat gambar QR Midtrans resmi",
+        "Generate a live Midtrans QR bill first to download the official QR image",
+      );
+      return;
+    }
+    try {
+      const resp = await fetch(liveQrImageUrl);
+      if (!resp.ok) throw new Error("fetch failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `QRIS-Midtrans-${liveOrder.id}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch {
+      window.open(liveQrImageUrl, "_blank", "noopener,noreferrer");
+    }
   };
 
   const handleConfirmPayment = async () => {
@@ -918,7 +895,8 @@ export function InlinePaymentAndReceipt({
                   <button
                     type="button"
                     className="button ghost small"
-                    onClick={downloadQrisSvg}
+                    disabled={!liveQrImageUrl}
+                    onClick={() => void downloadQrisImage()}
                   >
                     <Download size={12} />
                     {t("Unduh QRIS", "Download QRIS")}
@@ -926,14 +904,38 @@ export function InlinePaymentAndReceipt({
                   <button
                     type="button"
                     className="button ghost small"
+                    disabled={!liveQrImageUrl && !activeQrString}
                     onClick={() => {
-                      void navigator.clipboard?.writeText(activeQrString);
-                      notify("Kode QRIS disalin", "QRIS payload copied");
+                      const textToCopy = liveQrImageUrl || activeQrString;
+                      void navigator.clipboard?.writeText(textToCopy);
+                      notify(
+                        liveQrImageUrl
+                          ? "URL gambar QRIS Midtrans disalin — tempel ke Simulator QRIS Midtrans"
+                          : "Payload QRIS disalin",
+                        liveQrImageUrl
+                          ? "Midtrans QR image URL copied — paste into Midtrans QRIS Simulator"
+                          : "QRIS payload copied",
+                      );
                     }}
                   >
                     <Copy size={12} />
-                    {t("Salin Kode", "Copy Code")}
+                    {liveQrImageUrl
+                      ? t("Salin URL QR", "Copy QR URL")
+                      : t("Salin Kode", "Copy Code")}
                   </button>
+                  {liveQrImageUrl && activeQrString && (
+                    <button
+                      type="button"
+                      className="button ghost small"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(activeQrString);
+                        notify("String EMV QRIS disalin", "EMV QRIS string copied");
+                      }}
+                    >
+                      <Copy size={12} />
+                      {t("Salin String QRIS", "Copy QR String")}
+                    </button>
+                  )}
                 </div>
                 {liveDeeplinkUrl && (
                   <a
@@ -952,6 +954,32 @@ export function InlinePaymentAndReceipt({
                 <h4>
                   <QrCode size={18} /> {activeChannel.label}
                 </h4>
+                {liveOrder.payment?.sandbox && liveQrImageUrl && (
+                  <div className="inline-qris-simulator-box">
+                    <div className="inline-qris-simulator-head">
+                      <strong>
+                        {t(
+                          "Mode Testing Midtrans Sandbox",
+                          "Midtrans Sandbox Testing",
+                        )}
+                      </strong>
+                      <a
+                        href="https://simulator.sandbox.midtrans.com/v2/qris/index"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t("Buka Simulator QRIS", "Open QRIS Simulator")}{" "}
+                        <ExternalLink size={11} />
+                      </a>
+                    </div>
+                    <p>
+                      {t(
+                        "Simulator Midtrans hanya menerima URL Gambar QR (bukan string 000201...). Klik Salin URL QR lalu tempel di kolom simulator.",
+                        "Midtrans Simulator expects the QR Image URL (not the 000201... EMV string). Click Copy QR URL and paste it in the simulator.",
+                      )}
+                    </p>
+                  </div>
+                )}
                 {activeChannel.id === "ovo" && (
                   <div className="inline-ewallet-phone-box">
                     <label>
