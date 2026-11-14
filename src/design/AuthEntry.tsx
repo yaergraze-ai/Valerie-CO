@@ -7,6 +7,7 @@ import {
   KeyRound,
   Lock,
   Mail,
+  ShieldCheck,
   Smartphone,
 } from "lucide-react";
 import { useStore } from "./store";
@@ -346,8 +347,8 @@ function GoogleAuthSection({
       return;
     const host = ref.current;
     const renderBtn = () => {
-      const hostWidth = host.parentElement?.clientWidth || 364;
-      const btnWidth = Math.min(400, Math.max(240, Math.round(hostWidth)));
+      const hostWidth = host.parentElement?.clientWidth || 340;
+      const btnWidth = Math.min(400, Math.max(200, Math.floor(hostWidth)));
       const btnKey = `${mode}:${btnWidth}:${googleNonce}`;
       if (host.getAttribute("data-btn-key") === btnKey) return;
       host.setAttribute("data-btn-key", btnKey);
@@ -430,7 +431,7 @@ function GoogleAuthSection({
 
 export function MemberEntry({
   onDone,
-  admin: initialAdmin = false,
+  admin = false,
 }: {
   onDone: () => void;
   admin?: boolean;
@@ -447,10 +448,9 @@ export function MemberEntry({
     serverMode,
   } = useStore();
   const pillGroupId = useId();
-  const [admin, setAdmin] = useState(initialAdmin);
   const [mode, setMode] = useState<
     "login" | "register" | "setup" | "forgot" | "reset"
-  >(initialAdmin && needsAdmin ? "setup" : "login");
+  >(admin && needsAdmin ? "setup" : "login");
   const [channel, setChannel] = useState<"email" | "whatsapp">("email");
   const [authMethod, setAuthMethod] = useState<"password" | "otp">("password");
   const [otpSent, setOtpSent] = useState(false);
@@ -572,82 +572,59 @@ export function MemberEntry({
 
   return (
     <div className={`member-entry auth-entry ${creating ? "is-creating" : ""}`}>
-      <div
-        className="auth-portal-switcher"
-        role="group"
-        aria-label={t("Pilih Portal Akses", "Select Access Portal")}
-      >
-        <button
-          type="button"
-          className={`auth-portal-pill ${!admin ? "active" : ""}`}
-          onClick={() => {
-            setAdmin(false);
-            changeMode("login");
-            if (location.hash === "#admin") location.hash = "member";
-          }}
-        >
-          {t("Member Private Lounge", "Member Lounge")}
-        </button>
-        <button
-          type="button"
-          className={`auth-portal-pill ${admin ? "active" : ""}`}
-          onClick={() => {
-            setAdmin(true);
-            changeMode(needsAdmin ? "setup" : "login");
-            if (location.hash === "#member") location.hash = "admin";
-          }}
-        >
-          {t("Studio Admin & Staff", "Studio Admin & Staff")}
-        </button>
-      </div>
-
-      <div className="auth-editorial-head">
-        <div className="auth-editorial-kicker">
-          <span className="auth-emblem">V.</span>
-          <span className="eyebrow">
+      <div className="auth-card-head">
+        <span className={`auth-workspace-pill ${admin ? "is-studio" : ""}`}>
+          <span className="auth-workspace-dot" aria-hidden="true" />
+          <span>
             {admin
-              ? "VALERIE & CO · STUDIO COMMAND"
+              ? "VALERIE & CO STUDIO"
               : verifyingRegister
-                ? t("VERIFIKASI IDENTITAS ATELIER", "ATELIER IDENTITY VERIFICATION")
-                : "VALERIE & CO · PRIVATE ATELIER"}
+                ? t("VERIFIKASI AKUN", "ACCOUNT VERIFICATION")
+                : "VALERIE & CO MEMBERS"}
           </span>
-        </div>
+        </span>
         <h3>
           {verifyingRegister
-            ? t("Verifikasi Kode OTP Anda.", "Verify Your OTP Code.")
-            : admin
-              ? mode === "setup"
-                ? t("Aktifkan Ruang Kendali Studio.", "Activate Studio Workspace.")
-                : t("Masuk ke Portal Tim Studio.", "Sign in to Studio Portal.")
-              : mode === "login"
-                ? t("Selamat Datang di Ruang Privat Anda.", "Welcome to Your Private Lounge.")
-                : mode === "register"
-                  ? t("Bergabung di Valerie & CO.", "Join Valerie & CO Atelier.")
-                  : t("Pulihkan Akses Akun Anda.", "Recover Your Account Access.")}
+            ? t("Verifikasi kode OTP.", "Verify OTP code.")
+            : mode === "login"
+              ? t("Masuk ke akun.", "Welcome back.")
+              : mode === "register"
+                ? t("Buat akun baru.", "Create account.")
+                : mode === "setup"
+                  ? t("Siapkan studio Anda.", "Set up your studio.")
+                  : t("Pulihkan akun.", "Recover account.")}
         </h3>
-        <p className="auth-editorial-sub">
-          {admin
+        <p className="auth-card-sub">
+          {verifyingRegister
             ? t(
-                "Kelola katalog koleksi, pesanan pelanggan, analitik laba keuntungan, dan hak akses tim Studio dalam satu ruang kerja terpadu.",
-                "Manage collections, client orders, profit analytics, and team permissions in one unified workspace.",
+                "Masukkan kode 6 digit yang kami kirim untuk mengaktifkan akun Anda.",
+                "Enter the 6-digit code we sent to activate your account.",
               )
-            : t(
-                "Nikmati rekomendasi ukuran kaki presisi (EU Fit), pelacakan pengiriman real-time, struk digital resmi, dan layanan concierge prioritas.",
-                "Enjoy precision EU Fit recommendations, real-time shipment tracking, official digital receipts, and priority concierge care.",
-              )}
+            : mode === "login"
+              ? admin
+                ? t(
+                    "Masuk dengan akun terotorisasi untuk mengelola operasional butik.",
+                    "Sign in with an authorized account to manage studio operations.",
+                  )
+                : t(
+                    "Kelola pesanan, alamat pengiriman, dan koleksi favorit Anda.",
+                    "Manage your orders, saved addresses, and curated wishlist.",
+                  )
+              : mode === "register"
+                ? t(
+                    "Daftar cepat untuk pelacakan pesanan, struk resmi, dan profil ukuran.",
+                    "Sign up in moments for order tracking, official receipts, and fit profile.",
+                  )
+                : mode === "setup"
+                  ? t(
+                      "Inisialisasi akses Super Admin utama untuk ruang kerja studio.",
+                      "Initialize primary Super Admin access for this studio workspace.",
+                    )
+                  : t(
+                      "Masukkan kontak terdaftar untuk menerima kode pemulihan kata sandi.",
+                      "Enter your registered contact to receive a password reset code.",
+                    )}
         </p>
-        <div className="auth-trust-strip" aria-hidden="true">
-          <span>
-            {admin
-              ? t("✦ Analitik Laba Real-Time", "✦ Live Profit Analytics")
-              : t("✦ 100% Kurasi Atelier", "✦ 100% Atelier Curated")}
-          </span>
-          <span>
-            {admin
-              ? t("✦ Akses Staff, Admin & Super Admin", "✦ 4-Tier RBAC")
-              : t("✦ Garansi Tukar Ukuran 14 Hari", "✦ 14-Day Size Exchange")}
-          </span>
-        </div>
       </div>
 
       {showMethodToggles && (
@@ -1238,6 +1215,15 @@ export function MemberEntry({
               {t("Kembali ke masuk", "Back to sign in")}
             </button>
           )}
+      <div className="auth-trust">
+        <ShieldCheck size={14} aria-hidden="true" />
+        <span>
+          {t(
+            "Dilindungi sesi terenkripsi & verifikasi server.",
+            "Protected by encrypted sessions & server verification.",
+          )}
+        </span>
+      </div>
     </div>
   );
 }
