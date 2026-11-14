@@ -72,6 +72,21 @@ export type OrderRefund = {
   reference?: string;
   note?: string;
 };
+export type DirectCharge = {
+  channel: string;
+  paymentType: string;
+  transactionId?: string;
+  qrUrl?: string;
+  deeplinkUrl?: string;
+  qrString?: string;
+  vaNumber?: string;
+  bank?: string;
+  billerCode?: string;
+  billKey?: string;
+  paymentCode?: string;
+  expiryTime?: string;
+  statusMessage?: string;
+};
 export type Order = {
   id: string;
   receiptNumber?: string;
@@ -98,6 +113,8 @@ export type Order = {
     status: "pending" | "paid" | "failed" | "refunded";
     url?: string;
     sandbox: boolean;
+    channel?: string;
+    directCharge?: DirectCharge;
     method?: string;
     transactionId?: string;
     paidAt?: string;
@@ -167,6 +184,18 @@ type Database = {
     enabled: boolean;
     production: boolean;
     shipping: { standard: number; express: number; freeAbove: number };
+    coreApiEnabled?: boolean;
+  };
+  paymentQueue?: {
+    summary: { pending: number; processing: number; done: number; failed: number };
+    items: Array<{
+      id: string;
+      orderId: string;
+      status: string;
+      attempts: number;
+      lastError: string;
+      updatedAt: string;
+    }>;
   };
   sales?: Record<string, number>;
   products: Item[];
@@ -597,6 +626,7 @@ function useStoreState() {
     express: boolean,
     key = crypto.randomUUID(),
     expectedTotal?: number,
+    channel?: string,
   ) => {
     if (serverMode) {
       const result = await api("orders/create", {
@@ -606,7 +636,7 @@ function useStoreState() {
         lines: dbRef.current.bag,
         key,
         ...(dbRef.current.paymentConfig?.enabled
-          ? { payment: "midtrans", expectedTotal }
+          ? { payment: "midtrans", expectedTotal, ...(channel ? { channel } : {}) }
           : { currency }),
       });
       receive(result.state);
@@ -959,6 +989,13 @@ function useStoreState() {
     );
     return updated;
   };
+  const chargeOrderPayment = async (id: string, channel?: string) => {
+    if (!serverMode) return null;
+    const result = await api("payments/charge", { id, channel });
+    if (result?.state) receive(result.state);
+    if (result?.chargeNotice) notify(result.chargeNotice, result.chargeNotice);
+    return (result?.order as Order) || null;
+  };
   const logout = async () => {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("solere:logout"));
@@ -1051,6 +1088,7 @@ function useStoreState() {
     authenticate,
     authenticateGoogle,
     completeOrderPayment,
+    chargeOrderPayment,
     requestAuthOtp,
     verifyAuthOtp,
     requestRegisterOtp,

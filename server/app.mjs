@@ -3,6 +3,7 @@ import {
   verifyNotification,
   paymentState,
   idrQuote,
+  supportsCoreCharge,
 } from "./midtrans.mjs";
 import { verifyGoogle, resetMailer, whatsappMailer } from "./auth-services.mjs";
 import { createSqliteStore } from "./db-sqlite.mjs";
@@ -32,7 +33,7 @@ const SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(self)",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; frame-src 'self' https://accounts.google.com https://app.midtrans.com https://app.sandbox.midtrans.com https://www.openstreetmap.org; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com https://*.tile.openstreetmap.org; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://nominatim.openstreetmap.org;",
+    "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; frame-src 'self' https://accounts.google.com https://app.midtrans.com https://app.sandbox.midtrans.com https://www.openstreetmap.org; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com https://*.tile.openstreetmap.org https://api.midtrans.com https://api.sandbox.midtrans.com; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://nominatim.openstreetmap.org;",
 };
 const hashToken = (t) => createHash("sha256").update(t).digest("hex");
 const hashPassword = (p) => {
@@ -520,15 +521,21 @@ export function createApp({
     const ownMember = u ? allMembers.find((m) => m.id === u.id) || null : null;
     const resolved = u ? await resolveEffectiveUser(u, ownMember) : null;
     const role = resolved?.role || null;
-    const [allCoupons, allSubscribers] = isAdminRole(role)
-      ? await Promise.all([db.listCoupons(), db.listSubscribers()])
-      : [[], []];
+    const [allCoupons, allSubscribers, paymentQueue] = await Promise.all([
+      isAdminRole(role) ? db.listCoupons() : Promise.resolve([]),
+      isAdminRole(role) ? db.listSubscribers() : Promise.resolve([]),
+      isStaffRole(role) && typeof db.listPaymentQueue === "function"
+        ? db.listPaymentQueue(40)
+        : Promise.resolve(undefined),
+    ]);
     return {
       paymentConfig: {
         enabled: !!gateway,
         production: paymentProduction,
         shipping: idrShipping,
+        coreApiEnabled: typeof gateway?.charge === "function",
       },
+      ...(paymentQueue ? { paymentQueue } : {}),
       sales: salesTotals(
         allOrders.filter(
           (o) =>
@@ -564,6 +571,19 @@ export function createApp({
     };
   };
   const attempts = new Map();
+  const orderLocks = new Map();
+  const enqueueOrderTask = (orderId, fn) => {
+    const key = String(orderId || "global");
+    const prev = orderLocks.get(key) || Promise.resolve();
+    const next = prev.then(fn, fn);
+    const guard = next
+      .finally(() => {
+        if (orderLocks.get(key) === guard) orderLocks.delete(key);
+      })
+      .catch(() => {});
+    orderLocks.set(key, guard);
+    return next;
+  };
   const handleApiRequest = async ({
     method,
     path,
@@ -659,12 +679,17 @@ export function createApp({
         requireUser();
         if (!isAdminRole(u.role)) fail(403, "Admin access required");
       };
-      const syncPayment = async (id) => {
+      const finishUrl =
+        useSecureCookie && host && !/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)
+          ? `https://${host}/#member`
+          : "";
+      const syncPaymentOnce = async (id) => {
         if (!gateway) fail(503, "Midtrans is not configured");
         const existing = await db.getOrder(id);
         if (!existing?.payment) fail(404, "Payment order not found");
+        if (existing.payment.status === "refunded") return existing;
         const remote = await gateway.status(id);
-        if (String(remote.status_code) === "404") return;
+        if (String(remote.status_code) === "404") return existing;
         const order = (await db.getOrder(id)) || existing;
         if (!order?.payment) fail(404, "Payment order not found");
         if (
@@ -679,9 +704,14 @@ export function createApp({
           (order.payment.status === "paid" && next !== "refunded") ||
           (order.payment.status === "failed" && next !== "paid")
         )
-          return;
+          return order;
         if (order.payment.status === "failed" && next === "paid")
           fail(409, "Late settlement requires manual reconciliation");
+        if (
+          order.payment.status === next &&
+          (!remote.transaction_id || order.payment.transactionId === remote.transaction_id)
+        )
+          return order;
         const shouldRestore =
           (next === "failed" || next === "refunded") &&
           order.payment.status !== "failed" &&
@@ -726,19 +756,190 @@ export function createApp({
               }
             : {}),
         };
-        await db.transitionOrderAtomic({
-          orderId: id,
-          expectedStatus: order.status,
-          expectedPaymentStatus: order.payment.status,
-          nextOrder,
-          restoreStock: shouldRestore,
+        try {
+          return await db.transitionOrderAtomic({
+            orderId: id,
+            expectedStatus: order.status,
+            expectedPaymentStatus: order.payment.status,
+            nextOrder,
+            restoreStock: shouldRestore,
+          });
+        } catch (err) {
+          if (err?.status === 409) {
+            const latest = await db.getOrder(id);
+            if (
+              latest?.payment?.status === next ||
+              latest?.payment?.status === "paid" ||
+              latest?.payment?.status === "refunded"
+            )
+              return latest;
+          }
+          throw err;
+        }
+      };
+      const drainOrderQueue = async (orderId, { throwClientError = false } = {}) => {
+        return enqueueOrderTask(orderId, async () => {
+          if (typeof db.claimPaymentJobs !== "function") {
+            await syncPaymentOnce(orderId);
+            return { processed: 1, done: 1, retried: 0, failed: 0 };
+          }
+          const jobs = await db.claimPaymentJobs({
+            orderId,
+            now: Date.now(),
+            lockTimeoutMs: 30000,
+            limit: 10,
+          });
+          let done = 0;
+          let retried = 0;
+          let failed = 0;
+          for (const job of jobs) {
+            try {
+              await syncPaymentOnce(job.orderId || orderId);
+              await db.finishPaymentJob({
+                id: job.id,
+                status: "done",
+                attempts: (job.attempts || 0) + 1,
+                nextRunAt: 0,
+                lastError: "",
+              });
+              done++;
+            } catch (err) {
+              const attemptsCount = (job.attempts || 0) + 1;
+              const isClientConflict = Boolean(err?.status && err.status >= 400 && err.status < 500);
+              if (!isClientConflict && attemptsCount < 5) {
+                const delayMs = Math.min(300000, 5000 * 2 ** attemptsCount);
+                await db.finishPaymentJob({
+                  id: job.id,
+                  status: "pending",
+                  attempts: attemptsCount,
+                  nextRunAt: Date.now() + delayMs,
+                  lastError: err?.message || "Transient gateway error",
+                });
+                retried++;
+              } else {
+                await db.finishPaymentJob({
+                  id: job.id,
+                  status: "failed",
+                  attempts: attemptsCount,
+                  nextRunAt: 0,
+                  lastError: err?.message || "Payment sync failed",
+                });
+                failed++;
+                if (throwClientError && isClientConflict) throw err;
+              }
+            }
+          }
+          return { processed: jobs.length, done, retried, failed };
         });
       };
       if (webhook) {
         if (!verifyNotification(body, midtransKey))
           fail(403, "Invalid payment signature");
-        await syncPayment(str(body.order_id, 80));
+        const orderId = str(body.order_id, 80);
+        const dedupeKey = [
+          orderId,
+          String(body.status_code || ""),
+          String(body.transaction_status || ""),
+          String(body.gross_amount || ""),
+          String(body.transaction_id || ""),
+          String(body.fraud_status || ""),
+        ].join(":");
+        if (typeof db.enqueuePaymentJob === "function") {
+          const enq = await db.enqueuePaymentJob({
+            id: "pq-" + randomUUID(),
+            dedupeKey,
+            orderId,
+            kind: "midtrans_webhook",
+            payload: {
+              order_id: orderId,
+              status_code: String(body.status_code || ""),
+              transaction_status: String(body.transaction_status || ""),
+              gross_amount: String(body.gross_amount || ""),
+              payment_type: String(body.payment_type || ""),
+              transaction_id: String(body.transaction_id || ""),
+            },
+            now: Date.now(),
+          });
+          if (enq.duplicate && enq.job?.status === "done") {
+            send(200, { ok: true, queued: false, duplicate: true, jobId: enq.job.id });
+            return;
+          }
+          const drained = await drainOrderQueue(orderId, { throwClientError: true });
+          send(200, {
+            ok: true,
+            queued: true,
+            duplicate: enq.duplicate,
+            jobId: enq.job?.id,
+            ...drained,
+          });
+          return;
+        }
+        await enqueueOrderTask(orderId, () => syncPaymentOnce(orderId));
         send(200, { ok: true });
+        return;
+      }
+      if (path === "/api/payments/queue/drain") {
+        requireStaff();
+        const targetOrderId = body.orderId ? str(body.orderId, 80) : null;
+        if (typeof db.claimPaymentJobs !== "function") {
+          send(200, { processed: 0, done: 0, retried: 0, failed: 0, queue: { summary: {}, items: [] } });
+          return;
+        }
+        const nowTs = Date.now();
+        const forceOffset = body.force ? 360000 : 0;
+        const jobs = await db.claimPaymentJobs({
+          orderId: targetOrderId,
+          now: nowTs + forceOffset,
+          lockTimeoutMs: 30000 + forceOffset,
+          limit: 20,
+        });
+        let done = 0;
+        let retried = 0;
+        let failed = 0;
+        for (const job of jobs) {
+          await enqueueOrderTask(job.orderId, async () => {
+            try {
+              await syncPaymentOnce(job.orderId);
+              await db.finishPaymentJob({
+                id: job.id,
+                status: "done",
+                attempts: (job.attempts || 0) + 1,
+                nextRunAt: 0,
+                lastError: "",
+              });
+              done++;
+            } catch (err) {
+              const attemptsCount = (job.attempts || 0) + 1;
+              const isClientConflict = Boolean(err?.status && err.status >= 400 && err.status < 500);
+              if (!isClientConflict && attemptsCount < 5) {
+                await db.finishPaymentJob({
+                  id: job.id,
+                  status: "pending",
+                  attempts: attemptsCount,
+                  nextRunAt: Date.now() + Math.min(300000, 5000 * 2 ** attemptsCount),
+                  lastError: err?.message || "Transient gateway error",
+                });
+                retried++;
+              } else {
+                await db.finishPaymentJob({
+                  id: job.id,
+                  status: "failed",
+                  attempts: attemptsCount,
+                  nextRunAt: 0,
+                  lastError: err?.message || "Payment sync failed",
+                });
+                failed++;
+              }
+            }
+          });
+        }
+        send(200, {
+          processed: jobs.length,
+          done,
+          retried,
+          failed,
+          queue: await db.listPaymentQueue(40),
+        });
         return;
       }
       if (path === "/api/payments/status") {
@@ -746,48 +947,185 @@ export function createApp({
         const o = await db.getOrder(str(body.id, 80));
         if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
           fail(403, "Order access denied");
-        await syncPayment(o.id);
+        await enqueueOrderTask(o.id, async () => {
+          if (typeof db.claimPaymentJobs === "function") {
+            const pendingJobs = await db.claimPaymentJobs({
+              orderId: o.id,
+              now: Date.now(),
+              lockTimeoutMs: 30000,
+              limit: 10,
+            });
+            for (const job of pendingJobs) {
+              try {
+                await syncPaymentOnce(o.id);
+                await db.finishPaymentJob({
+                  id: job.id,
+                  status: "done",
+                  attempts: (job.attempts || 0) + 1,
+                  nextRunAt: 0,
+                  lastError: "",
+                });
+              } catch (err) {
+                await db.finishPaymentJob({
+                  id: job.id,
+                  status: err?.status && err.status < 500 ? "failed" : "pending",
+                  attempts: (job.attempts || 0) + 1,
+                  nextRunAt: Date.now() + 10000,
+                  lastError: err?.message || "",
+                });
+                throw err;
+              }
+            }
+            if (pendingJobs.length > 0) return;
+          }
+          await syncPaymentOnce(o.id);
+        });
         send(200, await state(u));
         return;
       }
       if (path === "/api/payments/complete") {
         requireUser();
-        const o = await db.getOrder(str(body.id, 80));
-        if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
-          fail(403, "Order access denied");
-        if (o.status === "Dibatalkan")
-          fail(409, "Pesanan yang dibatalkan tidak dapat dibayar");
-        const chosenMethod =
-          str(body.method, 64) ||
-          o.payment?.method ||
-          "QRIS / Virtual Account Instan";
-        if (o.payment?.status !== "paid") {
-          const paidAt = new Date().toISOString();
-          const txId =
-            o.payment?.transactionId ||
-            `VCO-TX-${Date.now().toString(36).toUpperCase()}-${o.id.slice(-4).toUpperCase()}`;
-          const nextOrder = {
-            ...o,
-            payment: {
-              ...(o.payment || {
-                provider: "midtrans",
-                gatewayId: o.id,
-              }),
-              status: "paid",
-              method: chosenMethod,
-              transactionId: txId,
-              paidAt,
-            },
-          };
-          await db.transitionOrderAtomic({
-            orderId: o.id,
-            expectedStatus: o.status,
-            expectedPaymentStatus: o.payment?.status,
-            nextOrder,
-            restoreStock: false,
-          });
-        }
+        const orderId = str(body.id, 80);
+        await enqueueOrderTask(orderId, async () => {
+          const o = await db.getOrder(orderId);
+          if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
+            fail(403, "Order access denied");
+          if (o.status === "cancelled" || o.status === "Dibatalkan")
+            fail(409, "Pesanan yang dibatalkan tidak dapat dibayar");
+          const chosenMethod =
+            str(body.method, 64) ||
+            o.payment?.method ||
+            "QRIS / Virtual Account Instan";
+          if (o.payment?.status !== "paid") {
+            const paidAt = new Date().toISOString();
+            const txId =
+              o.payment?.transactionId ||
+              `VCO-TX-${Date.now().toString(36).toUpperCase()}-${o.id.slice(-4).toUpperCase()}`;
+            const nextOrder = {
+              ...o,
+              payment: {
+                ...(o.payment || {
+                  provider: "midtrans",
+                  gatewayId: o.id,
+                }),
+                status: "paid",
+                method: chosenMethod,
+                transactionId: txId,
+                paidAt,
+              },
+            };
+            await db.transitionOrderAtomic({
+              orderId: o.id,
+              expectedStatus: o.status,
+              expectedPaymentStatus: o.payment?.status,
+              nextOrder,
+              restoreStock: false,
+            });
+          }
+        });
         send(200, await state(u));
+        return;
+      }
+      const preparePayment = async (order, { preferDirect = true } = {}) => {
+        if (!order?.payment || order.payment.status !== "pending") return order;
+        return enqueueOrderTask(order.id, async () => {
+          const latest = await db.getOrder(order.id);
+          if (!latest?.payment || latest.payment.status !== "pending") return latest || order;
+          if (latest.payment.directCharge || latest.payment.url) return latest;
+          if (!gateway) fail(503, "Midtrans is not configured");
+          const ch = latest.payment.channel;
+          if (
+            preferDirect &&
+            ch &&
+            supportsCoreCharge(ch) &&
+            typeof gateway.charge === "function"
+          ) {
+            try {
+              const directCharge = await gateway.charge(latest, ch, { finishUrl });
+              const patch = {
+                channel: ch,
+                method: directCharge.paymentType || ch,
+                transactionId:
+                  directCharge.transactionId || latest.payment.transactionId || "",
+                directCharge,
+              };
+              return typeof db.setOrderPaymentInitAtomic === "function"
+                ? await db.setOrderPaymentInitAtomic(latest.id, patch)
+                : await db.saveOrder({ ...latest, payment: { ...latest.payment, ...patch } });
+            } catch {
+              // Fall back seamlessly to Snap when a channel is not activated on Core API yet
+            }
+          }
+          let url;
+          try {
+            url = await gateway.create(latest, { finishUrl });
+          } catch {
+            fail(
+              502,
+              "Payment page unavailable. Retry with the same checkout or contact the store; stock is reserved.",
+            );
+          }
+          return typeof db.setOrderPaymentInitAtomic === "function"
+            ? await db.setOrderPaymentInitAtomic(latest.id, { url })
+            : await db.saveOrder({ ...latest, payment: { ...latest.payment, url } });
+        });
+      };
+      if (path === "/api/payments/charge") {
+        requireUser();
+        const orderId = str(body.id, 80);
+        const requestedChannel =
+          typeof body.channel === "string" && /^[a-z0-9_]{2,24}$/.test(body.channel)
+            ? body.channel
+            : "";
+        let chargeNotice = "";
+        const updatedOrder = await enqueueOrderTask(orderId, async () => {
+          const latest = await db.getOrder(orderId);
+          if (!latest || (!isStaffRole(u.role) && latest.memberId !== u.id))
+            fail(403, "Order access denied");
+          if (!latest.payment || latest.payment.status !== "pending")
+            fail(409, "Order payment is no longer pending");
+          const ch = requestedChannel || latest.payment.channel || "qris";
+          if (latest.payment.directCharge) {
+            if (latest.payment.directCharge.channel === ch) return latest;
+            fail(
+              409,
+              "Tagihan langsung Midtrans sudah dibuat untuk metode sebelumnya. Selesaikan pembayaran atau buat pesanan baru untuk mengganti metode.",
+            );
+          }
+          if (!gateway) fail(503, "Midtrans is not configured");
+          if (supportsCoreCharge(ch) && typeof gateway.charge === "function") {
+            try {
+              const directCharge = await gateway.charge(latest, ch, { finishUrl });
+              const patch = {
+                channel: ch,
+                method: directCharge.paymentType || ch,
+                transactionId:
+                  directCharge.transactionId || latest.payment.transactionId || "",
+                directCharge,
+              };
+              return typeof db.setOrderPaymentInitAtomic === "function"
+                ? await db.setOrderPaymentInitAtomic(latest.id, patch)
+                : await db.saveOrder({ ...latest, payment: { ...latest.payment, ...patch } });
+            } catch (err) {
+              chargeNotice = err?.message || "Direct Core API unavailable; using Snap.";
+            }
+          }
+          if (!latest.payment.url) {
+            const url = await gateway.create(
+              { ...latest, payment: { ...latest.payment, channel: ch } },
+              { finishUrl },
+            );
+            return typeof db.setOrderPaymentInitAtomic === "function"
+              ? await db.setOrderPaymentInitAtomic(latest.id, { channel: ch, url })
+              : await db.saveOrder({ ...latest, payment: { ...latest.payment, channel: ch, url } });
+          }
+          return latest;
+        });
+        send(200, {
+          order: updatedOrder,
+          state: await state(u),
+          ...(chargeNotice ? { chargeNotice } : {}),
+        });
         return;
       }
       if (path === "/api/payments/quote") {
@@ -815,26 +1153,6 @@ export function createApp({
         }
         return;
       }
-      const preparePayment = async (order) => {
-        if (
-          !order.payment ||
-          order.payment.url ||
-          order.payment.status !== "pending"
-        )
-          return order;
-        if (!gateway) fail(503, "Midtrans is not configured");
-        let url;
-        try {
-          url = await gateway.create(order);
-        } catch {
-          fail(
-            502,
-            "Payment page unavailable. Retry with the same checkout or contact the store; stock is reserved.",
-          );
-        }
-        const latest = await db.getOrder(order.id);
-        return await db.saveOrder({ ...latest, payment: { ...latest.payment, url } });
-      };
       if (path.startsWith("/api/auth/") || path.startsWith("/api/member/verify/")) {
         const now = Date.now();
         if (attempts.size > 500) {
@@ -1603,6 +1921,10 @@ export function createApp({
           }
           if (quote && body.expectedTotal !== quote.total)
             fail(409, "IDR total changed. Refresh the quote before checkout.");
+          const selectedChannel =
+            typeof body.channel === "string" && /^[a-z0-9_]{2,24}$/.test(body.channel)
+              ? body.channel
+              : "";
           const orderId = "SOL-" + randomUUID();
           const receiptNumber =
             "VCO-INV-" + orderId.replace(/^SOL-/, "").slice(0, 8).toUpperCase();
@@ -1639,6 +1961,7 @@ export function createApp({
                     provider: "midtrans",
                     status: "pending",
                     sandbox: !paymentProduction,
+                    ...(selectedChannel ? { channel: selectedChannel } : {}),
                   },
                 }
               : {}),
@@ -1650,41 +1973,44 @@ export function createApp({
       }
       if (path === "/api/orders/update") {
         requireUser();
-        const o = await db.getOrder(str(body.id, 80));
-        if (!o) fail(404, "Order not found");
-        if (
-          !isStaffRole(u.role) &&
-          (o.memberId !== u.id || body.status !== "cancelled")
-        )
-          fail(403, "Order access denied");
-        if (
-          o.payment &&
-          (o.payment.status !== "paid" || body.status === "cancelled")
-        )
-          fail(
-            409,
-            "Midtrans order requires verified payment; cancellation/refund must be handled in the payment dashboard",
-          );
-        const allowed = {
-          processing: ["processing", "shipped", "cancelled"],
-          shipped: ["shipped", "delivered"],
-          delivered: [],
-          cancelled: [],
-        };
-        if (!allowed[o.status].includes(body.status))
-          fail(409, "Invalid order transition");
-        const tracking =
-          isStaffRole(u.role)
-            ? String(body.tracking || o.tracking).slice(0, 100)
-            : o.tracking;
-        if (body.status === "shipped" && !tracking.trim())
-          fail(400, "Tracking number required");
-        await db.transitionOrderAtomic({
-          orderId: o.id,
-          expectedStatus: o.status,
-          expectedPaymentStatus: o.payment?.status || "",
-          nextOrder: { ...o, status: body.status, tracking },
-          restoreStock: body.status === "cancelled",
+        const orderId = str(body.id, 80);
+        await enqueueOrderTask(orderId, async () => {
+          const o = await db.getOrder(orderId);
+          if (!o) fail(404, "Order not found");
+          if (
+            !isStaffRole(u.role) &&
+            (o.memberId !== u.id || body.status !== "cancelled")
+          )
+            fail(403, "Order access denied");
+          if (
+            o.payment &&
+            (o.payment.status !== "paid" || body.status === "cancelled")
+          )
+            fail(
+              409,
+              "Midtrans order requires verified payment; cancellation/refund must be handled in the payment dashboard",
+            );
+          const allowed = {
+            processing: ["processing", "shipped", "cancelled"],
+            shipped: ["shipped", "delivered"],
+            delivered: [],
+            cancelled: [],
+          };
+          if (!allowed[o.status].includes(body.status))
+            fail(409, "Invalid order transition");
+          const tracking =
+            isStaffRole(u.role)
+              ? String(body.tracking || o.tracking).slice(0, 100)
+              : o.tracking;
+          if (body.status === "shipped" && !tracking.trim())
+            fail(400, "Tracking number required");
+          await db.transitionOrderAtomic({
+            orderId: o.id,
+            expectedStatus: o.status,
+            expectedPaymentStatus: o.payment?.status || "",
+            nextOrder: { ...o, status: body.status, tracking },
+            restoreStock: body.status === "cancelled",
+          });
         });
         send(200, await state(u));
         return;
@@ -1692,130 +2018,130 @@ export function createApp({
       if (path === "/api/orders/refund") {
         requireUser();
         const id = str(body.id, 80);
-        const o = await db.getOrder(id);
-        if (!o) fail(404, "Order not found");
-        const action =
-          body.action || (isAdminRole(u.role) ? "approve" : "request");
-        if (!["request", "approve", "reject"].includes(action))
-          fail(400, "Invalid refund action");
-        if (action !== "request" && !isAdminRole(u.role))
-          fail(403, "Admin access required");
-        if (action === "request" && o.memberId !== u.id && !isAdminRole(u.role))
-          fail(403, "Order access denied");
-        const reason = str(body.reason, 400);
-        const now = new Date().toISOString();
-        if (action === "request") {
-          if (o.status === "cancelled" || o.refund?.status === "refunded")
-            fail(409, "Order is already cancelled or refunded");
-          if (o.payment && o.payment.status !== "paid")
-            fail(409, "Only paid orders can be requested for refund");
-          await db.transitionOrderAtomic({
-            orderId: o.id,
-            expectedStatus: o.status,
-            expectedPaymentStatus: o.payment?.status || "",
-            nextOrder: {
-              ...o,
-              refund: {
-                status: "requested",
-                amount: o.total,
-                currency: o.currency || "USD",
-                reason,
-                requestedAt: now,
+        await enqueueOrderTask(id, async () => {
+          const o = await db.getOrder(id);
+          if (!o) fail(404, "Order not found");
+          const action =
+            body.action || (isAdminRole(u.role) ? "approve" : "request");
+          if (!["request", "approve", "reject"].includes(action))
+            fail(400, "Invalid refund action");
+          if (action !== "request" && !isAdminRole(u.role))
+            fail(403, "Admin access required");
+          if (action === "request" && o.memberId !== u.id && !isAdminRole(u.role))
+            fail(403, "Order access denied");
+          const reason = str(body.reason, 400);
+          const now = new Date().toISOString();
+          if (action === "request") {
+            if (o.status === "cancelled" || o.refund?.status === "refunded")
+              fail(409, "Order is already cancelled or refunded");
+            if (o.payment && o.payment.status !== "paid")
+              fail(409, "Only paid orders can be requested for refund");
+            await db.transitionOrderAtomic({
+              orderId: o.id,
+              expectedStatus: o.status,
+              expectedPaymentStatus: o.payment?.status || "",
+              nextOrder: {
+                ...o,
+                refund: {
+                  status: "requested",
+                  amount: o.total,
+                  currency: o.currency || "USD",
+                  reason,
+                  requestedAt: now,
+                },
               },
-            },
-            restoreStock: false,
-          });
-          send(200, await state(u));
-          return;
-        }
-        if (action === "reject") {
-          if (!o.refund || o.refund.status !== "requested")
-            fail(409, "No pending refund request");
-          await db.transitionOrderAtomic({
-            orderId: o.id,
-            expectedStatus: o.status,
-            expectedPaymentStatus: o.payment?.status || "",
-            nextOrder: {
-              ...o,
-              refund: {
-                ...o.refund,
-                status: "rejected",
-                note: reason,
-                refundedBy: u.email,
-              },
-            },
-            restoreStock: false,
-          });
-          send(200, await state(u));
-          return;
-        }
-        if (o.refund?.status === "refunded" || o.payment?.status === "refunded")
-          fail(409, "Order has already been refunded");
-        if (o.payment && o.payment.status !== "paid")
-          fail(409, "Only paid Midtrans orders can be refunded");
-        let refundRef = body.reference
-          ? String(body.reference).trim().slice(0, 80)
-          : "";
-        if (o.payment && body.manual !== true && typeof gateway?.refund === "function") {
-          const refundKey = `REF-${o.id.slice(-12)}-${Date.now()}`;
-          try {
-            const resRefund = await gateway.refund(o.id, {
-              amount: o.total,
-              reason,
-              refundKey,
+              restoreStock: false,
             });
-            refundRef =
-              refundRef ||
-              resRefund?.refund_chargeback_id?.toString() ||
-              resRefund?.transaction_id ||
-              refundKey;
-          } catch {
-            fail(
-              502,
-              "Midtrans API refund unavailable for this method. Retry or record a manual bank transfer refund.",
-            );
+            return;
           }
-        }
-        if (!refundRef) refundRef = `VCO-REF-${randomUUID().slice(0, 8).toUpperCase()}`;
-        const latest = await db.getOrder(id);
-        if (!latest) fail(404, "Order not found");
-        if (
-          latest.refund?.status === "refunded" ||
-          latest.payment?.status === "refunded"
-        )
-          fail(409, "Order has already been refunded");
-        await db.transitionOrderAtomic({
-          orderId: id,
-          expectedStatus: latest.status,
-          expectedPaymentStatus: latest.payment?.status || "",
-          nextOrder: {
-            ...latest,
-            status: "cancelled",
-            ...(latest.payment
-              ? {
-                  payment: {
-                    ...latest.payment,
-                    status: "refunded",
-                    refundedAt: now,
-                    updatedAt: now,
-                  },
-                }
-              : {}),
-            refund: {
-              ...(latest.refund || {}),
-              status: "refunded",
-              amount: latest.total,
-              currency: latest.currency || "USD",
-              reason: latest.refund?.reason || reason,
-              note: reason,
-              requestedAt: latest.refund?.requestedAt || now,
-              refundedAt: now,
-              refundedBy: u.email,
-              reference: refundRef,
+          if (action === "reject") {
+            if (!o.refund || o.refund.status !== "requested")
+              fail(409, "No pending refund request");
+            await db.transitionOrderAtomic({
+              orderId: o.id,
+              expectedStatus: o.status,
+              expectedPaymentStatus: o.payment?.status || "",
+              nextOrder: {
+                ...o,
+                refund: {
+                  ...o.refund,
+                  status: "rejected",
+                  note: reason,
+                  refundedBy: u.email,
+                },
+              },
+              restoreStock: false,
+            });
+            return;
+          }
+          if (o.refund?.status === "refunded" || o.payment?.status === "refunded")
+            fail(409, "Order has already been refunded");
+          if (o.payment && o.payment.status !== "paid")
+            fail(409, "Only paid Midtrans orders can be refunded");
+          let refundRef = body.reference
+            ? String(body.reference).trim().slice(0, 80)
+            : "";
+          if (o.payment && body.manual !== true && typeof gateway?.refund === "function") {
+            const refundKey = `REF-${o.id.slice(-12)}-${Date.now()}`;
+            try {
+              const resRefund = await gateway.refund(o.id, {
+                amount: o.total,
+                reason,
+                refundKey,
+              });
+              refundRef =
+                refundRef ||
+                resRefund?.refund_chargeback_id?.toString() ||
+                resRefund?.transaction_id ||
+                refundKey;
+            } catch {
+              fail(
+                502,
+                "Midtrans API refund unavailable for this method. Retry or record a manual bank transfer refund.",
+              );
+            }
+          }
+          if (!refundRef) refundRef = `VCO-REF-${randomUUID().slice(0, 8).toUpperCase()}`;
+          const latest = await db.getOrder(id);
+          if (!latest) fail(404, "Order not found");
+          if (
+            latest.refund?.status === "refunded" ||
+            latest.payment?.status === "refunded"
+          )
+            fail(409, "Order has already been refunded");
+          await db.transitionOrderAtomic({
+            orderId: id,
+            expectedStatus: latest.status,
+            expectedPaymentStatus: latest.payment?.status || "",
+            nextOrder: {
+              ...latest,
+              status: "cancelled",
+              ...(latest.payment
+                ? {
+                    payment: {
+                      ...latest.payment,
+                      status: "refunded",
+                      refundedAt: now,
+                      updatedAt: now,
+                    },
+                  }
+                : {}),
+              refund: {
+                ...(latest.refund || {}),
+                status: "refunded",
+                amount: latest.total,
+                currency: latest.currency || "USD",
+                reason: latest.refund?.reason || reason,
+                note: reason,
+                requestedAt: latest.refund?.requestedAt || now,
+                refundedAt: now,
+                refundedBy: u.email,
+                reference: refundRef,
+              },
             },
-          },
-          restoreStock:
-            latest.status !== "cancelled" && latest.payment?.status !== "failed",
+            restoreStock:
+              latest.status !== "cancelled" && latest.payment?.status !== "failed",
+          });
         });
         send(200, await state(u));
         return;

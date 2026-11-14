@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const PAGE_SIZE = 1000;
@@ -12,8 +13,11 @@ function unwrap({ data, error }, context = "Supabase request failed") {
   const msg = String(error.message || context);
   if (
     code === "PGRST205" ||
+    code === "PGRST202" ||
     code === "42P01" ||
+    code === "42883" ||
     msg.includes("Could not find the table") ||
+    msg.includes("Could not find the function") ||
     msg.includes("does not exist")
   ) {
     throw fail(
@@ -656,6 +660,221 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
       );
       return updated || nextOrder;
     },
+    async setOrderPaymentInitAtomic(orderId, paymentPatch) {
+      try {
+        const updated = unwrap(
+          await sb.rpc("vco_set_payment_init_tx", {
+            p_order_id: orderId,
+            p_payment_patch: paymentPatch,
+          }),
+        );
+        if (updated) return updated;
+      } catch (err) {
+        if (!err?.schemaMissing) throw err;
+      }
+      const latest = await this.getOrder(orderId);
+      if (!latest) throw fail(404, "Order not found");
+      const curPayment = latest.payment || {};
+      const curStatus = curPayment.status || "pending";
+      const nextOrder = {
+        ...latest,
+        payment: {
+          ...curPayment,
+          ...paymentPatch,
+          status: curStatus,
+        },
+      };
+      return this.saveOrder(nextOrder);
+    },
+
+    async enqueuePaymentJob({ id, dedupeKey, orderId, kind = "midtrans_webhook", payload, now }) {
+      const mapRow = (r) => ({
+        id: r.id,
+        dedupeKey: r.dedupe_key,
+        orderId: r.order_id,
+        kind: r.kind,
+        payload: r.payload || {},
+        status: r.status,
+        attempts: Number(r.attempts || 0),
+        lastError: r.last_error || "",
+        nextRunAt: Number(r.next_run_at || 0),
+        lockedAt: Number(r.locked_at || 0),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      });
+      try {
+        const res = unwrap(
+          await sb.rpc("vco_enqueue_payment_job", {
+            p_id: id,
+            p_dedupe_key: dedupeKey,
+            p_order_id: orderId,
+            p_kind: kind,
+            p_payload: payload || {},
+            p_now: now || Date.now(),
+          }),
+        );
+        return {
+          duplicate: Boolean(res?.duplicate),
+          job: res?.job ? mapRow(res.job) : null,
+        };
+      } catch (err) {
+        if (!err?.schemaMissing) throw err;
+        // Fallback when payment_queue migration hasn't been executed yet: persist dedupe state in app_meta
+        const metaId = "pq_" + createHash("sha256").update(dedupeKey).digest("hex").slice(0, 32);
+        const existing = await this.getMeta(metaId);
+        if (existing) {
+          return { duplicate: true, job: existing };
+        }
+        const iso = new Date(now || Date.now()).toISOString();
+        const job = {
+          id,
+          dedupeKey,
+          orderId,
+          kind,
+          payload: payload || {},
+          status: "pending",
+          attempts: 0,
+          lastError: "",
+          nextRunAt: now || 0,
+          lockedAt: 0,
+          createdAt: iso,
+          updatedAt: iso,
+        };
+        await this.putMeta(metaId, job);
+        return { duplicate: false, job };
+      }
+    },
+
+    async claimPaymentJobs({ orderId = null, now = Date.now(), lockTimeoutMs = 30000, limit = 10 } = {}) {
+      const mapRow = (r) => ({
+        id: r.id,
+        dedupeKey: r.dedupe_key,
+        orderId: r.order_id,
+        kind: r.kind,
+        payload: r.payload || {},
+        status: r.status,
+        attempts: Number(r.attempts || 0),
+        lastError: r.last_error || "",
+        nextRunAt: Number(r.next_run_at || 0),
+        lockedAt: Number(r.locked_at || 0),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      });
+      try {
+        const rows = unwrap(
+          await sb.rpc("vco_claim_payment_jobs", {
+            p_order_id: orderId || null,
+            p_now: now,
+            p_lock_timeout_ms: lockTimeoutMs,
+            p_limit: limit,
+          }),
+        );
+        return Array.isArray(rows) ? rows.map(mapRow) : [];
+      } catch (err) {
+        if (!err?.schemaMissing) throw err;
+        const { data: metaRows } = await sb
+          .from("app_meta")
+          .select("id,data")
+          .like("id", "pq_%")
+          .limit(50);
+        const claimed = [];
+        for (const r of metaRows || []) {
+          const j = r.data;
+          if (!j) continue;
+          if (orderId && j.orderId !== orderId) continue;
+          const eligible =
+            (j.status === "pending" && Number(j.nextRunAt || 0) <= now) ||
+            (j.status === "processing" && Number(j.lockedAt || 0) < now - lockTimeoutMs);
+          if (!eligible) continue;
+          const next = { ...j, status: "processing", lockedAt: now, updatedAt: new Date(now).toISOString() };
+          await this.putMeta(r.id, next);
+          claimed.push(next);
+          if (claimed.length >= limit) break;
+        }
+        return claimed;
+      }
+    },
+
+    async finishPaymentJob({ id, status, attempts = 0, nextRunAt = 0, lastError = "" }) {
+      try {
+        unwrap(
+          await sb.rpc("vco_finish_payment_job", {
+            p_id: id,
+            p_status: status,
+            p_attempts: attempts,
+            p_next_run_at: nextRunAt,
+            p_last_error: String(lastError || "").slice(0, 500),
+          }),
+        );
+      } catch (err) {
+        if (!err?.schemaMissing) throw err;
+        const { data: metaRows } = await sb
+          .from("app_meta")
+          .select("id,data")
+          .like("id", "pq_%")
+          .limit(100);
+        const hit = (metaRows || []).find((r) => r.data?.id === id);
+        if (hit) {
+          await this.putMeta(hit.id, {
+            ...hit.data,
+            status,
+            attempts,
+            nextRunAt,
+            lastError: String(lastError || "").slice(0, 500),
+            lockedAt: 0,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    },
+
+    async listPaymentQueue(limit = 40) {
+      const mapRow = (r) => ({
+        id: r.id,
+        dedupeKey: r.dedupe_key,
+        orderId: r.order_id,
+        kind: r.kind,
+        payload: r.payload || {},
+        status: r.status,
+        attempts: Number(r.attempts || 0),
+        lastError: r.last_error || "",
+        nextRunAt: Number(r.next_run_at || 0),
+        lockedAt: Number(r.locked_at || 0),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      });
+      try {
+        const rows = unwrap(
+          await sb
+            .from("payment_queue")
+            .select("*")
+            .order("seq", { ascending: false })
+            .limit(Math.max(1, Math.min(Number(limit) || 40, 200))),
+        );
+        const summary = { pending: 0, processing: 0, done: 0, failed: 0 };
+        for (const r of rows || []) {
+          if (r.status in summary) summary[r.status]++;
+        }
+        return { summary, items: (rows || []).map(mapRow) };
+      } catch (err) {
+        if (!err?.schemaMissing) throw err;
+        const { data: metaRows } = await sb
+          .from("app_meta")
+          .select("id,data")
+          .like("id", "pq_%")
+          .limit(40);
+        const items = (metaRows || [])
+          .map((r) => r.data)
+          .filter(Boolean)
+          .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+        const summary = { pending: 0, processing: 0, done: 0, failed: 0 };
+        for (const j of items) {
+          if (j.status in summary) summary[j.status]++;
+        }
+        return { summary, items };
+      }
+    },
+
     async saveOrder(order) {
       unwrap(
         await sb

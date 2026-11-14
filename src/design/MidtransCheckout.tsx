@@ -46,6 +46,21 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
       });
     return () => lifecycle.abort();
   }, [db.bag, code, express, order]);
+  useEffect(() => {
+    if (!order?.id) return;
+    const live = db.orders.find((o) => o.id === order.id);
+    if (live && live !== order) setOrder(live);
+  }, [db.orders, order]);
+  useEffect(() => {
+    if (!order || order.payment?.status !== "pending") return;
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void api("payments/status", { id: order.id })
+        .then(() => refresh())
+        .catch(() => {});
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [order, refresh]);
   if (order)
     return (
       <InlinePaymentAndReceipt
@@ -95,7 +110,14 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             postal: String(f.get("postal")),
           };
           setOrder(
-            await checkout(address, code, express, key.current, quote.total),
+            await checkout(
+              address,
+              code,
+              express,
+              key.current,
+              quote.total,
+              selectedChannel,
+            ),
           );
         } catch (e) {
           setError((e as Error).message);

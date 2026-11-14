@@ -548,16 +548,21 @@ export function InlinePaymentAndReceipt({
   checkingRemote?: boolean;
   onDone: () => void;
 }) {
-  const { db, t, lang, money, completeOrderPayment, notify } = useStore();
+  const { db, t, lang, money, completeOrderPayment, chargeOrderPayment, notify } =
+    useStore();
   const liveOrder = db.orders.find((o) => o.id === order.id) || order;
-  const [channelId, setChannelId] = useState(initialChannel);
+  const directCharge = liveOrder.payment?.directCharge;
+  const [channelId, setChannelId] = useState(
+    () => directCharge?.channel || liveOrder.payment?.channel || initialChannel,
+  );
   const [catFilter, setCatFilter] = useState<PaymentCategory>("all");
   const [stage, setStage] = useState<"pay" | "receipt">(
-    startInPaymentStage ? "pay" : "receipt",
+    startInPaymentStage && liveOrder.payment?.status !== "paid" ? "pay" : "receipt",
   );
   const [confirming, setConfirming] = useState(false);
+  const [charging, setCharging] = useState(false);
   const [showGatewayFrame, setShowGatewayFrame] = useState(
-    Boolean(order.payment?.url),
+    Boolean(order.payment?.url && !order.payment?.directCharge),
   );
   const [showReceiptMap, setShowReceiptMap] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(15 * 60);
@@ -574,6 +579,12 @@ export function InlinePaymentAndReceipt({
   const [paylaterPhone, setPaylaterPhone] = useState(
     order.address.phone || "0812",
   );
+
+  useEffect(() => {
+    if (stage === "pay" && liveOrder.payment?.status === "paid") {
+      setStage("receipt");
+    }
+  }, [stage, liveOrder.payment?.status]);
 
   useEffect(() => {
     if (stage !== "pay") return;
@@ -595,13 +606,28 @@ export function InlinePaymentAndReceipt({
     `VCO-INV-${liveOrder.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
   const txId =
     liveOrder.payment?.transactionId ||
+    directCharge?.transactionId ||
     `VCO-TX-${liveOrder.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
   const vaDigits =
     liveOrder.address.phone.replace(/\D/g, "").slice(-10).padStart(10, "8") ||
     "0812994028";
-  const virtualAccountNumber = `${activeChannel.vaPrefix}${vaDigits}`;
-  const retailPaymentCode = `${activeChannel.vaPrefix}-${liveOrder.id.replace(/[^A-Z0-9]/gi, "").slice(-6).toUpperCase()}-${vaDigits.slice(-4)}`;
+  const chargeMatchesChannel =
+    Boolean(directCharge) && directCharge?.channel === activeChannel.id;
+  const virtualAccountNumber =
+    (chargeMatchesChannel && (directCharge?.vaNumber || directCharge?.billKey)) ||
+    `${activeChannel.vaPrefix}${vaDigits}`;
+  const effectiveBillerCode =
+    (chargeMatchesChannel && directCharge?.billerCode) || activeChannel.billerCode;
+  const retailPaymentCode =
+    (chargeMatchesChannel && directCharge?.paymentCode) ||
+    `${activeChannel.vaPrefix}-${liveOrder.id.replace(/[^A-Z0-9]/gi, "").slice(-6).toUpperCase()}-${vaDigits.slice(-4)}`;
   const qrisPayloadString = `00020101021226680016ID.CO.VALERIE.WWW01189360089902026889100215${liveOrder.id.slice(0, 15)}0303UMI52045661530336054${String(Math.round(liveOrder.total)).length.toString().padStart(2, "0")}${Math.round(liveOrder.total)}5802ID5919VALERIE & CO ATELIER6007JAKARTA6304A1B9`;
+  const activeQrString =
+    (chargeMatchesChannel && directCharge?.qrString) || qrisPayloadString;
+  const liveQrImageUrl = chargeMatchesChannel ? directCharge?.qrUrl || "" : "";
+  const liveDeeplinkUrl = chargeMatchesChannel
+    ? directCharge?.deeplinkUrl || ""
+    : "";
   const countdownText = `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
 
   const downloadQrisSvg = () => {
@@ -782,6 +808,63 @@ export function InlinePaymentAndReceipt({
         </div>
 
         <div className="inline-payment-instruction-card">
+          {directCharge && (
+            <div className={`inline-live-charge-banner ${chargeMatchesChannel ? "matched" : "locked"}`}>
+              <span className="inline-va-brand-title">
+                <MidtransGatewayBadge compact />
+                <b>
+                  {chargeMatchesChannel
+                    ? t(
+                        "UI Custom Valerie & CO · Terhubung Langsung ke Midtrans Core API",
+                        "Valerie & CO Custom UI · Live Midtrans Core API Charge",
+                      )
+                    : t(
+                        `Tagihan Midtrans aktif untuk ${directCharge.channel.toUpperCase()} — pilih channel tersebut untuk menampilkan kode bayar asli`,
+                        `Active Midtrans charge issued for ${directCharge.channel.toUpperCase()}`,
+                      )}
+                </b>
+              </span>
+              {directCharge.expiryTime && (
+                <small>
+                  {t("Batas", "Expires")}: {directCharge.expiryTime}
+                </small>
+              )}
+            </div>
+          )}
+          {!directCharge &&
+            db.paymentConfig?.coreApiEnabled &&
+            ["qris", "gopay", "shopeepay", "bca_va", "bni_va", "bri_va", "permata_va", "cimb_va", "mandiri_va", "indomaret", "alfamart"].includes(activeChannel.id) && (
+              <div className="inline-live-charge-banner prompt">
+                <span>
+                  {t(
+                    "Ingin bayar langsung di UI custom ini tanpa pop-up Midtrans?",
+                    "Generate a native direct bill in this custom UI without Snap iframe?",
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="button dark small"
+                  disabled={charging}
+                  onClick={async () => {
+                    setCharging(true);
+                    try {
+                      await chargeOrderPayment(liveOrder.id, activeChannel.id);
+                    } catch (e) {
+                      notify((e as Error).message, (e as Error).message);
+                    } finally {
+                      setCharging(false);
+                    }
+                  }}
+                >
+                  {charging
+                    ? t("Menghubungkan Midtrans…", "Connecting Midtrans…")
+                    : t(
+                        `Buat Tagihan ${activeChannel.badge} Langsung`,
+                        `Create Live ${activeChannel.badge} Bill`,
+                      )}
+                </button>
+              </div>
+            )}
           {activeChannel.category === "qris_ewallet" ? (
             <div className="inline-qris-box">
               <div className="inline-qris-visual" aria-label={`QRIS ${activeChannel.label}`}>
@@ -789,12 +872,19 @@ export function InlinePaymentAndReceipt({
                   <PaymentBrandLogo channelId={activeChannel.id} size="md" />
                   <span>NMID: ID202608891029A01</span>
                 </div>
-                <svg
-                  viewBox="0 0 120 120"
-                  className="inline-qris-svg"
-                  role="img"
-                  aria-label="QR Code"
-                >
+                {liveQrImageUrl ? (
+                  <img
+                    src={liveQrImageUrl}
+                    alt={`QRIS ${activeChannel.label}`}
+                    className="inline-qris-svg inline-qris-live-img"
+                  />
+                ) : (
+                  <svg
+                    viewBox="0 0 120 120"
+                    className="inline-qris-svg"
+                    role="img"
+                    aria-label="QR Code"
+                  >
                   <rect width="120" height="120" rx="8" fill="#ffffff" />
                   <rect x="10" y="10" width="30" height="30" fill="#171412" />
                   <rect x="15" y="15" width="20" height="20" fill="#ffffff" />
@@ -821,7 +911,8 @@ export function InlinePaymentAndReceipt({
                   <rect x="88" y="78" width="22" height="12" fill="#171412" />
                   <rect x="84" y="96" width="12" height="14" fill="#171412" />
                   <rect x="102" y="96" width="8" height="14" fill="#171412" />
-                </svg>
+                  </svg>
+                )}
                 <small>VALERIE &amp; CO ATELIER · {money(liveOrder.total, cur)}</small>
                 <div className="inline-qris-mini-btns">
                   <button
@@ -836,7 +927,7 @@ export function InlinePaymentAndReceipt({
                     type="button"
                     className="button ghost small"
                     onClick={() => {
-                      void navigator.clipboard?.writeText(qrisPayloadString);
+                      void navigator.clipboard?.writeText(activeQrString);
                       notify("Kode QRIS disalin", "QRIS payload copied");
                     }}
                   >
@@ -844,6 +935,18 @@ export function InlinePaymentAndReceipt({
                     {t("Salin Kode", "Copy Code")}
                   </button>
                 </div>
+                {liveDeeplinkUrl && (
+                  <a
+                    href={liveDeeplinkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="button dark small full"
+                    style={{ marginTop: 6 }}
+                  >
+                    <ExternalLink size={12} />
+                    {t(`Buka Aplikasi ${activeChannel.badge}`, `Open ${activeChannel.badge} App`)}
+                  </a>
+                )}
               </div>
               <div className="inline-qris-steps">
                 <h4>
@@ -913,19 +1016,19 @@ export function InlinePaymentAndReceipt({
                 </span>
                 <small>{t("Verifikasi Otomatis 24 Jam", "24/7 Auto Verification")}</small>
               </div>
-              {activeChannel.billerCode && (
+              {effectiveBillerCode && (
                 <div className="inline-va-number-row">
                   <div>
                     <small className="inline-va-sublabel">
                       {t("Kode Perusahaan / Biller Mandiri", "Mandiri Company / Biller Code")}
                     </small>
-                    <code>{activeChannel.billerCode} (VALERIE &amp; CO)</code>
+                    <code>{effectiveBillerCode} (VALERIE &amp; CO)</code>
                   </div>
                   <button
                     type="button"
                     className="button ghost small"
                     onClick={() => {
-                      void navigator.clipboard?.writeText(activeChannel.billerCode!);
+                      void navigator.clipboard?.writeText(effectiveBillerCode);
                       notify("Kode Perusahaan disalin", "Biller code copied");
                     }}
                   >

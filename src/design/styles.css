@@ -17158,6 +17158,63 @@ body:has(.member-landing) {
   justify-content: center;
 }
 
+.inline-live-charge-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(23, 20, 18, 0.12);
+  background: #fbf8f3;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.inline-live-charge-banner.matched {
+  background: linear-gradient(135deg, #f3faf5 0%, #f9fbf9 100%);
+  border-color: rgba(22, 121, 74, 0.28);
+}
+
+.inline-live-charge-banner.locked {
+  background: #fef8ef;
+  border-color: rgba(180, 114, 24, 0.28);
+}
+
+.inline-qris-live-img {
+  object-fit: contain;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.queue-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #faf7f2;
+  font-size: 12.5px;
+}
+
+.queue-status-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.queue-status-metrics strong {
+  color: var(--ink);
+}
+
 .footer-payment-bar {
   max-width: 1260px;
   margin: 26px auto 0;

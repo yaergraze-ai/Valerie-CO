@@ -13,7 +13,23 @@ export function createSqliteStore(dbPath) {
  CREATE TABLE IF NOT EXISTS recovery(token TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),expires INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS verifications(key TEXT PRIMARY KEY,code_hash TEXT NOT NULL,expires INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS google_challenges(nonce TEXT PRIMARY KEY,expires INTEGER NOT NULL);
- CREATE TABLE IF NOT EXISTS checkout_keys(user_id TEXT,key TEXT,order_id TEXT,PRIMARY KEY(user_id,key));`);
+ CREATE TABLE IF NOT EXISTS checkout_keys(user_id TEXT,key TEXT,order_id TEXT,PRIMARY KEY(user_id,key));
+ CREATE TABLE IF NOT EXISTS payment_queue(
+   id TEXT PRIMARY KEY,
+   dedupe_key TEXT UNIQUE NOT NULL,
+   order_id TEXT NOT NULL,
+   kind TEXT NOT NULL DEFAULT 'midtrans_webhook',
+   payload TEXT NOT NULL,
+   status TEXT NOT NULL DEFAULT 'pending',
+   attempts INTEGER NOT NULL DEFAULT 0,
+   last_error TEXT NOT NULL DEFAULT '',
+   next_run_at INTEGER NOT NULL DEFAULT 0,
+   locked_at INTEGER NOT NULL DEFAULT 0,
+   created_at TEXT NOT NULL,
+   updated_at TEXT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS payment_queue_status_idx ON payment_queue(status, next_run_at);
+ CREATE INDEX IF NOT EXISTS payment_queue_order_idx ON payment_queue(order_id);`);
 
   const list = (kind) =>
     sql
@@ -47,6 +63,21 @@ export function createSqliteStore(dbPath) {
       throw e;
     }
   };
+
+  const mapPaymentJob = (r) => ({
+    id: r.id,
+    dedupeKey: r.dedupe_key,
+    orderId: r.order_id,
+    kind: r.kind,
+    payload: JSON.parse(r.payload || "{}"),
+    status: r.status,
+    attempts: Number(r.attempts || 0),
+    lastError: r.last_error || "",
+    nextRunAt: Number(r.next_run_at || 0),
+    lockedAt: Number(r.locked_at || 0),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  });
 
   const fail = (status, message) =>
     Object.assign(new Error(message), { status });
@@ -420,6 +451,94 @@ export function createSqliteStore(dbPath) {
             put("subscribers", op.email, { email: op.email });
         }
       });
+    },
+
+    async setOrderPaymentInitAtomic(orderId, paymentPatch) {
+      return tx(() => {
+        const current = get("orders", orderId);
+        if (!current) throw fail(404, "Order not found");
+        const curPayment = current.payment || {};
+        const curStatus = curPayment.status || "pending";
+        const nextOrder = {
+          ...current,
+          payment: {
+            ...curPayment,
+            ...paymentPatch,
+            status: curStatus,
+          },
+        };
+        put("orders", orderId, nextOrder);
+        return nextOrder;
+      });
+    },
+
+    async enqueuePaymentJob({ id, dedupeKey, orderId, kind = "midtrans_webhook", payload, now }) {
+      return tx(() => {
+        const existing = sql
+          .prepare("SELECT * FROM payment_queue WHERE dedupe_key=?")
+          .get(dedupeKey);
+        if (existing) {
+          return { duplicate: true, job: mapPaymentJob(existing) };
+        }
+        const iso = new Date(now || Date.now()).toISOString();
+        sql
+          .prepare(
+            "INSERT INTO payment_queue(id,dedupe_key,order_id,kind,payload,status,attempts,last_error,next_run_at,locked_at,created_at,updated_at) VALUES(?,?,?,?,?,'pending',0,'',?,0,?,?)",
+          )
+          .run(id, dedupeKey, orderId, kind, JSON.stringify(payload || {}), now || 0, iso, iso);
+        const inserted = sql.prepare("SELECT * FROM payment_queue WHERE id=?").get(id);
+        return { duplicate: false, job: mapPaymentJob(inserted) };
+      });
+    },
+
+    async claimPaymentJobs({ orderId = null, now = Date.now(), lockTimeoutMs = 30000, limit = 10 } = {}) {
+      return tx(() => {
+        const lim = Math.max(1, Math.min(Number(limit) || 10, 50));
+        const staleBefore = now - lockTimeoutMs;
+        const rows = orderId
+          ? sql
+              .prepare(
+                "SELECT * FROM payment_queue WHERE order_id=? AND ((status='pending' AND next_run_at<=?) OR (status='processing' AND locked_at<?)) ORDER BY rowid ASC LIMIT ?",
+              )
+              .all(orderId, now, staleBefore, lim)
+          : sql
+              .prepare(
+                "SELECT * FROM payment_queue WHERE (status='pending' AND next_run_at<=?) OR (status='processing' AND locked_at<?) ORDER BY rowid ASC LIMIT ?",
+              )
+              .all(now, staleBefore, lim);
+        const iso = new Date(now).toISOString();
+        const upd = sql.prepare(
+          "UPDATE payment_queue SET status='processing', locked_at=?, updated_at=? WHERE id=?",
+        );
+        return rows.map((r) => {
+          upd.run(now, iso, r.id);
+          return mapPaymentJob({ ...r, status: "processing", locked_at: now, updated_at: iso });
+        });
+      });
+    },
+
+    async finishPaymentJob({ id, status, attempts = 0, nextRunAt = 0, lastError = "" }) {
+      const iso = new Date().toISOString();
+      sql
+        .prepare(
+          "UPDATE payment_queue SET status=?, attempts=?, next_run_at=?, last_error=?, locked_at=0, updated_at=? WHERE id=?",
+        )
+        .run(status, attempts, nextRunAt, String(lastError || "").slice(0, 500), iso, id);
+    },
+
+    async listPaymentQueue(limit = 40) {
+      const lim = Math.max(1, Math.min(Number(limit) || 40, 200));
+      const rows = sql
+        .prepare("SELECT * FROM payment_queue ORDER BY rowid DESC LIMIT ?")
+        .all(lim);
+      const countRows = sql
+        .prepare("SELECT status, COUNT(*) as count FROM payment_queue GROUP BY status")
+        .all();
+      const summary = { pending: 0, processing: 0, done: 0, failed: 0 };
+      for (const c of countRows) {
+        if (c.status in summary) summary[c.status] = Number(c.count || 0);
+      }
+      return { summary, items: rows.map(mapPaymentJob) };
     },
 
     close() {

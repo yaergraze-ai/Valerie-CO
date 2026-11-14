@@ -1879,9 +1879,10 @@ function OrdersPanel({
   onSelect: (id: string) => void;
   admin: boolean;
 }) {
-  const { t, money, updateOrder, notify } = useStore();
+  const { db, t, money, updateOrder, refresh, notify } = useStore();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
+  const [draining, setDraining] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "board">(
     admin ? "board" : "table",
   );
@@ -1976,6 +1977,46 @@ function OrdersPanel({
           </button>
         </div>
       </div>
+      {admin && db.paymentQueue && (
+        <div className="queue-status-bar">
+          <div className="queue-status-metrics">
+            <MidtransGatewayBadge compact />
+            <span>
+              {t("Antrean Callback", "Callback Queue")}:{" "}
+              <strong>{db.paymentQueue.summary.done}</strong>{" "}
+              {t("selesai", "done")} ·{" "}
+              <strong>{db.paymentQueue.summary.pending + db.paymentQueue.summary.processing}</strong>{" "}
+              {t("menunggu", "queued")} ·{" "}
+              <strong>{db.paymentQueue.summary.failed}</strong>{" "}
+              {t("gagal", "failed")}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="button outline small"
+            disabled={draining}
+            onClick={async () => {
+              setDraining(true);
+              try {
+                const res = await api("payments/queue/drain", { force: true });
+                await refresh();
+                notify(
+                  `Antrean callback diproses: ${res?.done || 0} selesai, ${res?.retried || 0} dijadwal ulang`,
+                  `Callback queue drained: ${res?.done || 0} done, ${res?.retried || 0} retried`,
+                );
+              } catch (e) {
+                notify((e as Error).message, (e as Error).message);
+              } finally {
+                setDraining(false);
+              }
+            }}
+          >
+            {draining
+              ? t("Memproses Antrean…", "Draining Queue…")
+              : t("Proses Antrean Callback", "Drain Callback Queue")}
+          </button>
+        </div>
+      )}
       <div className="table-toolbar">
         <label className="search-input">
           <Search size={16} />

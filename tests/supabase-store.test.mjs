@@ -21,6 +21,7 @@ function makeFakeSupabaseClient({ schemaReady = true } = {}) {
     ["subscribers", []],
     ["store_settings", []],
     ["app_meta", []],
+    ["payment_queue", []],
   ]);
 
   const conflictKey = {
@@ -38,6 +39,7 @@ function makeFakeSupabaseClient({ schemaReady = true } = {}) {
     subscribers: "email",
     store_settings: "id",
     app_meta: "id",
+    payment_queue: "id",
   };
 
   function makeQuery(table) {
@@ -164,6 +166,11 @@ function makeFakeSupabaseClient({ schemaReady = true } = {}) {
       },
       neq(col, val) {
         ops.push((r) => r[col] !== val);
+        return builder;
+      },
+      like(col, pattern) {
+        const prefix = String(pattern || "").replace(/%$/, "");
+        ops.push((r) => String(r[col] || "").startsWith(prefix));
         return builder;
       },
       gt(col, val) {
@@ -370,6 +377,82 @@ function makeFakeSupabaseClient({ schemaReady = true } = {}) {
         ord.payment_status = params.p_next_order.payment?.status || null;
         ord.data = structuredClone(params.p_next_order);
         return { data: params.p_next_order, error: null };
+      }
+      if (fn === "vco_set_payment_init_tx") {
+        const ord = tables.get("orders").find((o) => o.id === params.p_order_id);
+        if (!ord) {
+          return { data: null, error: { code: "P0002", message: "Order not found" } };
+        }
+        const curPayment = ord.data.payment || {};
+        const curStatus = curPayment.status || "pending";
+        const merged = {
+          ...curPayment,
+          ...(params.p_payment_patch || {}),
+          status: curStatus,
+        };
+        ord.data = { ...ord.data, payment: merged };
+        ord.payment_status = curStatus;
+        return { data: structuredClone(ord.data), error: null };
+      }
+      if (fn === "vco_enqueue_payment_job") {
+        const pq = tables.get("payment_queue");
+        const existing = pq.find((r) => r.dedupe_key === params.p_dedupe_key);
+        if (existing) {
+          return {
+            data: { duplicate: true, job: structuredClone(existing) },
+            error: null,
+          };
+        }
+        const iso = new Date(params.p_now || Date.now()).toISOString();
+        const row = {
+          id: params.p_id,
+          seq: ++seqCounter,
+          dedupe_key: params.p_dedupe_key,
+          order_id: params.p_order_id,
+          kind: params.p_kind || "midtrans_webhook",
+          payload: structuredClone(params.p_payload || {}),
+          status: "pending",
+          attempts: 0,
+          last_error: "",
+          next_run_at: params.p_now || 0,
+          locked_at: 0,
+          created_at: iso,
+          updated_at: iso,
+        };
+        pq.push(row);
+        return { data: { duplicate: false, job: structuredClone(row) }, error: null };
+      }
+      if (fn === "vco_claim_payment_jobs") {
+        const pq = tables.get("payment_queue");
+        const lim = Math.max(1, Math.min(Number(params.p_limit) || 10, 50));
+        const staleBefore = params.p_now - (params.p_lock_timeout_ms || 30000);
+        const claimed = pq
+          .filter(
+            (r) =>
+              (!params.p_order_id || r.order_id === params.p_order_id) &&
+              ((r.status === "pending" && r.next_run_at <= params.p_now) ||
+                (r.status === "processing" && r.locked_at < staleBefore)),
+          )
+          .slice(0, lim);
+        const iso = new Date(params.p_now).toISOString();
+        for (const r of claimed) {
+          r.status = "processing";
+          r.locked_at = params.p_now;
+          r.updated_at = iso;
+        }
+        return { data: structuredClone(claimed), error: null };
+      }
+      if (fn === "vco_finish_payment_job") {
+        const row = tables.get("payment_queue").find((r) => r.id === params.p_id);
+        if (row) {
+          row.status = params.p_status;
+          row.attempts = params.p_attempts ?? row.attempts;
+          row.next_run_at = params.p_next_run_at ?? 0;
+          row.last_error = params.p_last_error ?? "";
+          row.locked_at = 0;
+          row.updated_at = new Date().toISOString();
+        }
+        return { data: null, error: null };
       }
       throw new Error(`Unexpected RPC ${fn}`);
     },
