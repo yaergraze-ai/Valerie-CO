@@ -1605,7 +1605,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
                   "Choose your payment channel — opens inline right here without leaving the page.",
                 )}
               </p>
-              <PaymentPartnersStrip compact />
+              <PaymentPartnersStrip compact showGateway={false} />
             </div>
           </div>
           <PaymentChannelOptions

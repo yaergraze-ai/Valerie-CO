@@ -463,14 +463,16 @@ const STRIP_CHANNELS = [
 
 export function PaymentPartnersStrip({
   compact = false,
+  showGateway = true,
   label,
 }: {
   compact?: boolean;
+  showGateway?: boolean;
   label?: string;
 }) {
   return (
     <div className={`payment-partners-strip ${compact ? "compact" : ""}`}>
-      <MidtransGatewayBadge compact={compact} />
+      {showGateway && <MidtransGatewayBadge compact={compact} />}
       {label && <span className="payment-partners-label">{label}</span>}
       <div className="payment-partners-logos">
         {STRIP_CHANNELS.map((id) => (

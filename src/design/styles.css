@@ -13890,26 +13890,26 @@ button.editorial-divider:hover {
   box-shadow: 0 4px 12px rgba(43, 29, 20, 0.08) !important;
 }
 
-.checkout-grid .delivery-option span {
+.checkout-grid .delivery-option > span {
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-.checkout-grid .delivery-option b {
+.checkout-grid .delivery-option > span > b {
   font-size: 12.5px !important;
   font-weight: 600 !important;
   color: #23170f !important;
 }
 
-.checkout-grid .delivery-option small {
+.checkout-grid .delivery-option > span > small {
   font-size: 11px !important;
   color: #6e5a4b !important;
   margin-top: 2px !important;
   line-height: 1.35 !important;
 }
 
-.checkout-grid .delivery-option strong {
+.checkout-grid .delivery-option > strong {
   font-size: 12px !important;
   font-weight: 700 !important;
   color: #2b1d14 !important;
@@ -15327,9 +15327,13 @@ button.editorial-divider:hover {
 
 .inline-qris-top {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   width: 100%;
-  font-size: 10px;
+  font-size: 9.5px;
+  color: var(--muted);
 }
 
 .inline-qris-svg {
@@ -15935,6 +15939,7 @@ button.editorial-divider:hover {
   max-height: 290px;
   overflow-y: auto;
   padding-right: 4px;
+  margin-bottom: 10px;
 }
 
 /* ==========================================================================
@@ -16911,6 +16916,10 @@ body:has(.member-landing) {
   color: inherit !important;
   line-height: 1;
   white-space: nowrap;
+}
+
+.checkout-grid .delivery-option .payment-logo-tile .pay-logo-word {
+  color: inherit !important;
 }
 
 .payment-logo-tile.size-sm .pay-logo-word {

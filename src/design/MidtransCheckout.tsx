@@ -231,7 +231,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
                   "Official Rupiah (IDR) inline checkout right here without leaving the page.",
                 )}
               </p>
-              <PaymentPartnersStrip compact />
+              <PaymentPartnersStrip compact showGateway={false} />
             </div>
           </div>
           <PaymentChannelOptions
