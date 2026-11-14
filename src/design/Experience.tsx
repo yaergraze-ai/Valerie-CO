@@ -311,6 +311,14 @@ export function Experience() {
         <div className="header-actions">
           {language}
           <button
+            type="button"
+            className={`studio-quick-link mobile-studio-btn ${view === "admin" ? "active" : ""}`}
+            onClick={() => go("admin")}
+            title={t("Masuk / Buka Studio Admin & Staff", "Sign in / Open Studio Admin & Staff")}
+          >
+            STUDIO
+          </button>
+          <button
             className="icon"
             aria-label={t("Cari produk", "Search products")}
             onClick={() => setOverlay("search")}
@@ -374,11 +382,11 @@ export function Experience() {
                   ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth" })
               }
             >
-              <span>VALERIE & CO SELECTION / 2026</span>
+              <span>VALERIE & CO ATELIER / KOLEKSI EKSKLUSIF 2026</span>
               <span>
                 {t(
-                  "Dipilih dengan karakter. Dikenakan dengan percaya diri.",
-                  "Chosen with character. Worn with confidence.",
+                  "Langkah elegan dimulai di sini · Kulit Italia pilihan · Bantalan empuk seharian · Garansi tukar ukuran 14 hari.",
+                  "Elegance begins with every step · Artisanal leather · All-day cloud cushioning · 14-day complimentary size exchange.",
                 )}
               </span>
               <ArrowDown />
@@ -387,12 +395,23 @@ export function Experience() {
               <div className="section-heading">
                 <div>
                   <span className="eyebrow">
-                    {t("DIPILIH DENGAN CERMAT", "CURATED, NOT COMPLICATED")}
+                    {t("KOLEKSI TERLARIS & PILIHAN UTAMA", "MOST COVETED · ATELIER SIGNATURE")}
                   </span>
-                  <h2>{t("Pilihan istimewa.", "Objects of desire.")}</h2>
+                  <h2>
+                    {t(
+                      "Sepatu yang langsung mencuri perhatian.",
+                      "Crafted to turn every head.",
+                    )}
+                  </h2>
+                  <p className="section-lead-copy">
+                    {t(
+                      "Dirancang khusus dengan proporsi presisi dan bantalan anatomis lembut—nyaman dipakai dari pagi hingga malam tanpa kompromi gaya.",
+                      "Engineered with architectural proportions and anatomical cushioning—effortless luxury from morning meetings to evening soirées.",
+                    )}
+                  </p>
                 </div>
                 <button className="text-link" onClick={() => shop(homeCat)}>
-                  {t("Lihat semua", "View all")}
+                  {t("Lihat seluruh koleksi", "Explore full archive")}
                   <ArrowUpRight size={16} />
                 </button>
               </div>
@@ -430,24 +449,39 @@ export function Experience() {
             >
               <div className="campaign-copy">
                 <span className="eyebrow">
-                  {t("SENI TAMPIL BERBEDA", "THE ART OF STANDING OUT")}
+                  {t("EDISI TERBATAS · CRAFTSMANSHIP TINGKAT TINGGI", "LIMITED ATELIER RELEASE · MASTER CRAFTSMANSHIP")}
                 </span>
                 <h2>
                   {t(
-                    "Bukan sekadar\nlangkah biasa.",
-                    "Anything but\nordinary.",
+                    "Keanggunan yang\nterasa di setiap pijakan.",
+                    "Unforgettable poise\nin every stride.",
                   )}
                 </h2>
                 <p>
                   {t(
-                    "Siluet berani. Detail yang berarti. Koleksi sepatu untuk mengekspresikan diri Anda.",
-                    "Bold silhouettes. Considered details. A footwear edit that feels unmistakably you.",
+                    "Setiap pasang Valerie & CO dibuat dalam jumlah terbatas dengan kulit premium pilihan, jahitan tangan presisi, dan sol anti-selip. Gunakan kode promo SOLERE10 saat checkout untuk potongan eksklusif 10%.",
+                    "Each pair is crafted in small batches using supple full-grain materials, precision hand-finishing, and slip-resistant outsoles. Apply code SOLERE10 at checkout for 10% off your order.",
                   )}
                 </p>
-                <button className="button light" onClick={() => shop()}>
-                  {t("Jelajahi koleksi", "Explore the collection")}
-                  <ArrowUpRight size={16} />
-                </button>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                  <button className="button light" onClick={() => shop()}>
+                    {t("Miliki Koleksi Sekarang", "Claim Your Pair Now")}
+                    <ArrowUpRight size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="campaign-voucher-chip"
+                    onClick={() => {
+                      navigator.clipboard?.writeText("SOLERE10");
+                      s.notify(
+                        "Kode voucher SOLERE10 disalin! Gunakan saat checkout untuk diskon 10%.",
+                        "Voucher code SOLERE10 copied! Apply at checkout for 10% off.",
+                      );
+                    }}
+                  >
+                    {t("Salin Voucher: SOLERE10 (-10%)", "Copy Voucher: SOLERE10 (-10%)")}
+                  </button>
+                </div>
               </div>
               <motion.button
                 type="button"
@@ -1376,29 +1410,38 @@ function Benefits({
       {[
         {
           Icon: Truck,
-          title: t("Pengiriman mudah", "Thoughtful delivery"),
+          title: t("Pengiriman Prioritas & Aman", "Priority Insured Delivery"),
           text: t(
-            `Gratis ongkir mulai ${money(SHIPPING_RATES[currency].freeAbove)}`,
-            `Complimentary from ${money(SHIPPING_RATES[currency].freeAbove)}`,
+            `Gratis ongkir mulai ${money(SHIPPING_RATES[currency].freeAbove)} · Dikemas eksklusif dengan dustbag`,
+            `Complimentary from ${money(SHIPPING_RATES[currency].freeAbove)} · Signature dustbag packaging`,
           ),
           action: onOpenAbout,
         },
         {
           Icon: RefreshCw,
-          title: t("Bantuan retur", "Returns assistance"),
-          text: t("Dari ruang member Anda", "From your member space"),
+          title: t("Garansi Tukar Ukuran 14 Hari", "14-Day Free Size Exchange"),
+          text: t(
+            "Kebesaran atau kekecilan? Tukar ukuran mudah langsung dari akun Anda",
+            "Need another size? Effortless exchange directly from your member lounge",
+          ),
           action: onCare,
         },
         {
           Icon: ShieldCheck,
-          title: t("Belanja dengan jelas", "Shop with clarity"),
-          text: t("Detail di setiap langkah", "Details at every step"),
+          title: t("100% Kurasi Asli & Bergaransi", "100% Authenticated & Guaranteed"),
+          text: t(
+            "Inspeksi kualitas berlapis + pembayaran resmi terenkripsi (QRIS, VA, Kartu)",
+            "Multi-point atelier inspection + encrypted instant checkout",
+          ),
           action: onShop,
         },
         {
           Icon: Headphones,
-          title: t("Layanan personal", "Personal assistance"),
-          text: t("Kami siap membantu", "We are here to help"),
+          title: t("Concierge Pribadi & Ukuran EU", "Personal Stylist & Fit Concierge"),
+          text: t(
+            "Konsultasi ukuran kaki & rekomendasi model 24/7 bersama tim kami",
+            "Bespoke EU sizing advice & styling recommendations whenever you need",
+          ),
           action: onCare,
         },
       ].map(({ Icon, title, text, action }, idx) => (
@@ -1437,13 +1480,18 @@ function Newsletter() {
     <section className="newsletter section">
       <div>
         <span className="eyebrow">
-          {t("TETAP TERHUBUNG", "LET’S STAY IN TOUCH")}
+          {t("UNDANGAN PRIVAT · AKSES AWAL & VOUCHER", "PRIVATE INVITATION · VIP EARLY ACCESS")}
         </span>
-        <h2>{t("Jadi yang pertama tahu.", "A little ahead of the curve.")}</h2>
+        <h2>
+          {t(
+            "Dapatkan Akses Rilis Terbatas & Keistimewaan Member.",
+            "Unlock Private Releases & Member Privileges.",
+          )}
+        </h2>
         <p>
           {t(
-            "Daftarkan minat untuk kabar koleksi berikutnya.",
-            "Register your interest in our next collection.",
+            "Bergabunglah dengan daftar VIP Valerie & CO untuk menerima undangan koleksi baru 48 jam lebih awal beserta penawaran khusus member.",
+            "Join the Valerie & CO private list to receive 48-hour early access to limited drops and bespoke member invitations.",
           )}
         </p>
       </div>
@@ -1486,15 +1534,18 @@ function MobileHome({
 }: {
   onShop: (category?: string) => void;
 }) {
-  const { db, t } = useStore();
+  const { db, t, notify } = useStore();
   const activeCount = db.products.filter((p) => p.active).length;
   return (
     <div className="mobile-store-home">
       <div className="mobile-atelier-banner">
         <div>
-          <span>ATELIER EDIT 2026</span>
+          <span>ATELIER EDIT 2026 · KOLEKSI EKSKLUSIF</span>
           <strong>
-            {t("Siluet Kurasi Valerie & CO", "Valerie & CO Curated Silhouettes")}
+            {t(
+              "Siluet Mewah yang Nyaman Dipakai Seharian",
+              "Architectural Luxury, Cloud-Like Comfort",
+            )}
           </strong>
         </div>
         <button
@@ -1502,9 +1553,28 @@ function MobileHome({
           className="mobile-atelier-cta"
           onClick={() => onShop("All")}
         >
-          {activeCount} {t("Model", "Pieces")}
+          {activeCount} {t("Koleksi", "Pieces")}
           <ArrowUpRight size={12} />
         </button>
+      </div>
+      <div className="mobile-promo-ticker">
+        <button
+          type="button"
+          className="mobile-promo-pill"
+          onClick={() => {
+            navigator.clipboard?.writeText("SOLERE10");
+            notify(
+              "Kode voucher SOLERE10 disalin! Diskon 10% siap digunakan saat checkout.",
+              "Voucher SOLERE10 copied! 10% off ready at checkout.",
+            );
+          }}
+        >
+          <strong>VOUCHER: SOLERE10</strong>
+          <span>{t("Diskon 10% · Ketuk untuk salin", "10% Off · Tap to copy")}</span>
+        </button>
+        <span className="mobile-promo-meta">
+          {t("✓ Garansi Tukar Ukuran 14 Hari · ✓ QRIS & VA Instan", "✓ 14-Day Size Exchange · ✓ Instant QRIS & VA")}
+        </span>
       </div>
     </div>
   );

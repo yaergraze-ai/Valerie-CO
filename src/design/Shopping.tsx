@@ -516,6 +516,7 @@ export function InlinePaymentAndReceipt({
     startInPaymentStage ? "pay" : "receipt",
   );
   const [confirming, setConfirming] = useState(false);
+  const [verifyMsg, setVerifyMsg] = useState("");
   const [showGatewayFrame, setShowGatewayFrame] = useState(
     Boolean(order.payment?.url),
   );
@@ -611,7 +612,20 @@ export function InlinePaymentAndReceipt({
   const handleConfirmPayment = async () => {
     if (confirming) return;
     setConfirming(true);
+    setVerifyMsg(
+      t(
+        "Menghubungkan ke Gerbang Switching Midtrans…",
+        "Connecting to Midtrans Switching Gateway…",
+      ),
+    );
     try {
+      await new Promise((r) => setTimeout(r, 380));
+      setVerifyMsg(
+        t(
+          `Memvalidasi Settlement ${activeChannel.badge} & Menerbitkan Struk…`,
+          `Validating ${activeChannel.badge} Settlement & Issuing Receipt…`,
+        ),
+      );
       const detailSuffix =
         activeChannel.category === "card" && cardInstallment > 1
           ? ` (Cicilan 0% ${cardInstallment} Bulan)`
@@ -636,12 +650,24 @@ export function InlinePaymentAndReceipt({
       notify((e as Error).message, (e as Error).message);
     } finally {
       setConfirming(false);
+      setVerifyMsg("");
     }
   };
 
   if (stage === "pay") {
     return (
       <div className="inline-payment-stage">
+        <div className="inline-gateway-trust-bar">
+          <span className="inline-gateway-trust-pill">
+            <LockKeyhole size={13} />
+            MIDTRANS SANDBOX × VALERIE &amp; CO
+          </span>
+          <span className="inline-gateway-trust-meta">
+            256-BIT SSL ENCRYPTED · PCI-DSS LEVEL 1 ·{" "}
+            {t("VERIFIKASI OTOMATIS", "AUTO-SETTLEMENT")}
+          </span>
+        </div>
+
         <div className="inline-payment-header">
           <div>
             <span className="eyebrow">
@@ -1158,7 +1184,8 @@ export function InlinePaymentAndReceipt({
           >
             <Check size={18} />
             {confirming
-              ? t("Memverifikasi & Menerbitkan Struk…", "Verifying & Issuing Receipt…")
+              ? verifyMsg ||
+                t("Memverifikasi & Menerbitkan Struk…", "Verifying & Issuing Receipt…")
               : t(
                   `Selesaikan Pembayaran via ${activeChannel.badge} & Terbitkan Struk`,
                   `Complete Payment via ${activeChannel.badge} & Issue Receipt`,

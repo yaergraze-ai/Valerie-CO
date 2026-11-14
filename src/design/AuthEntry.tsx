@@ -430,7 +430,7 @@ function GoogleAuthSection({
 
 export function MemberEntry({
   onDone,
-  admin = false,
+  admin: initialAdmin = false,
 }: {
   onDone: () => void;
   admin?: boolean;
@@ -447,9 +447,10 @@ export function MemberEntry({
     serverMode,
   } = useStore();
   const pillGroupId = useId();
+  const [admin, setAdmin] = useState(initialAdmin);
   const [mode, setMode] = useState<
     "login" | "register" | "setup" | "forgot" | "reset"
-  >(admin && needsAdmin ? "setup" : "login");
+  >(initialAdmin && needsAdmin ? "setup" : "login");
   const [channel, setChannel] = useState<"email" | "whatsapp">("email");
   const [authMethod, setAuthMethod] = useState<"password" | "otp">("password");
   const [otpSent, setOtpSent] = useState(false);
@@ -571,24 +572,83 @@ export function MemberEntry({
 
   return (
     <div className={`member-entry auth-entry ${creating ? "is-creating" : ""}`}>
-      <span className="eyebrow">
-        {admin
-          ? "VALERIE & CO STUDIO"
-          : verifyingRegister
-            ? t("VERIFIKASI AKUN", "ACCOUNT VERIFICATION")
-            : "VALERIE & CO MEMBERS"}
-      </span>
-      <h3>
-        {verifyingRegister
-          ? t("Verifikasi kode OTP.", "Verify OTP code.")
-          : mode === "login"
-            ? t("Masuk ke akun.", "Welcome back.")
-            : mode === "register"
-              ? t("Buat akun baru.", "Create account.")
-              : mode === "setup"
-                ? t("Siapkan studio Anda.", "Set up your studio.")
-                : t("Pulihkan akun.", "Recover account.")}
-      </h3>
+      <div
+        className="auth-portal-switcher"
+        role="group"
+        aria-label={t("Pilih Portal Akses", "Select Access Portal")}
+      >
+        <button
+          type="button"
+          className={`auth-portal-pill ${!admin ? "active" : ""}`}
+          onClick={() => {
+            setAdmin(false);
+            changeMode("login");
+            if (location.hash === "#admin") location.hash = "member";
+          }}
+        >
+          {t("Member Private Lounge", "Member Lounge")}
+        </button>
+        <button
+          type="button"
+          className={`auth-portal-pill ${admin ? "active" : ""}`}
+          onClick={() => {
+            setAdmin(true);
+            changeMode(needsAdmin ? "setup" : "login");
+            if (location.hash === "#member") location.hash = "admin";
+          }}
+        >
+          {t("Studio Admin & Staff", "Studio Admin & Staff")}
+        </button>
+      </div>
+
+      <div className="auth-editorial-head">
+        <div className="auth-editorial-kicker">
+          <span className="auth-emblem">V.</span>
+          <span className="eyebrow">
+            {admin
+              ? "VALERIE & CO · STUDIO COMMAND"
+              : verifyingRegister
+                ? t("VERIFIKASI IDENTITAS ATELIER", "ATELIER IDENTITY VERIFICATION")
+                : "VALERIE & CO · PRIVATE ATELIER"}
+          </span>
+        </div>
+        <h3>
+          {verifyingRegister
+            ? t("Verifikasi Kode OTP Anda.", "Verify Your OTP Code.")
+            : admin
+              ? mode === "setup"
+                ? t("Aktifkan Ruang Kendali Studio.", "Activate Studio Workspace.")
+                : t("Masuk ke Portal Tim Studio.", "Sign in to Studio Portal.")
+              : mode === "login"
+                ? t("Selamat Datang di Ruang Privat Anda.", "Welcome to Your Private Lounge.")
+                : mode === "register"
+                  ? t("Bergabung di Valerie & CO.", "Join Valerie & CO Atelier.")
+                  : t("Pulihkan Akses Akun Anda.", "Recover Your Account Access.")}
+        </h3>
+        <p className="auth-editorial-sub">
+          {admin
+            ? t(
+                "Kelola katalog koleksi, pesanan pelanggan, analitik laba keuntungan, dan hak akses tim Studio dalam satu ruang kerja terpadu.",
+                "Manage collections, client orders, profit analytics, and team permissions in one unified workspace.",
+              )
+            : t(
+                "Nikmati rekomendasi ukuran kaki presisi (EU Fit), pelacakan pengiriman real-time, struk digital resmi, dan layanan concierge prioritas.",
+                "Enjoy precision EU Fit recommendations, real-time shipment tracking, official digital receipts, and priority concierge care.",
+              )}
+        </p>
+        <div className="auth-trust-strip" aria-hidden="true">
+          <span>
+            {admin
+              ? t("✦ Analitik Laba Real-Time", "✦ Live Profit Analytics")
+              : t("✦ 100% Kurasi Atelier", "✦ 100% Atelier Curated")}
+          </span>
+          <span>
+            {admin
+              ? t("✦ Akses Staff, Admin & Super Admin", "✦ 4-Tier RBAC")
+              : t("✦ Garansi Tukar Ukuran 14 Hari", "✦ 14-Day Size Exchange")}
+          </span>
+        </div>
+      </div>
 
       {showMethodToggles && (
         <>

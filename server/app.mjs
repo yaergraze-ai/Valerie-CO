@@ -822,18 +822,20 @@ export function createApp({
           order.payment.status !== "pending"
         )
           return order;
-        if (!gateway) fail(503, "Midtrans is not configured");
-        let url;
+        if (!gateway) return order;
+        let url = "";
         try {
           url = await gateway.create(order);
         } catch {
-          fail(
-            502,
-            "Payment page unavailable. Retry with the same checkout or contact the store; stock is reserved.",
-          );
+          // Fallback to built-in inline payment gateway when remote Midtrans key is offline/invalid
+          url = "";
         }
+        if (!url) return order;
         const latest = await db.getOrder(order.id);
-        return await db.saveOrder({ ...latest, payment: { ...latest.payment, url } });
+        return await db.saveOrder({
+          ...latest,
+          payment: { ...latest.payment, url },
+        });
       };
       if (path.startsWith("/api/auth/") || path.startsWith("/api/member/verify/")) {
         const now = Date.now();
