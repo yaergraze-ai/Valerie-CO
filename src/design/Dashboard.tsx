@@ -180,6 +180,7 @@ export default function Dashboard({
   return (
     <section
       className={`dashboard ${admin ? "admin-dashboard" : "member-dashboard"}`}
+      data-active-tab={activeTab}
     >
       <aside className="dashboard-sidebar">
         <div className="workspace-label">
@@ -284,11 +285,11 @@ export default function Dashboard({
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
+            className="dashboard-tab-stage"
             initial={{ opacity: 0, y: 12, scale: 0.992, filter: "blur(6px)" }}
             animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
             exit={{ opacity: 0, y: -8, scale: 0.994, filter: "blur(4px)" }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            style={{ display: "grid", gap: 22 }}
           >
         {activeTab === "overview" && (
           <>
@@ -500,13 +501,23 @@ export default function Dashboard({
                   onExplore={admin ? () => setTab("products") : onShop}
                 />
               </div>
-              <div className="panel">
+              <div className={admin ? "panel" : "panel member-fit-panel"}>
                 <div className="panel-heading">
                   <h3>
                     {admin
                       ? t("Grafik Koleksi & Pesanan", "Catalog & Order Insights")
                       : t("Ringkasan Akun & Fit", "Account & Fit Summary")}
                   </h3>
+                  {!admin && (
+                    <button
+                      type="button"
+                      className="button outline small member-fit-head-btn"
+                      onClick={() => setTab("profile")}
+                    >
+                      {t("Kelola profil", "Manage profile")}
+                      <ArrowUpRight size={14} />
+                    </button>
+                  )}
                   {admin && (
                     <div className="chart-tabs" role="group">
                       {(
@@ -557,74 +568,142 @@ export default function Dashboard({
                     t={t}
                   />
                 ) : (
-                  <div className="member-summary-list">
-                    <div className="member-summary-row">
-                      <ShieldCheck size={18} />
-                      <div>
+                  <div className="member-fit-summary">
+                    <button
+                      type="button"
+                      className="member-fit-hero"
+                      onClick={() => setTab("profile")}
+                    >
+                      <div className="member-fit-size-badge">
+                        <small>EU FIT</small>
+                        <strong>{member?.preferredSize || 39}</strong>
+                      </div>
+                      <div className="member-fit-copy">
+                        <span className="member-fit-eyebrow">
+                          <Sparkles size={12} />
+                          {t("Ukuran & Gaya Favorit", "Preferred Size & Fit")}
+                        </span>
+                        <strong>
+                          {t(
+                            `EU ${member?.preferredSize || 39} · Atelier Fit`,
+                            `EU ${member?.preferredSize || 39} · Atelier Fit`,
+                          )}
+                        </strong>
+                        <p>
+                          {member?.bio
+                            ? member.bio
+                            : t(
+                                "Standar Valerie & CO — ketuk untuk atur fit.",
+                                "Valerie & CO standard — tap to edit fit notes.",
+                              )}
+                        </p>
+                      </div>
+                      <span className="member-fit-cta">
+                        <span>{t("Atur Fit", "Edit Fit")}</span>
+                        <ChevronRight size={15} />
+                      </span>
+                    </button>
+
+                    <div className="member-fit-grid">
+                      <button
+                        type="button"
+                        className="member-fit-card"
+                        onClick={() => setTab("security")}
+                      >
+                        <div className="member-fit-card-top">
+                          <span className="member-fit-icon">
+                            <ShieldCheck size={16} />
+                          </span>
+                          <span
+                            className={`member-fit-badge ${member?.security?.twoFactorEnabled ? "ok" : "warn"}`}
+                          >
+                            {member?.security?.twoFactorEnabled
+                              ? t("2FA Aktif", "2FA On")
+                              : t("Standar", "Standard")}
+                          </span>
+                        </div>
                         <small>{t("Status Keamanan", "Security Status")}</small>
                         <strong>
                           {member?.security?.twoFactorEnabled
-                            ? t("Verifikasi 2 Langkah Aktif", "2-Step Verification Enabled")
+                            ? t("Verifikasi 2 Langkah Aktif", "2-Step Verification Active")
                             : t("Perlindungan Akun Standar", "Standard Account Protection")}
                         </strong>
-                      </div>
-                    </div>
-                    <div className="member-summary-row">
-                      <MapPin size={18} />
-                      <div>
+                        <span className="member-fit-card-action">
+                          {t("Kelola keamanan", "Manage security")}
+                          <ArrowUpRight size={13} />
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="member-fit-card"
+                        onClick={() => setTab("addresses")}
+                      >
+                        <div className="member-fit-card-top">
+                          <span className="member-fit-icon">
+                            <MapPin size={16} />
+                          </span>
+                          <span
+                            className={`member-fit-badge ${member?.addresses[0] ? "ok" : "muted"}`}
+                          >
+                            {member?.addresses[0]
+                              ? t("Tersimpan", "Saved")
+                              : t("Kosong", "Empty")}
+                          </span>
+                        </div>
                         <small>{t("Alamat Utama", "Primary Address")}</small>
                         <strong>
                           {member?.addresses[0]
                             ? `${member.addresses[0].street}, ${member.addresses[0].city}`
                             : t("Belum ada alamat tersimpan", "No saved address yet")}
                         </strong>
-                      </div>
+                        <span className="member-fit-card-action">
+                          {member?.addresses[0]
+                            ? t("Atur alamat", "Edit address")
+                            : t("Tambah alamat", "Add address")}
+                          <ArrowUpRight size={13} />
+                        </span>
+                      </button>
                     </div>
-                    <div className="member-summary-row">
-                      <Sparkles size={18} />
-                      <div>
-                        <small>{t("Ukuran Favorit", "Preferred Fit")}</small>
-                        <strong>
-                          EU {member?.preferredSize || 39} ·{" "}
-                          {member?.bio
-                            ? member.bio
-                            : t("Preferensi standar Valerie & CO", "Valerie & CO Atelier standard fit")}
-                        </strong>
+
+                    <div className="member-fit-footer">
+                      <div className="member-fit-footer-head">
+                        <span className="member-fit-footer-label">
+                          <Mail size={14} />
+                          {t("Verifikasi Kontak & OTP", "Contact & OTP Verification")}
+                        </span>
+                        {(!member?.emailVerified || !member?.phoneVerified) && (
+                          <button
+                            type="button"
+                            className="member-fit-verify-btn"
+                            onClick={() => setTab("profile")}
+                          >
+                            {t("Verifikasi sekarang", "Verify now")}
+                            <ArrowUpRight size={13} />
+                          </button>
+                        )}
                       </div>
-                    </div>
-                    <div className="member-summary-row member-verify-summary">
-                      <Mail size={18} />
-                      <div>
-                        <small>{t("Verifikasi Kontak", "Contact Verification")}</small>
-                        <div className="verify-chip-row">
-                          <span
-                            className={`verify-pill ${member?.emailVerified ? "ok" : "pending"}`}
-                          >
-                            Email ·{" "}
-                            {member?.emailVerified
-                              ? t("Terverifikasi", "Verified")
-                              : t("Belum", "Unverified")}
-                          </span>
-                          <span
-                            className={`verify-pill ${member?.phoneVerified ? "ok" : "pending"}`}
-                          >
-                            WhatsApp ·{" "}
-                            {member?.phoneVerified
-                              ? t("Terverifikasi", "Verified")
-                              : member?.phone
-                                ? t("Belum", "Unverified")
-                                : t("Kosong", "Missing")}
-                          </span>
-                          {(!member?.emailVerified || !member?.phoneVerified) && (
-                            <button
-                              type="button"
-                              className="text-link"
-                              onClick={() => setTab("profile")}
-                            >
-                              {t("Verifikasi sekarang →", "Verify now →")}
-                            </button>
-                          )}
-                        </div>
+                      <div className="verify-chip-row">
+                        <span
+                          className={`verify-pill ${member?.emailVerified ? "ok" : "pending"}`}
+                        >
+                          <Mail size={12} />
+                          Email ·{" "}
+                          {member?.emailVerified
+                            ? t("Terverifikasi", "Verified")
+                            : t("Belum", "Unverified")}
+                        </span>
+                        <span
+                          className={`verify-pill ${member?.phoneVerified ? "ok" : "pending"}`}
+                        >
+                          <Smartphone size={12} />
+                          WhatsApp ·{" "}
+                          {member?.phoneVerified
+                            ? t("Terverifikasi", "Verified")
+                            : member?.phone
+                              ? t("Belum", "Unverified")
+                              : t("Kosong", "Missing")}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -3593,7 +3672,7 @@ function ProfilePanel() {
   };
 
   return (
-    <div className="panel padded settings-panel">
+    <div className="panel padded settings-panel profile-panel-card">
       <div className="profile-heading">
         <div className="avatar-upload-box">
           {member.avatar ? (
@@ -3628,6 +3707,12 @@ function ProfilePanel() {
         </div>
         <div className="profile-meta">
           <h3>{member.name}</h3>
+          <p className="profile-identity-sub">
+            {!isPlaceholderEmail && member.email
+              ? member.email
+              : member.phone ||
+                t("Anggota Valerie & CO Atelier", "Valerie & CO Atelier Member")}
+          </p>
           <div className="verify-chip-row" style={{ marginTop: 4 }}>
             <span className={`verify-pill ${member.emailVerified ? "ok" : "pending"}`}>
               <Mail size={12} />
@@ -3834,6 +3919,7 @@ function ProfilePanel() {
           {t("Catatan gaya & preferensi", "Style note & fit preference")}
           <textarea
             name="bio"
+            rows={2}
             maxLength={240}
             placeholder={t(
               "Suede hangat netral, EU 39 untuk heels dan EU 40 untuk boots.",
@@ -3847,19 +3933,19 @@ function ProfilePanel() {
             {t("Simpan Perubahan", "Save Profile")}
             <Check size={16} />
           </button>
+          <p className="muted profile-save-note">
+            {serverMode
+              ? t(
+                  "Tersimpan di server & database.",
+                  "Saved securely on the server.",
+                )
+              : t(
+                  "Tersimpan lokal di browser.",
+                  "Saved locally in this browser.",
+                )}
+          </p>
         </div>
       </form>
-      <p className="muted" style={{ marginTop: 14 }}>
-        {serverMode
-          ? t(
-              "Profil & foto tersimpan aman di database server.",
-              "Profile & photo are securely persisted on the server.",
-            )
-          : t(
-              "Profil tersimpan lokal di browser untuk pengalaman belanja lebih cepat.",
-              "Profile saved locally in this browser for faster checkout.",
-            )}
-      </p>
     </div>
   );
 }
