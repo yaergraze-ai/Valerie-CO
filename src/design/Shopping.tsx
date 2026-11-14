@@ -144,25 +144,27 @@ export function Bag({
           <b>{money(sum.total)}</b>
         </div>
       </div>
-      <button
-        className="button dark full"
-        onClick={onCheckout}
-        disabled={!validateBag(db.bag, db.products)}
-      >
-        {t("Lanjut ke checkout", "Continue to checkout")}
-        <ArrowRight size={17} />
-      </button>
-      {!validateBag(db.bag, db.products) && (
-        <p role="alert" className="error-text">
-          {t(
-            "Stok atau produk berubah. Perbarui tas Anda.",
-            "Product availability has changed. Update your bag.",
-          )}
-        </p>
-      )}
-      <button className="text-link centered" onClick={onShop}>
-        {t("Lanjut belanja", "Continue exploring")}
-      </button>
+      <div className="bag-footer-actions">
+        <button
+          className="button dark full"
+          onClick={onCheckout}
+          disabled={!validateBag(db.bag, db.products)}
+        >
+          {t("Lanjut ke checkout", "Continue to checkout")}
+          <ArrowRight size={17} />
+        </button>
+        {!validateBag(db.bag, db.products) && (
+          <p role="alert" className="error-text">
+            {t(
+              "Stok atau produk berubah. Perbarui tas Anda.",
+              "Product availability has changed. Update your bag.",
+            )}
+          </p>
+        )}
+        <button className="text-link centered" onClick={onShop}>
+          {t("Lanjut belanja", "Continue exploring")}
+        </button>
+      </div>
     </>
   );
 }
@@ -196,11 +198,15 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
   const [applied, setApplied] = useState("");
   const [express, setExpress] = useState(false);
   const [finished, setFinished] = useState<Order | null>(null);
-  const [addressId, setAddressId] = useState("new");
+  const [addressId, setAddressId] = useState(
+    () => member?.addresses[0]?.id || "new",
+  );
   const busy = useRef(false);
   const checkoutKey = useRef(crypto.randomUUID());
   const coupon = db.coupons.find((c) => c.code === applied && c.active);
   const sum = totals(db.bag, db.products, coupon, express, currency);
+  const savedAddress = member?.addresses.find((a) => a.id === addressId);
+  const totalItems = db.bag.reduce((count, line) => count + line.quantity, 0);
   if (finished)
     return (
       <div className="checkout-success">
@@ -235,6 +241,15 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
       </div>
     );
   if (!member) return <MemberEntry onDone={() => {}} />;
+  const applyPromoCode = async () => {
+    try {
+      const found = await applyCoupon(code.trim().toUpperCase());
+      setApplied(found.code);
+      notify("Kode promo diterapkan", "Promo code applied");
+    } catch (e) {
+      notify((e as Error).message, (e as Error).message);
+    }
+  };
   return (
     <form
       className="checkout-grid"
@@ -244,8 +259,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
         busy.current = true;
         try {
           const f = new FormData(e.currentTarget);
-          const saved = member.addresses.find((a) => a.id === addressId);
-          const address: Address = saved || {
+          const address: Address = savedAddress || {
             id: crypto.randomUUID(),
             label: "Shipping",
             name: String(f.get("name")),
@@ -278,101 +292,165 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
         }
       }}
     >
-      <div>
-        <h3>01 / {t("Alamat pengiriman", "Delivery address")}</h3>
-        {member.addresses.length > 0 && (
-          <label className="field">
-            {t("Pilih alamat", "Select address")}
-            <select
-              value={addressId}
-              onChange={(e) => setAddressId(e.target.value)}
-            >
-              <option value="new">{t("Alamat baru", "New address")}</option>
-              {member.addresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label} — {a.street}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {addressId === "new" && (
-          <AddressFields name={member.name} phone={member.phone} />
-        )}
-        <h3>02 / {t("Metode pengiriman", "Delivery method")}</h3>
-        <label className={`delivery-option ${!express ? "selected" : ""}`}>
-          <input
-            type="radio"
-            name="delivery"
-            checked={!express}
-            onChange={() => setExpress(false)}
-          />
-          <span>
-            <b>{t("Standar", "Standard")}</b>
-            <small>
-              {t(
-                "Estimasi pengiriman: 3–5 hari kerja",
-                "Estimated delivery: 3–5 business days",
-              )}
-            </small>
-          </span>
-          <strong>
-            {sum.subtotal >= rates.freeAbove
-              ? t("Gratis", "Free")
-              : money(rates.standard)}
-          </strong>
-        </label>
-        <label className={`delivery-option ${express ? "selected" : ""}`}>
-          <input
-            type="radio"
-            name="delivery"
-            checked={express}
-            onChange={() => setExpress(true)}
-          />
-          <span>
-            <b>{t("Ekspres", "Express")}</b>
-            <small>
-              {t(
-                "Estimasi pengiriman: 1–2 hari kerja",
-                "Estimated delivery: 1–2 business days",
-              )}
-            </small>
-          </span>
-          <strong>{money(rates.express)}</strong>
-        </label>
-        <h3>03 / {t("Pembayaran", "Payment")}</h3>
-        <div className="notice">
-          <LockKeyhole size={18} />
-          <p>
-            {serverMode
-              ? t(
-                  "Checkout terenkripsi & stok langsung dialokasikan untuk pesanan Anda.",
-                  "Encrypted checkout with instant stock allocation for your order.",
-                )
-              : t(
-                  "Pemesanan langsung Valerie & CO Atelier. Alokasi stok tercatat otomatis dan status pengiriman terpantau di akun Anda.",
-                  "Valerie & CO Atelier direct checkout. Stock allocation is recorded immediately and shipment updates appear in your account.",
+      <div className="checkout-main">
+        <section className="checkout-step-card">
+          <div className="checkout-step-head">
+            <span className="checkout-step-num">01</span>
+            <div>
+              <h3>{t("Alamat pengiriman", "Delivery address")}</h3>
+              <p>
+                {t(
+                  "Pilih alamat tersimpan atau isi tujuan pengiriman baru.",
+                  "Choose a saved address or enter a new destination.",
                 )}
-          </p>
-        </div>
-      </div>
-      <aside className="checkout-summary">
-        <h3>{t("Ringkasan pesanan", "Your selection")}</h3>
-        <div className="checkout-items-scroll">
-        {db.bag.map((l) => {
-          const p = db.products.find((p) => p.id === l.productId)!;
-          return (
-            <div className="checkout-item" key={lineKey(l)}>
-              <img src={p.images[0]} alt="" />
+              </p>
+            </div>
+          </div>
+          {member.addresses.length > 0 && (
+            <label className="field checkout-saved-select">
+              {t("Pilih alamat", "Select address")}
+              <select
+                value={addressId}
+                onChange={(e) => setAddressId(e.target.value)}
+              >
+                <option value="new">{t("Alamat baru", "New address")}</option>
+                {member.addresses.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label} — {a.street}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {savedAddress ? (
+            <div className="checkout-saved-address-preview">
+              <b>
+                {savedAddress.label} · {savedAddress.name}
+              </b>
+              <span>{savedAddress.phone}</span>
+              <p>
+                {savedAddress.street}, {savedAddress.city} {savedAddress.postal}
+              </p>
+            </div>
+          ) : (
+            <AddressFields name={member.name} phone={member.phone} />
+          )}
+        </section>
+
+        <section className="checkout-step-card">
+          <div className="checkout-step-head">
+            <span className="checkout-step-num">02</span>
+            <div>
+              <h3>{t("Metode pengiriman", "Delivery method")}</h3>
+              <p>
+                {t(
+                  "Setiap pasang dikemas dengan kotak atelier & dustbag beludru.",
+                  "Every pair is packed with an atelier box & velvet dustbag.",
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="delivery-options-list">
+            <label className={`delivery-option ${!express ? "selected" : ""}`}>
+              <input
+                type="radio"
+                name="delivery"
+                checked={!express}
+                onChange={() => setExpress(false)}
+              />
               <span>
-                <b>{p.name}</b>
+                <b>{t("Standar", "Standard")}</b>
                 <small>
-                  EU {l.size} · {l.quantity} × {priceText(p)}
+                  {t(
+                    "Estimasi pengiriman: 3–5 hari kerja",
+                    "Estimated delivery: 3–5 business days",
+                  )}
                 </small>
               </span>
+              <strong>
+                {sum.subtotal >= rates.freeAbove
+                  ? t("Gratis", "Free")
+                  : money(rates.standard)}
+              </strong>
+            </label>
+            <label className={`delivery-option ${express ? "selected" : ""}`}>
+              <input
+                type="radio"
+                name="delivery"
+                checked={express}
+                onChange={() => setExpress(true)}
+              />
+              <span>
+                <b>{t("Ekspres", "Express")}</b>
+                <small>
+                  {t(
+                    "Estimasi pengiriman: 1–2 hari kerja",
+                    "Estimated delivery: 1–2 business days",
+                  )}
+                </small>
+              </span>
+              <strong>{money(rates.express)}</strong>
+            </label>
+          </div>
+        </section>
+
+        <section className="checkout-step-card">
+          <div className="checkout-step-head">
+            <span className="checkout-step-num">03</span>
+            <div>
+              <h3>{t("Pembayaran", "Payment")}</h3>
+              <p>
+                {t(
+                  "Konfirmasi instan dengan perlindungan pesanan penuh.",
+                  "Instant confirmation with full order protection.",
+                )}
+              </p>
             </div>
-          );
-        })}
+          </div>
+          <div className="notice checkout-payment-notice">
+            <LockKeyhole size={18} />
+            <p>
+              {serverMode
+                ? t(
+                    "Checkout terenkripsi & stok langsung dialokasikan untuk pesanan Anda.",
+                    "Encrypted checkout with instant stock allocation for your order.",
+                  )
+                : t(
+                    "Pemesanan langsung Valerie & CO Atelier. Alokasi stok tercatat otomatis dan status pengiriman terpantau di akun Anda.",
+                    "Valerie & CO Atelier direct checkout. Stock allocation is recorded immediately and shipment updates appear in your account.",
+                  )}
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <aside className="checkout-summary">
+        <div className="checkout-summary-head">
+          <h3>{t("Ringkasan pesanan", "Your selection")}</h3>
+          <span className="checkout-summary-count">
+            {totalItems} {t("item", "items")}
+          </span>
+        </div>
+        <div className="checkout-items-scroll">
+          {db.bag.map((l) => {
+            const p = db.products.find((p) => p.id === l.productId);
+            if (!p) return null;
+            return (
+              <div className="checkout-item" key={lineKey(l)}>
+                <img src={p.images[0]} alt={p.name} />
+                <div className="checkout-item-info">
+                  <b>{p.name}</b>
+                  <small>
+                    EU {l.size}
+                    {l.color ? ` · ${l.color}` : ""} · Qty {l.quantity}
+                  </small>
+                </div>
+                <strong className="checkout-item-price">
+                  {priceText(p, l.quantity)}
+                </strong>
+              </div>
+            );
+          })}
         </div>
         <div className="coupon-input">
           <label className="sr-only" htmlFor="coupon">
@@ -384,23 +462,22 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             placeholder={t("Kode promo", "Promo code")}
             value={code}
             onChange={(e) => setCode(e.target.value)}
-          />
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                const found = await applyCoupon(code.trim().toUpperCase());
-                setApplied(found.code);
-                notify("Kode promo diterapkan", "Promo code applied");
-              } catch (e) {
-                notify((e as Error).message, (e as Error).message);
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void applyPromoCode();
               }
             }}
+          />
+          <button
+            className="button dark"
+            type="button"
+            onClick={() => void applyPromoCode()}
           >
             {t("Pakai", "Apply")}
           </button>
         </div>
-        <small>
+        <small className="checkout-coupon-hint">
           {t("Masukkan kode voucher Valerie & CO bila tersedia.", "Have a Valerie & CO voucher code? Apply it before confirming.")}
         </small>
         <div className="order-totals">
@@ -436,13 +513,15 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
         </div>
         <label className="checkbox-label" htmlFor="checkout-terms">
           <input id="checkout-terms" name="terms" type="checkbox" required />
-          {t(
-            "Saya menyetujui rincian pesanan dan ketentuan pengiriman Valerie & CO.",
-            "I confirm the order details and Valerie & CO delivery terms.",
-          )}
+          <span>
+            {t(
+              "Saya menyetujui rincian pesanan dan ketentuan pengiriman Valerie & CO.",
+              "I confirm the order details and Valerie & CO delivery terms.",
+            )}
+          </span>
         </label>
         <button
-          className="button dark full"
+          className="button dark full checkout-submit-btn"
           type="submit"
           disabled={!db.bag.length}
         >
@@ -479,6 +558,7 @@ export function AddressFields({
         <input
           name="phone"
           type="tel"
+          inputMode="tel"
           required
           minLength={7}
           defaultValue={address?.phone || phone}
@@ -489,6 +569,7 @@ export function AddressFields({
         {t("Alamat lengkap", "Street address")}
         <textarea
           name="street"
+          rows={2}
           required
           minLength={5}
           defaultValue={address?.street}
@@ -508,6 +589,7 @@ export function AddressFields({
         {t("Kode pos", "Postal code")}
         <input
           name="postal"
+          inputMode="numeric"
           required
           defaultValue={address?.postal}
           autoComplete="postal-code"
