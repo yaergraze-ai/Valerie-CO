@@ -355,7 +355,13 @@ function useStoreState() {
     }
   };
   useEffect(() => {
-    if (serverMode) void refresh();
+    if (!serverMode) return;
+    void refresh();
+    const onFocus = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
   const setDb = (action: SetStateAction<Database>) => {
     const old = dbRef.current;
@@ -612,15 +618,24 @@ function useStoreState() {
     const coupon = db.coupons.find((c) => c.active && c.code === code);
     const sum = totals(db.bag, db.products, coupon, express, currency);
     const orderId = `SOL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const createdAt = new Date().toISOString();
     const order: Order = {
       id: orderId,
       receiptNumber: `VCO-INV-${orderId.replace(/^SOL-/, "")}`,
       memberId: member.id,
       name: member.name,
       email: member.email,
-      date: new Date().toISOString(),
+      date: createdAt,
       status: "processing",
       paymentMethod: "direct",
+      payment: {
+        provider: "midtrans",
+        status: "paid",
+        sandbox: true,
+        method: "QRIS / Virtual Account Instan",
+        transactionId: `VCO-TX-${orderId.slice(-6)}`,
+        paidAt: createdAt,
+      },
       currency,
       items: db.bag.map((l) => {
         const p = db.products.find((x) => x.id === l.productId)!;
@@ -896,10 +911,77 @@ function useStoreState() {
   ) => {
     receive(await api("member/verify/confirm", { channel, code }));
   };
+  const authenticateGoogle = async (credential: string) => {
+    const data = await api("auth/google", { credential });
+    receive(data);
+    notify("Berhasil masuk dengan Google", "Signed in with Google");
+    return data;
+  };
+  const completeOrderPayment = async (
+    id: string,
+    method = "QRIS / Virtual Account Instan",
+  ) => {
+    if (serverMode) {
+      const data = await api("payments/complete", { id, method });
+      receive(data);
+      notify(
+        "Pembayaran terkonfirmasi & struk diterbitkan",
+        "Payment confirmed & receipt issued",
+      );
+      return (data.orders as Order[])?.find((o) => o.id === id) || null;
+    }
+    const paidAt = new Date().toISOString();
+    const txId = `VCO-TX-${Date.now().toString(36).toUpperCase()}-${id.slice(-4).toUpperCase()}`;
+    const existing = dbRef.current.orders.find((o) => o.id === id);
+    const updated: Order | null = existing
+      ? {
+          ...existing,
+          payment: {
+            provider: "midtrans",
+            status: "paid",
+            sandbox: existing.payment?.sandbox ?? true,
+            url: existing.payment?.url,
+            method,
+            transactionId: txId,
+            paidAt,
+          },
+        }
+      : null;
+    if (updated) {
+      setDb((d) => ({
+        ...d,
+        orders: d.orders.map((o): Order => (o.id === id ? updated : o)),
+      }));
+    }
+    notify(
+      "Pembayaran terkonfirmasi & struk diterbitkan",
+      "Payment confirmed & receipt issued",
+    );
+    return updated;
+  };
   const logout = async () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("solere:logout"));
+    }
     setStudioRolePreview(null);
-    if (serverMode) receive(await api("auth/logout", {}));
-    else setMemberId(null);
+    setBackendUser(null);
+    setMemberId(null);
+    if (serverMode) {
+      write({
+        ...dbRef.current,
+        orders: [],
+        tickets: [],
+        members: [],
+      });
+      notify("Anda telah keluar dari akun", "You have signed out");
+      try {
+        receive(await api("auth/logout", {}));
+      } catch {
+        // Optimistic local sign-out already applied
+      }
+    } else {
+      notify("Anda telah keluar dari akun", "You have signed out");
+    }
   };
   const studioRole: UserRole = !serverMode
     ? studioRolePreview || "super_admin"
@@ -967,6 +1049,8 @@ function useStoreState() {
     needsAdmin,
     pending,
     authenticate,
+    authenticateGoogle,
+    completeOrderPayment,
     requestAuthOtp,
     verifyAuthOtp,
     requestRegisterOtp,

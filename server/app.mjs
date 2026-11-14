@@ -30,9 +30,9 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
   "X-Frame-Options": "DENY",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(self)",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; frame-src 'self' https://accounts.google.com https://app.midtrans.com https://app.sandbox.midtrans.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com; font-src 'self' data:; connect-src 'self' https://accounts.google.com;",
+    "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; frame-src 'self' https://accounts.google.com https://app.midtrans.com https://app.sandbox.midtrans.com https://www.openstreetmap.org; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.googleusercontent.com https://*.gstatic.com https://*.tile.openstreetmap.org; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://nominatim.openstreetmap.org;",
 };
 const hashToken = (t) => createHash("sha256").update(t).digest("hex");
 const hashPassword = (p) => {
@@ -747,6 +747,46 @@ export function createApp({
         if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
           fail(403, "Order access denied");
         await syncPayment(o.id);
+        send(200, await state(u));
+        return;
+      }
+      if (path === "/api/payments/complete") {
+        requireUser();
+        const o = await db.getOrder(str(body.id, 80));
+        if (!o || (!isStaffRole(u.role) && o.memberId !== u.id))
+          fail(403, "Order access denied");
+        if (o.status === "Dibatalkan")
+          fail(409, "Pesanan yang dibatalkan tidak dapat dibayar");
+        const chosenMethod =
+          str(body.method, 64) ||
+          o.payment?.method ||
+          "QRIS / Virtual Account Instan";
+        if (o.payment?.status !== "paid") {
+          const paidAt = new Date().toISOString();
+          const txId =
+            o.payment?.transactionId ||
+            `VCO-TX-${Date.now().toString(36).toUpperCase()}-${o.id.slice(-4).toUpperCase()}`;
+          const nextOrder = {
+            ...o,
+            payment: {
+              ...(o.payment || {
+                provider: "midtrans",
+                gatewayId: o.id,
+              }),
+              status: "paid",
+              method: chosenMethod,
+              transactionId: txId,
+              paidAt,
+            },
+          };
+          await db.transitionOrderAtomic({
+            orderId: o.id,
+            expectedStatus: o.status,
+            expectedPaymentStatus: o.payment?.status,
+            nextOrder,
+            restoreStock: false,
+          });
+        }
         send(200, await state(u));
         return;
       }

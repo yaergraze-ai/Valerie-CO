@@ -63,6 +63,9 @@ function invalidateGoogleChallenge() {
   cachedGoogleConfigAt = 0;
   initializedGoogleKey = "";
 }
+if (typeof window !== "undefined") {
+  window.addEventListener("solere:logout", invalidateGoogleChallenge);
+}
 
 function loadGoogle() {
   return (googleScript ||= new Promise<void>((resolve, reject) => {
@@ -251,24 +254,23 @@ function GoogleAuthSection({
   mode: "login" | "register";
   onDone: () => void;
 }) {
-  const { t, refresh, serverMode, notify } = useStore();
+  const { t, authenticateGoogle, serverMode } = useStore();
   const ref = useRef<HTMLDivElement>(null);
   const done = useRef(onDone);
-  const refreshRef = useRef(refresh);
+  const authGoogleRef = useRef(authenticateGoogle);
   const tRef = useRef(t);
-  const notifyRef = useRef(notify);
   useEffect(() => {
     done.current = onDone;
-    refreshRef.current = refresh;
+    authGoogleRef.current = authenticateGoogle;
     tRef.current = t;
-    notifyRef.current = notify;
-  }, [onDone, refresh, t, notify]);
+  }, [onDone, authenticateGoogle, t]);
 
   const [sdkStatus, setSdkStatus] = useState<
     "checking" | "ready" | "unconfigured" | "error"
   >(serverMode ? "checking" : "unconfigured");
   const [googleIssue, setGoogleIssue] = useState("");
   const [googleNonce, setGoogleNonce] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState("");
   const effectiveSdkStatus = !serverMode ? "unconfigured" : sdkStatus;
 
@@ -312,13 +314,10 @@ function GoogleAuthSection({
 
     const handler = async (credential: string) => {
       invalidateGoogleChallenge();
+      setError("");
+      setSigningIn(true);
       try {
-        await api("auth/google", { credential });
-        await refreshRef.current();
-        notifyRef.current(
-          "Masuk dengan Google berhasil",
-          "Signed in with Google",
-        );
+        await authGoogleRef.current(credential);
         done.current();
       } catch (e) {
         const msg = (e as Error).message || "";
@@ -326,6 +325,8 @@ function GoogleAuthSection({
         if (!lifecycle.signal.aborted) {
           void setupGoogleSdk(true);
         }
+      } finally {
+        if (!lifecycle.signal.aborted) setSigningIn(false);
       }
     };
 
@@ -371,14 +372,18 @@ function GoogleAuthSection({
       <div
         ref={ref}
         className="auth-google-slot"
-        style={{ display: effectiveSdkStatus === "ready" ? "flex" : "none" }}
+        style={{
+          display:
+            effectiveSdkStatus === "ready" && !signingIn ? "flex" : "none",
+        }}
       />
-      {effectiveSdkStatus !== "ready" && (
+      {(effectiveSdkStatus !== "ready" || signingIn) && (
         <button
           type="button"
           className="auth-google-btn"
-          disabled={effectiveSdkStatus === "checking"}
+          disabled={effectiveSdkStatus === "checking" || signingIn}
           onClick={() => {
+            if (signingIn) return;
             setError(
               !serverMode
                 ? t(
@@ -404,11 +409,13 @@ function GoogleAuthSection({
         >
           <GoogleMark />
           <span>
-            {effectiveSdkStatus === "checking"
-              ? t("Menghubungkan Google…", "Connecting Google…")
-              : mode === "register"
-                ? t("Daftar dengan Google", "Continue with Google")
-                : t("Lanjutkan dengan Google", "Continue with Google")}
+            {signingIn
+              ? t("Memverifikasi akun Google…", "Verifying Google account…")
+              : effectiveSdkStatus === "checking"
+                ? t("Menghubungkan Google…", "Connecting Google…")
+                : mode === "register"
+                  ? t("Daftar dengan Google", "Continue with Google")
+                  : t("Lanjutkan dengan Google", "Continue with Google")}
           </span>
         </button>
       )}

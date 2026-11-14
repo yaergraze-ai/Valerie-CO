@@ -735,11 +735,28 @@ test("server authentication, authorization and commerce flow", async (t) => {
         assert.equal(claimGood.status, 200);
         assert.equal(claimGood.data.currentUser.role, "staff");
         // Revert member back to member role for clean state
-        await call(
+        const restoredState = await call(
           "admin/role",
           { userId: claimGood.data.currentUser.id, role: "member" },
           admin,
         );
+        const targetOrder = restoredState.data.orders.find(
+          (o) => o.memberId === claimGood.data.currentUser.id && o.status !== "Dibatalkan",
+        );
+        if (targetOrder) {
+          const completeRes = await call(
+            "payments/complete",
+            { id: targetOrder.id, method: "QRIS Instan (Semua Bank & E-Wallet)" },
+            member,
+          );
+          assert.equal(completeRes.status, 200);
+          const paidOrder = completeRes.data.orders.find(
+            (o) => o.id === targetOrder.id,
+          );
+          assert.equal(paidOrder.payment.status, "paid");
+          assert.ok(paidOrder.payment.transactionId);
+          assert.ok(paidOrder.payment.paidAt);
+        }
       },
     );
   } finally {

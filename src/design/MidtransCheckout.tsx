@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, LockKeyhole } from "lucide-react";
 import { useStore, type Address, type Order } from "./store";
 import { api } from "./backend";
-import { AddressFields } from "./Shopping";
+import {
+  AddressFields,
+  InlinePaymentAndReceipt,
+  PAYMENT_CHANNELS,
+} from "./Shopping";
 type Quote = {
   subtotal: number;
   discount: number;
@@ -10,10 +14,12 @@ type Quote = {
   total: number;
 };
 export function MidtransCheckout({ onDone }: { onDone: () => void }) {
-  const { db, member, t, money, checkout } = useStore();
+  const { db, member, t, money, checkout, refresh, notify } = useStore();
   const [express, setExpress] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [code, setCode] = useState("");
+  const [selectedChannel, setSelectedChannel] = useState<string>("qris");
+  const [checkingRemote, setCheckingRemote] = useState(false);
   const [addressId, setAddressId] = useState(
     () => member?.addresses[0]?.id || "new",
   );
@@ -41,36 +47,28 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   }, [db.bag, code, express, order]);
   if (order)
     return (
-      <div className="checkout-success">
-        <span className="eyebrow">MIDTRANS PAYMENT</span>
-        <h2>
-          {t("Pesanan menunggu pembayaran.", "Your order awaits payment.")}
-        </h2>
-        <p>
-          {order.id} ·{" "}
-          <b>{order.receiptNumber || `VCO-INV-${order.id.slice(-8).toUpperCase()}`}</b>
-        </p>
-        <strong>{money(order.total, "IDR")}</strong>
-        <p>
-          {t(
-            "Status lunas diperbarui setelah konfirmasi server Midtrans. Struk pembelian & pengajuan refund tersedia di menu Pesanan pada dashboard member.",
-            "Payment is confirmed by the Midtrans server. Your purchase receipt & refund request options are available under Orders in your member dashboard.",
-          )}
-        </p>
-        {order.payment?.url && (
-          <a
-            className="button dark"
-            href={order.payment.url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t("Buka pembayaran Midtrans", "Open Midtrans payment")}
-          </a>
-        )}
-        <button className="button" onClick={onDone}>
-          {t("Lihat pesanan", "View orders")}
-        </button>
-      </div>
+      <InlinePaymentAndReceipt
+        order={order}
+        initialChannel={selectedChannel}
+        startInPaymentStage={order.payment?.status !== "paid"}
+        checkingRemote={checkingRemote}
+        onCheckRemoteStatus={async () => {
+          setCheckingRemote(true);
+          try {
+            await api("payments/status", { id: order.id });
+            await refresh();
+            notify(
+              "Status pembayaran disinkronkan",
+              "Payment status synchronized",
+            );
+          } catch (e) {
+            notify((e as Error).message, (e as Error).message);
+          } finally {
+            setCheckingRemote(false);
+          }
+        }}
+        onDone={onDone}
+      />
     );
   const applyPromoCode = () => {
     setCode(promoInput.trim().toUpperCase());
@@ -225,18 +223,37 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
               <h3>Midtrans · QRIS / Virtual Account</h3>
               <p>
                 {t(
-                  "Pembayaran resmi dalam Rupiah (IDR) dengan konfirmasi instan.",
-                  "Official Rupiah (IDR) checkout with instant confirmation.",
+                  "Pembayaran resmi dalam Rupiah (IDR) langsung di jendela ini tanpa pindah halaman.",
+                  "Official Rupiah (IDR) inline checkout right here without leaving the page.",
                 )}
               </p>
             </div>
+          </div>
+          <div className="delivery-options-list payment-channel-options">
+            {PAYMENT_CHANNELS.map((ch) => (
+              <label
+                key={ch.id}
+                className={`delivery-option ${selectedChannel === ch.id ? "selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="paymentChannel"
+                  checked={selectedChannel === ch.id}
+                  onChange={() => setSelectedChannel(ch.id)}
+                />
+                <span>
+                  <b>{ch.label}</b>
+                  <small>{ch.sub}</small>
+                </span>
+              </label>
+            ))}
           </div>
           <div className="notice checkout-payment-notice">
             <LockKeyhole size={18} />
             <p>
               {t(
-                "Pembayaran terenkripsi dalam Rupiah (IDR) melalui halaman pembayaran resmi Midtrans.",
-                "Encrypted Rupiah (IDR) checkout via Midtrans's official payment gateway.",
+                "Pembayaran terenkripsi dalam Rupiah (IDR). Struk resmi Valerie & CO diterbitkan otomatis begitu pembayaran dikonfirmasi.",
+                "Encrypted Rupiah (IDR) checkout. Your official Valerie & CO receipt is issued automatically upon payment confirmation.",
               )}
             </p>
           </div>

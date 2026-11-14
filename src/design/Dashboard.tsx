@@ -1,5 +1,5 @@
 import { defaultShowcaseImages } from "./showcase-data";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -23,7 +23,10 @@ import {
   Trash2,
   Check,
   LogOut,
+  ChevronLeft,
   ChevronRight,
+  Calendar,
+  Clock,
   Truck,
   ArrowRight,
   BarChart3,
@@ -400,13 +403,13 @@ export default function Dashboard({
             <h1>{title}</h1>
           </div>
           <div className="dashboard-person">
-            <span className="desktop-only">
-              {new Intl.DateTimeFormat(lang === "id" ? "id-ID" : "en-US", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              }).format(new Date())}
-            </span>
+            <RealtimeClockCalendar
+              orders={orders}
+              lang={lang}
+              t={t}
+              money={money}
+              onSelectOrder={(id) => setOrder(id)}
+            />
             {member?.avatar ? (
               <img
                 src={member.avatar}
@@ -5237,6 +5240,245 @@ function SupportPanel({ admin }: { admin: boolean }) {
         </Modal>
       )}
     </>
+  );
+}
+
+function toLocalYmd(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function RealtimeClockCalendar({
+  orders,
+  lang,
+  t,
+  money,
+  onSelectOrder,
+}: {
+  orders: Order[];
+  lang: "id" | "en";
+  t: (id: string, en: string) => string;
+  money: (n: number, c?: "USD" | "IDR") => string;
+  onSelectOrder: (id: string) => void;
+}) {
+  const [now, setNow] = useState(() => new Date());
+  const [open, setOpen] = useState(false);
+  const [viewMonth, setViewMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [selectedYmd, setSelectedYmd] = useState(() => toLocalYmd(new Date()));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const locale = lang === "id" ? "id-ID" : "en-US";
+  const dateLabel = now.toLocaleDateString(locale, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const timeLabel = now.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const ordersByYmd = new Map<string, Order[]>();
+  for (const o of orders) {
+    const d = new Date(o.date);
+    if (Number.isNaN(d.getTime())) continue;
+    const key = toLocalYmd(d);
+    const list = ordersByYmd.get(key) || [];
+    list.push(o);
+    ordersByYmd.set(key, list);
+  }
+
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const firstDayWeek = (new Date(year, month, 1).getDay() + 6) % 7; // Monday = 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayYmd = toLocalYmd(now);
+  const dayNames =
+    lang === "id"
+      ? ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
+      : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const cells: Array<{ day: number; ymd: string; count: number } | null> = [];
+  for (let i = 0; i < firstDayWeek; i += 1) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const ymd = toLocalYmd(new Date(year, month, day));
+    cells.push({
+      day,
+      ymd,
+      count: ordersByYmd.get(ymd)?.length || 0,
+    });
+  }
+
+  const selectedOrders = ordersByYmd.get(selectedYmd) || [];
+
+  return (
+    <div className="realtime-clock-wrap">
+      <button
+        type="button"
+        className={`realtime-clock-btn ${open ? "active" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        title={t(
+          "Buka Kalender & Waktu Real-Time",
+          "Open Calendar & Real-Time Clock",
+        )}
+      >
+        <Calendar size={14} />
+        <span className="realtime-clock-date">{dateLabel}</span>
+        <span className="realtime-clock-sep">·</span>
+        <Clock size={13} />
+        <strong className="realtime-clock-time">{timeLabel} WIB</strong>
+      </button>
+
+      {open && (
+        <div
+          className="calendar-popover"
+          role="dialog"
+          aria-label={t(
+            "Kalender & Agenda Transaksi",
+            "Transaction Calendar & Agenda",
+          )}
+        >
+          <div className="calendar-popover-head">
+            <div>
+              <span className="eyebrow">
+                {t("WAKTU REALTIME & KALENDER", "REAL-TIME CLOCK & CALENDAR")}
+              </span>
+              <h4>
+                {viewMonth.toLocaleDateString(locale, {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </h4>
+            </div>
+            <div className="calendar-nav-btns">
+              <button
+                type="button"
+                className="calendar-nav-btn"
+                aria-label={t("Bulan sebelumnya", "Previous month")}
+                onClick={() =>
+                  setViewMonth(new Date(year, month - 1, 1))
+                }
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <button
+                type="button"
+                className="calendar-today-btn"
+                onClick={() => {
+                  const current = new Date();
+                  setViewMonth(
+                    new Date(current.getFullYear(), current.getMonth(), 1),
+                  );
+                  setSelectedYmd(toLocalYmd(current));
+                }}
+              >
+                {t("Hari Ini", "Today")}
+              </button>
+              <button
+                type="button"
+                className="calendar-nav-btn"
+                aria-label={t("Bulan berikutnya", "Next month")}
+                onClick={() =>
+                  setViewMonth(new Date(year, month + 1, 1))
+                }
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+
+          <div className="calendar-weekdays">
+            {dayNames.map((d) => (
+              <span key={d}>{d}</span>
+            ))}
+          </div>
+
+          <div className="calendar-grid">
+            {cells.map((cell, idx) =>
+              cell ? (
+                <button
+                  key={cell.ymd}
+                  type="button"
+                  className={`calendar-day ${cell.ymd === todayYmd ? "today" : ""} ${cell.ymd === selectedYmd ? "selected" : ""} ${cell.count > 0 ? "has-orders" : ""}`}
+                  onClick={() => setSelectedYmd(cell.ymd)}
+                >
+                  <span>{cell.day}</span>
+                  {cell.count > 0 && (
+                    <small className="calendar-day-badge">{cell.count}</small>
+                  )}
+                </button>
+              ) : (
+                <span key={`empty-${idx}`} className="calendar-day empty" />
+              ),
+            )}
+          </div>
+
+          <div className="calendar-agenda">
+            <div className="calendar-agenda-head">
+              <strong>
+                {t("Agenda Transaksi", "Transaction Agenda")} · {selectedYmd}
+              </strong>
+              <span>
+                {selectedOrders.length} {t("pesanan", "orders")}
+              </span>
+            </div>
+            {selectedOrders.length > 0 ? (
+              <div className="calendar-agenda-list">
+                {selectedOrders.slice(0, 4).map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    className="calendar-agenda-item"
+                    onClick={() => {
+                      onSelectOrder(o.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <div>
+                      <b>
+                        {o.id} ·{" "}
+                        {o.receiptNumber ||
+                          `VCO-INV-${o.id.replace(/^SOL-/, "").slice(0, 8)}`}
+                      </b>
+                      <small>
+                        {o.name} ·{" "}
+                        {new Date(o.date).toLocaleTimeString("id-ID", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        WIB
+                      </small>
+                    </div>
+                    <strong>{money(o.total, o.currency || "IDR")}</strong>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="calendar-agenda-empty">
+                {t(
+                  "Belum ada pesanan pada tanggal ini. Pilih tanggal bertanda angka untuk membuka struk transaksi.",
+                  "No orders on this date. Select a badged date to inspect transaction receipts.",
+                )}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
