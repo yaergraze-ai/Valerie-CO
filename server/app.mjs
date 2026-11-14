@@ -27,7 +27,8 @@ const seed = JSON.parse(
 );
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "same-origin",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Content-Security-Policy":
@@ -200,7 +201,7 @@ export function createApp({
     process.env.VERCEL_ENV === "preview",
   trustProxy =
     process.env.TRUST_PROXY === "true" || Boolean(process.env.VERCEL),
-  googleClientId = process.env.GOOGLE_CLIENT_ID,
+  googleClientId = String(process.env.GOOGLE_CLIENT_ID || "").trim(),
   verifyGoogleToken = verifyGoogle,
   sendReset = resetMailer(),
   sendWhatsapp = whatsappMailer(),

@@ -437,6 +437,14 @@ test("server authentication, authorization and commerce flow", async (t) => {
         assert.ok(staticRes.headers.get("content-security-policy"));
         assert.ok(staticRes.headers.get("permissions-policy"));
         assert.equal(
+          staticRes.headers.get("referrer-policy"),
+          "strict-origin-when-cross-origin",
+        );
+        assert.equal(
+          staticRes.headers.get("cross-origin-opener-policy"),
+          "same-origin-allow-popups",
+        );
+        assert.equal(
           staticRes.headers.get("x-content-type-options"),
           "nosniff",
         );

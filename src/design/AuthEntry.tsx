@@ -157,6 +157,31 @@ function translateAuthError(
       "Gagal mengirim kode OTP. Pastikan nomor/email dan konfigurasi pengirim sudah benar.",
       "Failed to deliver OTP code. Verify your contact and gateway configuration.",
     );
+  if (m.includes("this email already has an account"))
+    return t(
+      "Email ini sudah terdaftar dengan kata sandi. Silakan masuk menggunakan kata sandi atau kode OTP.",
+      "This email already has an account. Sign in with your password or OTP.",
+    );
+  if (m.includes("google sign-in expired"))
+    return t(
+      "Sesi masuk Google kedaluwarsa. Muat ulang halaman lalu coba lagi.",
+      "Google sign-in expired. Reload and try again.",
+    );
+  if (m.includes("invalid google identity"))
+    return t(
+      "Identitas Google tidak valid atau email belum terverifikasi.",
+      "Invalid Google identity or unverified email.",
+    );
+  if (m.includes("google sign-in could not be verified"))
+    return t(
+      "Verifikasi masuk Google gagal. Periksa kembali GOOGLE_CLIENT_ID dan asal domain di Google Cloud Console.",
+      "Google sign-in could not be verified. Check GOOGLE_CLIENT_ID and authorized origins.",
+    );
+  if (m.includes("google sign-in is not configured"))
+    return t(
+      "Google OAuth belum dikonfigurasi pada server.",
+      "Google sign-in is not configured on the server.",
+    );
   return raw;
 }
 
@@ -180,11 +205,13 @@ function GoogleAuthSection({
   const done = useRef(onDone);
   const refreshRef = useRef(refresh);
   const tRef = useRef(t);
+  const notifyRef = useRef(notify);
   useEffect(() => {
     done.current = onDone;
     refreshRef.current = refresh;
     tRef.current = t;
-  }, [onDone, refresh, t]);
+    notifyRef.current = notify;
+  }, [onDone, refresh, t, notify]);
 
   const [sdkStatus, setSdkStatus] = useState<
     "checking" | "ready" | "unconfigured" | "error"
@@ -212,45 +239,48 @@ function GoogleAuthSection({
             try {
               await api("auth/google", { credential });
               await refreshRef.current();
-              notify("Masuk dengan Google berhasil", "Signed in with Google");
+              notifyRef.current(
+                "Masuk dengan Google berhasil",
+                "Signed in with Google",
+              );
               done.current();
             } catch (e) {
               setError(translateAuthError((e as Error).message, tRef.current));
             }
           },
         });
-        const renderBtn = () => {
-          const host = ref.current;
-          if (!host) return;
-          const hostWidth = host.parentElement?.clientWidth || 364;
-          const btnWidth = Math.min(400, Math.max(240, Math.round(hostWidth)));
-          const btnKey = `${mode}:${btnWidth}`;
-          if (host.getAttribute("data-btn-key") === btnKey) return;
-          host.setAttribute("data-btn-key", btnKey);
-          host.replaceChildren();
-          window.google!.accounts.id.renderButton(host, {
-            theme: "outline",
-            size: "large",
-            text: mode === "register" ? "signup_with" : "continue_with",
-            shape: "pill",
-            width: btnWidth,
-          });
-        };
-        renderBtn();
-        setSdkStatus("ready");
-        if (typeof ResizeObserver !== "undefined" && ref.current.parentElement) {
-          const ro = new ResizeObserver(() => renderBtn());
-          ro.observe(ref.current.parentElement);
-          lifecycle.signal.addEventListener("abort", () => ro.disconnect(), {
-            once: true,
-          });
-        }
+        if (!lifecycle.signal.aborted) setSdkStatus("ready");
       })
       .catch(() => {
         if (!lifecycle.signal.aborted) setSdkStatus("error");
       });
     return () => lifecycle.abort();
-  }, [serverMode, mode, notify]);
+  }, [serverMode]);
+
+  useEffect(() => {
+    if (sdkStatus !== "ready" || !ref.current || !window.google) return;
+    const host = ref.current;
+    const renderBtn = () => {
+      const hostWidth = host.parentElement?.clientWidth || 364;
+      const btnWidth = Math.min(400, Math.max(240, Math.round(hostWidth)));
+      const btnKey = `${mode}:${btnWidth}`;
+      if (host.getAttribute("data-btn-key") === btnKey) return;
+      host.setAttribute("data-btn-key", btnKey);
+      host.replaceChildren();
+      window.google!.accounts.id.renderButton(host, {
+        theme: "outline",
+        size: "large",
+        text: mode === "register" ? "signup_with" : "continue_with",
+        shape: "pill",
+        width: btnWidth,
+      });
+    };
+    renderBtn();
+    if (typeof ResizeObserver === "undefined" || !host.parentElement) return;
+    const ro = new ResizeObserver(() => renderBtn());
+    ro.observe(host.parentElement);
+    return () => ro.disconnect();
+  }, [sdkStatus, mode]);
 
   return (
     <div className="auth-google">
