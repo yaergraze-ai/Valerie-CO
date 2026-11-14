@@ -9,11 +9,144 @@ export type BgRemoveOptions = {
   removeBg?: boolean;
   tolerance?: number;
   autoTrim?: boolean;
+  fitCircle?: boolean;
   maxDim?: number;
 };
 
+export type CircleFitPlacement = {
+  minX: number;
+  minY: number;
+  subW: number;
+  subH: number;
+  outSize: number;
+  dx: number;
+  dy: number;
+  drawW: number;
+  drawH: number;
+  maxRadiusRatio: number;
+};
+
 const cutoutCache = new Map<string, string>();
+const fittedCircleCache = new Set<string>();
 const inflightCache = new Map<string, Promise<string>>();
+
+function cutoutCacheKey(src: string, fitCircle?: boolean) {
+  return fitCircle ? `${src}::circle` : src;
+}
+
+/**
+ * Compute uniform square placement so all opaque pixels sit strictly inside a
+ * target circular envelope centered on the canvas (default 40% radius = 80% diameter).
+ */
+export function computeCircleFitPlacement(
+  width: number,
+  height: number,
+  data: Uint8ClampedArray,
+  outSize = Math.max(width, height),
+  alphaThreshold = 16,
+  targetRadiusRatio = 0.4,
+): CircleFitPlacement | null {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * width * 4;
+    for (let x = 0; x < width; x++) {
+      if (data[rowOffset + x * 4 + 3] > alphaThreshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX <= minX + 4 || maxY <= minY + 4) {
+    return null;
+  }
+
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  let maxR = 0;
+
+  for (let y = minY; y <= maxY; y++) {
+    const rowOffset = y * width * 4;
+    for (let x = minX; x <= maxX; x++) {
+      if (data[rowOffset + x * 4 + 3] > alphaThreshold) {
+        const dist = Math.hypot(x - cx, y - cy);
+        if (dist > maxR) maxR = dist;
+      }
+    }
+  }
+
+  if (maxR < 4) {
+    return null;
+  }
+
+  // +1px margin accounts for pixel outer corner (+0.71px) and bilinear smoothing
+  const fitScale = (outSize * targetRadiusRatio) / (maxR + 1);
+  const subW = maxX - minX + 1;
+  const subH = maxY - minY + 1;
+  const drawW = subW * fitScale;
+  const drawH = subH * fitScale;
+  const dx = (outSize - drawW) / 2;
+  const dy = (outSize - drawH) / 2;
+
+  return {
+    minX,
+    minY,
+    subW,
+    subH,
+    outSize,
+    dx,
+    dy,
+    drawW,
+    drawH,
+    maxRadiusRatio: targetRadiusRatio,
+  };
+}
+
+function encodeCanvasDataUrl(canvas: HTMLCanvasElement, quality = 0.9): string {
+  const webp = canvas.toDataURL("image/webp", quality);
+  return webp.startsWith("data:image/webp")
+    ? webp
+    : canvas.toDataURL("image/png");
+}
+
+function renderCircleFittedCanvas(
+  sourceCanvas: HTMLCanvasElement,
+  data: Uint8ClampedArray,
+  w: number,
+  h: number,
+  maxDim: number,
+): string | null {
+  const outSize = Math.min(maxDim, Math.max(w, h));
+  const placement = computeCircleFitPlacement(w, h, data, outSize);
+  if (!placement) return null;
+
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = placement.outSize;
+  outCanvas.height = placement.outSize;
+  const outCtx = outCanvas.getContext("2d");
+  if (!outCtx) return null;
+
+  outCtx.imageSmoothingEnabled = true;
+  outCtx.imageSmoothingQuality = "high";
+  outCtx.drawImage(
+    sourceCanvas,
+    placement.minX,
+    placement.minY,
+    placement.subW,
+    placement.subH,
+    placement.dx,
+    placement.dy,
+    placement.drawW,
+    placement.drawH,
+  );
+  return encodeCanvasDataUrl(outCanvas, 0.9);
+}
 
 function colorDist(
   r1: number,
@@ -59,14 +192,14 @@ export function removeBackgroundFromImageElement(
 
   ctx.drawImage(img, 0, 0, w, h);
 
-  if (opts.removeBg === false) {
+  if (opts.removeBg === false && !opts.fitCircle) {
     return canvas.toDataURL("image/webp", 0.88);
   }
 
   const imageData = ctx.getImageData(0, 0, w, h);
   const data = imageData.data;
 
-  // Check if corners are already transparent (e.g. transparent PNG)
+  // Check if corners are already transparent (e.g. transparent PNG/WebP)
   const cornerIndices = [
     0,
     (w - 1) * 4,
@@ -76,8 +209,13 @@ export function removeBackgroundFromImageElement(
   const transparentCorners = cornerIndices.filter(
     (idx) => data[idx + 3] < 35,
   ).length;
-  if (transparentCorners >= 2 && !autoTrim) {
-    return null;
+  if (transparentCorners >= 2) {
+    if (opts.fitCircle) {
+      return renderCircleFittedCanvas(canvas, data, w, h, maxDim);
+    }
+    if (!autoTrim) {
+      return null;
+    }
   }
 
   // Sample border perimeter to estimate dominant studio backdrop color
@@ -243,6 +381,14 @@ export function removeBackgroundFromImageElement(
 
   ctx.putImageData(imageData, 0, 0);
 
+  if (opts.fitCircle) {
+    const cleaned = ctx.getImageData(0, 0, w, h).data;
+    return (
+      renderCircleFittedCanvas(canvas, cleaned, w, h, maxDim) ??
+      encodeCanvasDataUrl(canvas, 0.9)
+    );
+  }
+
   if (autoTrim) {
     let minX = w,
       minY = h,
@@ -278,18 +424,12 @@ export function removeBackgroundFromImageElement(
         const dx = Math.round((outCanvas.width - drawW) / 2);
         const dy = Math.round((outCanvas.height - drawH) / 2);
         outCtx.drawImage(canvas, minX, minY, subW, subH, dx, dy, drawW, drawH);
-        const webp = outCanvas.toDataURL("image/webp", 0.9);
-        return webp.startsWith("data:image/webp")
-          ? webp
-          : outCanvas.toDataURL("image/png");
+        return encodeCanvasDataUrl(outCanvas, 0.9);
       }
     }
   }
 
-  const webp = canvas.toDataURL("image/webp", 0.9);
-  return webp.startsWith("data:image/webp")
-    ? webp
-    : canvas.toDataURL("image/png");
+  return encodeCanvasDataUrl(canvas, 0.9);
 }
 
 export function processUploadedProductPhoto(
@@ -318,20 +458,25 @@ export function processUploadedProductPhoto(
   });
 }
 
-export function getAutoCutoutAsync(src: string): Promise<string> {
+export function getAutoCutoutAsync(
+  src: string,
+  opts?: { fitCircle?: boolean },
+): Promise<string> {
+  const fitCircle = Boolean(opts?.fitCircle);
   if (!src || typeof window === "undefined" || typeof document === "undefined") {
     return Promise.resolve(src);
   }
-  if (cutoutCache.has(src)) {
-    return Promise.resolve(cutoutCache.get(src)!);
+  const cacheKey = cutoutCacheKey(src, fitCircle);
+  if (cutoutCache.has(cacheKey)) {
+    return Promise.resolve(cutoutCache.get(cacheKey)!);
   }
-  // Transparent PNGs in public/editorial/*-pair-v2.png or data:image/webp|png already cut out
-  if (/(-pair-v2\.png|luxury-trans-)/i.test(src)) {
-    cutoutCache.set(src, src);
+  // Transparent PNGs in public/editorial/*-pair-v2.png or luxury-trans-* already cut out
+  if (!fitCircle && /(-pair-v2\.png|luxury-trans-)/i.test(src)) {
+    cutoutCache.set(cacheKey, src);
     return Promise.resolve(src);
   }
-  if (inflightCache.has(src)) {
-    return inflightCache.get(src)!;
+  if (inflightCache.has(cacheKey)) {
+    return inflightCache.get(cacheKey)!;
   }
 
   const promise = new Promise<string>((resolve) => {
@@ -343,34 +488,39 @@ export function getAutoCutoutAsync(src: string): Promise<string> {
           removeBg: true,
           tolerance: 28,
           autoTrim: false,
+          fitCircle,
           maxDim: 760,
         });
         const finalUrl = out || src;
-        cutoutCache.set(src, finalUrl);
+        if (fitCircle && out) {
+          fittedCircleCache.add(cacheKey);
+        }
+        cutoutCache.set(cacheKey, finalUrl);
         resolve(finalUrl);
       } catch {
-        cutoutCache.set(src, src);
+        cutoutCache.set(cacheKey, src);
         resolve(src);
       } finally {
-        inflightCache.delete(src);
+        inflightCache.delete(cacheKey);
       }
     };
     img.onerror = () => {
-      cutoutCache.set(src, src);
-      inflightCache.delete(src);
+      cutoutCache.set(cacheKey, src);
+      inflightCache.delete(cacheKey);
       resolve(src);
     };
     img.src = src;
   });
 
-  inflightCache.set(src, promise);
+  inflightCache.set(cacheKey, promise);
   return promise;
 }
 
-export function useAutoCutout(src?: string): string {
+export function useAutoCutout(src?: string, fitCircle = false): string {
   const safeSrc = src || "";
+  const cacheKey = cutoutCacheKey(safeSrc, fitCircle);
   const [resolved, setResolved] = useState<string>(
-    () => cutoutCache.get(safeSrc) || safeSrc,
+    () => cutoutCache.get(cacheKey) || safeSrc,
   );
 
   useEffect(() => {
@@ -378,31 +528,46 @@ export function useAutoCutout(src?: string): string {
       setResolved("");
       return;
     }
-    if (cutoutCache.has(safeSrc)) {
-      setResolved(cutoutCache.get(safeSrc)!);
+    const key = cutoutCacheKey(safeSrc, fitCircle);
+    if (cutoutCache.has(key)) {
+      setResolved(cutoutCache.get(key)!);
       return;
     }
     let cancelled = false;
     setResolved(safeSrc);
-    getAutoCutoutAsync(safeSrc).then((url) => {
+    getAutoCutoutAsync(safeSrc, { fitCircle }).then((url) => {
       if (!cancelled) setResolved(url);
     });
     return () => {
       cancelled = true;
     };
-  }, [safeSrc]);
+  }, [safeSrc, fitCircle]);
 
   return resolved;
 }
 
+export type CutoutImgProps = ImgHTMLAttributes<HTMLImageElement> & {
+  fitCircle?: boolean;
+};
+
 export function CutoutImg({
   src,
+  fitCircle = false,
   ...rest
-}: ImgHTMLAttributes<HTMLImageElement>) {
-  const resolved = useAutoCutout(src);
+}: CutoutImgProps) {
+  const safeSrc = src || "";
+  const cacheKey = cutoutCacheKey(safeSrc, fitCircle);
+  const resolved = useAutoCutout(src, fitCircle);
+  const isCircleFitted =
+    fitCircle &&
+    Boolean(safeSrc) &&
+    fittedCircleCache.has(cacheKey) &&
+    resolved === cutoutCache.get(cacheKey);
+
   return createElement("img", {
     src: resolved,
     "data-cutout": "true",
+    "data-circle-fitted": isCircleFitted ? "true" : undefined,
     ...rest,
   });
 }

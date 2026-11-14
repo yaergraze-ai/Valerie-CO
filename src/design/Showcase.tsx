@@ -876,10 +876,10 @@ function ProductOrbit({
           );
           if (activeImg) {
             gsap.to(activeImg, {
-              rotationY: nx * 16,
-              rotationX: -ny * 12,
-              rotationZ: nx * -3.5,
-              scale: 1.035,
+              rotationY: nx * 14,
+              rotationX: -ny * 10,
+              rotationZ: nx * -3,
+              scale: 1.025,
               transformPerspective: 1000,
               duration: 0.4,
               ease: "power3.out",
@@ -1069,6 +1069,7 @@ function OrbitProduct({
       >
         <span className="orbit-float-wrap">
           <CutoutImg
+            fitCircle
             className="orbit-single"
             src={showcaseImage(item)}
             alt={item.name}

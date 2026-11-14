@@ -5471,10 +5471,10 @@ img[data-cutout="true"],
 @keyframes float3dShoe {
   0%,
   100% {
-    transform: translateY(0px);
+    transform: translateY(3px);
   }
   50% {
-    transform: translateY(-7px);
+    transform: translateY(-3px);
   }
 }
 
@@ -8929,6 +8929,7 @@ body:has(.member-landing) {
   }
 
   .reference-home .orbital-showcase .orbit-stage {
+    --orbit-circle: clamp(220px, min(21vw, 36svh), 296px);
     position: absolute !important;
     left: clamp(176px, 16vw, 232px) !important;
     right: clamp(176px, 16vw, 232px) !important;
@@ -8938,9 +8939,12 @@ body:has(.member-landing) {
   }
 
   .reference-home .orbital-showcase .orbit-product > button {
-    width: min(22vw, 280px) !important;
-    height: 84% !important;
+    width: var(--orbit-circle) !important;
+    height: var(--orbit-circle) !important;
+    aspect-ratio: 1 !important;
+    left: 50% !important;
     top: 50% !important;
+    border-radius: 50% !important;
   }
 
   .reference-home .orbital-showcase .orbit-shadow {
@@ -9065,16 +9069,17 @@ body:has(.member-landing) {
   }
 
   .reference-home .orbital-showcase .orbit-halo {
-    width: clamp(184px, 26vw, 220px);
+    width: var(--orbit-circle);
     top: 50%;
   }
 
   .reference-home .orbital-showcase .orbit-halo.secondary {
-    width: clamp(220px, 31vw, 264px);
+    width: calc(var(--orbit-circle) * 1.18);
     top: 50%;
   }
 
   .reference-home .orbital-showcase .orbit-stage {
+    --orbit-circle: clamp(190px, 26vw, 224px);
     position: absolute !important;
     left: clamp(120px, 16vw, 148px) !important;
     right: clamp(120px, 16vw, 148px) !important;
@@ -9083,9 +9088,12 @@ body:has(.member-landing) {
   }
 
   .reference-home .orbital-showcase .orbit-product > button {
-    width: min(26vw, 230px) !important;
-    height: 84% !important;
+    width: var(--orbit-circle) !important;
+    height: var(--orbit-circle) !important;
+    aspect-ratio: 1 !important;
+    left: 50% !important;
     top: 50% !important;
+    border-radius: 50% !important;
   }
 
   .reference-home .orbital-showcase .orbit-shadow {
@@ -9193,27 +9201,31 @@ body:has(.member-landing) {
   }
 
   .reference-home .orbital-showcase .orbit-halo {
-    width: 176px;
-    top: 48%;
+    width: var(--orbit-circle);
+    top: 50%;
   }
 
   .reference-home .orbital-showcase .orbit-halo.secondary {
-    width: 210px;
-    top: 48%;
+    width: calc(var(--orbit-circle) * 1.16);
+    top: 50%;
   }
 
   .reference-home .orbital-showcase .orbit-stage {
+    --orbit-circle: 176px;
     position: absolute !important;
     left: 0 !important;
     right: 0 !important;
-    top: 56px !important;
-    height: 44% !important;
+    top: 52px !important;
+    height: 45% !important;
   }
 
   .reference-home .orbital-showcase .orbit-product > button {
-    width: min(62vw, 215px) !important;
-    height: 86% !important;
-    top: 48% !important;
+    width: var(--orbit-circle) !important;
+    height: var(--orbit-circle) !important;
+    aspect-ratio: 1 !important;
+    left: 50% !important;
+    top: 50% !important;
+    border-radius: 50% !important;
   }
 
   .reference-home .orbital-showcase .showcase-description {
@@ -11255,11 +11267,15 @@ main:has(.showcase-detail-mode) .mobile-store-home {
   z-index: 0;
 }
 
+.orbit-stage {
+  --orbit-circle: clamp(220px, min(21vw, 36svh), 296px);
+}
+
 .orbit-halo {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: clamp(216px, min(20vw, 35svh), 286px);
+  width: var(--orbit-circle);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border-radius: 50%;
@@ -11271,10 +11287,32 @@ main:has(.showcase-detail-mode) .mobile-store-home {
 }
 
 .orbit-halo.secondary {
-  width: clamp(256px, min(24.5vw, 42svh), 338px);
+  width: calc(var(--orbit-circle) * 1.18);
   background: none;
   border: 1px dashed rgba(139, 94, 60, 0.2);
   box-shadow: none;
+}
+
+.orbit-stage .orbit-product > button {
+  width: var(--orbit-circle);
+  height: var(--orbit-circle);
+  aspect-ratio: 1;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+}
+
+.orbit-stage .orbit-product img.orbit-single {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  margin: auto;
+  padding: 0;
+}
+
+.orbit-stage .orbit-product img.orbit-single:not([data-circle-fitted="true"]) {
+  padding: 11%;
 }
 
 @media (prefers-reduced-motion: no-preference) {
