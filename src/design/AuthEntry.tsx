@@ -29,7 +29,41 @@ declare global {
   }
 }
 
+type AuthConfigResponse = {
+  googleClientId?: string | null;
+  googleIssue?: string;
+  nonce?: string;
+};
+const GOOGLE_CHALLENGE_TTL_MS = 20 * 60 * 1000;
 let googleScript: Promise<void> | undefined;
+let cachedGoogleConfigPromise: Promise<AuthConfigResponse> | null = null;
+let cachedGoogleConfigAt = 0;
+let initializedGoogleKey = "";
+let activeCredentialHandler: ((credential: string) => void) | null = null;
+
+function getGoogleAuthConfig(forceRefresh = false) {
+  if (
+    !forceRefresh &&
+    cachedGoogleConfigPromise &&
+    Date.now() - cachedGoogleConfigAt < GOOGLE_CHALLENGE_TTL_MS
+  ) {
+    return cachedGoogleConfigPromise;
+  }
+  cachedGoogleConfigAt = Date.now();
+  cachedGoogleConfigPromise = api("auth/config").catch((err) => {
+    cachedGoogleConfigPromise = null;
+    cachedGoogleConfigAt = 0;
+    throw err;
+  });
+  return cachedGoogleConfigPromise;
+}
+
+function invalidateGoogleChallenge() {
+  cachedGoogleConfigPromise = null;
+  cachedGoogleConfigAt = 0;
+  initializedGoogleKey = "";
+}
+
 function loadGoogle() {
   return (googleScript ||= new Promise<void>((resolve, reject) => {
     if (window.google) {
@@ -162,15 +196,32 @@ function translateAuthError(
       "Email ini sudah terdaftar dengan kata sandi. Silakan masuk menggunakan kata sandi atau kode OTP.",
       "This email already has an account. Sign in with your password or OTP.",
     );
+  if (m.includes("verify your email in profile before signing in with otp"))
+    return t(
+      "Email ini belum diverifikasi di Profil. Masuk dengan kata sandi terlebih dahulu lalu verifikasi email di menu Profil.",
+      "Verify your email in Profile before signing in with OTP.",
+    );
+  if (
+    m.includes("verify your whatsapp number in profile before signing in with otp")
+  )
+    return t(
+      "Nomor WhatsApp ini belum diverifikasi di Profil. Masuk dengan kata sandi terlebih dahulu lalu verifikasi WhatsApp di menu Profil.",
+      "Verify your WhatsApp number in Profile before signing in with OTP.",
+    );
   if (m.includes("google sign-in expired"))
     return t(
-      "Sesi masuk Google kedaluwarsa. Muat ulang halaman lalu coba lagi.",
-      "Google sign-in expired. Reload and try again.",
+      "Sesi masuk Google kedaluwarsa. Klik Lanjutkan dengan Google sekali lagi.",
+      "Google sign-in expired. Click Continue with Google again.",
+    );
+  if (m.includes("google account email is not verified"))
+    return t(
+      "Email pada akun Google ini belum terverifikasi di Google.",
+      "This Google account email is not verified.",
     );
   if (m.includes("invalid google identity"))
     return t(
-      "Identitas Google tidak valid atau email belum terverifikasi.",
-      "Invalid Google identity or unverified email.",
+      "Identitas masuk Google tidak valid. Silakan coba lagi.",
+      "Invalid Google identity. Please try again.",
     );
   if (m.includes("google sign-in could not be verified"))
     return t(
@@ -217,49 +268,76 @@ function GoogleAuthSection({
     "checking" | "ready" | "unconfigured" | "error"
   >(serverMode ? "checking" : "unconfigured");
   const [googleIssue, setGoogleIssue] = useState("");
+  const [googleNonce, setGoogleNonce] = useState("");
   const [error, setError] = useState("");
   const effectiveSdkStatus = !serverMode ? "unconfigured" : sdkStatus;
 
   useEffect(() => {
     if (!serverMode) return;
     const lifecycle = new AbortController();
-    void api("auth/config")
-      .then(async (config) => {
+
+    const setupGoogleSdk = async (forceRefresh = false) => {
+      try {
+        const config = await getGoogleAuthConfig(forceRefresh);
+        if (lifecycle.signal.aborted) return;
         if (!config.googleClientId) {
-          if (!lifecycle.signal.aborted) {
-            setGoogleIssue(
-              typeof config.googleIssue === "string" ? config.googleIssue : "",
-            );
-            setSdkStatus("unconfigured");
-          }
+          setGoogleIssue(
+            typeof config.googleIssue === "string" ? config.googleIssue : "",
+          );
+          setSdkStatus("unconfigured");
           return;
         }
-        if (!lifecycle.signal.aborted) setGoogleIssue("");
+        setGoogleIssue("");
         await loadGoogle();
-        if (lifecycle.signal.aborted || !ref.current) return;
-        window.google!.accounts.id.initialize({
-          client_id: config.googleClientId,
-          nonce: config.nonce,
-          callback: async ({ credential }) => {
-            try {
-              await api("auth/google", { credential });
-              await refreshRef.current();
-              notifyRef.current(
-                "Masuk dengan Google berhasil",
-                "Signed in with Google",
-              );
-              done.current();
-            } catch (e) {
-              setError(translateAuthError((e as Error).message, tRef.current));
-            }
-          },
-        });
-        if (!lifecycle.signal.aborted) setSdkStatus("ready");
-      })
-      .catch(() => {
+        if (lifecycle.signal.aborted || !ref.current || !window.google) return;
+        const clientId = config.googleClientId;
+        const nonce = config.nonce || "";
+        const initSig = `${clientId}:${nonce}`;
+        if (initializedGoogleKey !== initSig) {
+          initializedGoogleKey = initSig;
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            nonce,
+            callback: ({ credential }) => {
+              activeCredentialHandler?.(credential);
+            },
+          });
+        }
+        setGoogleNonce(nonce);
+        setSdkStatus("ready");
+      } catch {
         if (!lifecycle.signal.aborted) setSdkStatus("error");
-      });
-    return () => lifecycle.abort();
+      }
+    };
+
+    const handler = async (credential: string) => {
+      invalidateGoogleChallenge();
+      try {
+        await api("auth/google", { credential });
+        await refreshRef.current();
+        notifyRef.current(
+          "Masuk dengan Google berhasil",
+          "Signed in with Google",
+        );
+        done.current();
+      } catch (e) {
+        const msg = (e as Error).message || "";
+        setError(translateAuthError(msg, tRef.current));
+        if (!lifecycle.signal.aborted) {
+          void setupGoogleSdk(true);
+        }
+      }
+    };
+
+    activeCredentialHandler = (credential) => {
+      void handler(credential);
+    };
+
+    void setupGoogleSdk(false);
+    return () => {
+      lifecycle.abort();
+      activeCredentialHandler = null;
+    };
   }, [serverMode]);
 
   useEffect(() => {
@@ -269,7 +347,7 @@ function GoogleAuthSection({
     const renderBtn = () => {
       const hostWidth = host.parentElement?.clientWidth || 364;
       const btnWidth = Math.min(400, Math.max(240, Math.round(hostWidth)));
-      const btnKey = `${mode}:${btnWidth}`;
+      const btnKey = `${mode}:${btnWidth}:${googleNonce}`;
       if (host.getAttribute("data-btn-key") === btnKey) return;
       host.setAttribute("data-btn-key", btnKey);
       host.replaceChildren();
@@ -286,7 +364,7 @@ function GoogleAuthSection({
     const ro = new ResizeObserver(() => renderBtn());
     ro.observe(host.parentElement);
     return () => ro.disconnect();
-  }, [effectiveSdkStatus, mode]);
+  }, [effectiveSdkStatus, mode, googleNonce]);
 
   return (
     <div className="auth-google">

@@ -505,3 +505,128 @@ test("Google Client Secret (GOCSPX-...) placed in GOOGLE_CLIENT_ID is never leak
   });
   assert.equal(googleRes.status, 503);
 });
+
+test("Google multi-challenge cookies preserve active nonces and Login OTP requires Profile verification for existing members", async (t) => {
+  const emailSent = [];
+  const app = createApp({
+    dbPath: ":memory:",
+    allowOtpPreview: false,
+    googleClientId: "test-client",
+    verifyGoogleToken: async (token) => JSON.parse(token),
+    sendReset: async (...args) => {
+      emailSent.push(args);
+    },
+  });
+  await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+  t.after(() => app.close());
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const request = async (path, body, cookie = "") => {
+    const res = await fetch(`${base}/api/${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(cookie ? { cookie } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return {
+      status: res.status,
+      data: await res.json(),
+      cookie: (res.headers.get("set-cookie") || "").split(";")[0],
+    };
+  };
+
+  // Multi-tab / remount preserves earlier unconsumed nonce in solere_google cookie
+  const cfg1 = await request("auth/config");
+  const cfg2 = await request("auth/config", undefined, cfg1.cookie);
+  assert.notEqual(cfg1.data.nonce, cfg2.data.nonce);
+
+  const unverifiedGoogle = await request(
+    "auth/google",
+    {
+      credential: JSON.stringify({
+        sub: "g-unverified",
+        email: "unverified@example.com",
+        email_verified: false,
+        nonce: cfg1.data.nonce,
+      }),
+    },
+    cfg2.cookie,
+  );
+  assert.equal(unverifiedGoogle.status, 401);
+  assert.match(unverifiedGoogle.data.error, /email is not verified/i);
+
+  const tab1SignIn = await request(
+    "auth/google",
+    {
+      credential: JSON.stringify({
+        sub: "g-tab-1",
+        email: "tab1@example.com",
+        email_verified: true,
+        name: "Tab One",
+        nonce: cfg1.data.nonce,
+      }),
+    },
+    cfg2.cookie,
+  );
+  assert.equal(tab1SignIn.status, 200);
+  assert.equal(tab1SignIn.data.members[0].emailVerified, true);
+
+  // Replay of cfg1 nonce fails even if sending combined cookie
+  const replay = await request(
+    "auth/google",
+    {
+      credential: JSON.stringify({
+        sub: "g-tab-1",
+        email: "tab1@example.com",
+        email_verified: true,
+        nonce: cfg1.data.nonce,
+      }),
+    },
+    cfg2.cookie,
+  );
+  assert.equal(replay.status, 401);
+
+  // Existing password-registered user with unverified email cannot use Login OTP before verifying in Profile
+  const passUser = await request("auth/register", {
+    name: "Unverified Member",
+    email: "profile-first@example.com",
+    password: "password123",
+  });
+  assert.equal(passUser.status, 200);
+
+  const blockedOtp = await request("auth/otp/request", {
+    channel: "email",
+    email: "profile-first@example.com",
+  });
+  assert.equal(blockedOtp.status, 403);
+  assert.match(blockedOtp.data.error, /verify your email in profile/i);
+
+  // Verify email in Profile first -> then Login OTP succeeds
+  const verifyReq = await request(
+    "member/verify/request",
+    { channel: "email" },
+    passUser.cookie,
+  );
+  assert.equal(verifyReq.status, 200);
+  const profileCode = String(emailSent.at(-1)[1]).match(/\b(\d{6})\b/)[1];
+  const verifyConfirm = await request(
+    "member/verify/confirm",
+    { channel: "email", code: profileCode },
+    passUser.cookie,
+  );
+  assert.equal(verifyConfirm.status, 200);
+
+  const allowedOtp = await request("auth/otp/request", {
+    channel: "email",
+    email: "profile-first@example.com",
+  });
+  assert.equal(allowedOtp.status, 200);
+  const loginOtpCode = String(emailSent.at(-1)[1]).match(/\b(\d{6})\b/)[1];
+  const otpLogin = await request("auth/otp/verify", {
+    channel: "email",
+    email: "profile-first@example.com",
+    code: loginOtpCode,
+  });
+  assert.equal(otpLogin.status, 200);
+});

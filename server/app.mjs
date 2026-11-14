@@ -346,21 +346,46 @@ export function createApp({
   const ready = ensureReady();
   ready.catch(() => {});
 
-  const authenticate = async (cookieHeader = "") => {
-    const token = cookieHeader
+  const getCookieValue = (cookieHeader, name) =>
+    cookieHeader
       .split(";")
       .map((x) => x.trim())
-      .find((x) => x.startsWith("solere_session="))
-      ?.slice(15);
+      .find((x) => x.startsWith(`${name}=`))
+      ?.slice(name.length + 1) || "";
+
+  const isHttpsCookieContext = ({
+    origin = "",
+    host = "",
+    forwardedProto = "",
+    protocol = "",
+  } = {}) => {
+    if (!secureCookie) return false;
+    const proto = String(forwardedProto || protocol || "").toLowerCase();
+    if (proto.startsWith("http:")) return false;
+    if (proto === "http" && !process.env.VERCEL) return false;
+    if (origin.startsWith("http://") && !process.env.VERCEL) return false;
+    if (
+      !process.env.VERCEL &&
+      proto !== "https" &&
+      !origin.startsWith("https://") &&
+      /^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  const authenticate = async (cookieHeader = "") => {
+    const token = getCookieValue(cookieHeader, "solere_session");
     if (!token) return null;
     return await db.getSessionUser(hashToken(token), Date.now());
   };
-  const session = async (setCookie, user) => {
+  const session = async (setCookie, user, useSecure = secureCookie) => {
     const token = randomBytes(32).toString("hex");
     const now = Date.now();
     await db.createSession(hashToken(token), user.id, now + 7 * 86400000, now);
     setCookie(
-      `solere_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${secureCookie ? "; Secure" : ""}`,
+      `solere_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${useSecure ? "; Secure" : ""}`,
     );
   };
   const deliverOtp = async ({ key, channel, destination, headline }) => {
@@ -480,11 +505,19 @@ export function createApp({
     secFetchSite = "",
     contentType = "",
     cookieHeader = "",
+    forwardedProto = "",
+    protocol = "",
     forwardedFor = "",
     remoteAddress = "unknown",
     readRawBody,
   }) => {
     const cookies = [];
+    const useSecureCookie = isHttpsCookieContext({
+      origin,
+      host,
+      forwardedProto,
+      protocol,
+    });
     let status = 200;
     let payload = null;
     const send = (code, data) => {
@@ -504,9 +537,14 @@ export function createApp({
       if (path === "/api/auth/config" && method === "GET") {
         const nonce = randomBytes(24).toString("hex");
         const now = Date.now();
-        await db.saveGoogleChallenge(hashToken(nonce), now + 300000, now);
+        await db.saveGoogleChallenge(hashToken(nonce), now + 1800000, now);
+        const prevNonces = getCookieValue(cookieHeader, "solere_google")
+          .split(".")
+          .filter((x) => /^[a-f0-9]{16,128}$/i.test(x) && x !== nonce)
+          .slice(0, 3);
+        const cookieNonces = [nonce, ...prevNonces];
         setCookie(
-          `solere_google=${nonce}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=300${secureCookie ? "; Secure" : ""}`,
+          `solere_google=${cookieNonces.join(".")}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=1800${useSecureCookie ? "; Secure" : ""}`,
         );
         send(200, {
           googleClientId: googleClientId || null,
@@ -716,20 +754,17 @@ export function createApp({
         } catch {
           fail(401, "Google sign-in could not be verified");
         }
-        const nonce = cookieHeader
-          .split(";")
-          .map((x) => x.trim())
-          .find((x) => x.startsWith("solere_google="))
-          ?.slice(14);
-        if (
-          !nonce ||
-          profile?.nonce !== nonce ||
-          !profile?.sub ||
-          !profile.email_verified
-        )
-          fail(401, "Invalid Google identity");
+        if (!profile?.sub) fail(401, "Invalid Google identity");
+        if (!profile.email_verified)
+          fail(401, "Google account email is not verified");
+        const nonces = getCookieValue(cookieHeader, "solere_google")
+          .split(".")
+          .filter(Boolean);
+        const matchedNonce = nonces.find((n) => n === profile?.nonce);
+        if (!matchedNonce)
+          fail(401, "Google sign-in expired. Reload and try again.");
         const consumed = await db.consumeGoogleChallenge(
-          hashToken(nonce),
+          hashToken(matchedNonce),
           Date.now(),
         );
         if (!consumed)
@@ -767,7 +802,7 @@ export function createApp({
             await db.putMember({ ...existingMember, emailVerified: true });
           }
         }
-        await session(setCookie, user);
+        await session(setCookie, user, useSecureCookie);
         send(200, await state(user));
         return;
       }
@@ -818,6 +853,28 @@ export function createApp({
               fail(400, "WhatsApp number is required")
             : email(body.email);
         const key = `auth:${channel}:${target}`;
+        let user = null;
+        if (channel === "phone") {
+          const matched = await db.findMemberByPhone(target);
+          user = matched ? await db.getUserById(matched.id) : null;
+        } else {
+          user = await db.getUserByEmail(target);
+        }
+        const existingMember = user ? await db.getMember(user.id) : null;
+        if (existingMember) {
+          if (channel === "email" && !existingMember.emailVerified) {
+            fail(
+              403,
+              "Verify your email in Profile before signing in with OTP",
+            );
+          }
+          if (channel === "phone" && !existingMember.phoneVerified) {
+            fail(
+              403,
+              "Verify your WhatsApp number in Profile before signing in with OTP",
+            );
+          }
+        }
         if (path === "/api/auth/otp/request") {
           send(
             200,
@@ -831,28 +888,9 @@ export function createApp({
           return;
         }
         await verifyOtpCode(key, body.code, { deleteOnSuccess: false });
-        let user = null;
-        if (channel === "phone") {
-          const matched = await db.findMemberByPhone(target);
-          user = matched ? await db.getUserById(matched.id) : null;
-        } else {
-          user = await db.getUserByEmail(target);
-        }
         if (user) {
           await db.deleteVerificationCode(key);
-          const existingMember = await db.getMember(user.id);
-          if (existingMember) {
-            const verifyField =
-              channel === "email" && !existingMember.emailVerified
-                ? { emailVerified: true }
-                : channel === "phone" && !existingMember.phoneVerified
-                  ? { phoneVerified: true }
-                  : null;
-            if (verifyField) {
-              await db.putMember({ ...existingMember, ...verifyField });
-            }
-          }
-          await session(setCookie, user);
+          await session(setCookie, user, useSecureCookie);
           send(200, await state(user));
           return;
         }
@@ -890,7 +928,7 @@ export function createApp({
             addresses: [],
           },
         );
-        await session(setCookie, user);
+        await session(setCookie, user, useSecureCookie);
         send(200, await state(user));
         return;
       }
@@ -960,7 +998,7 @@ export function createApp({
             addresses: [],
           },
         );
-        await session(setCookie, user);
+        await session(setCookie, user, useSecureCookie);
         send(200, await state(user));
         return;
       }
@@ -1020,19 +1058,15 @@ export function createApp({
             },
           );
         }
-        await session(setCookie, user);
+        await session(setCookie, user, useSecureCookie);
         send(200, await state(user));
         return;
       }
       if (path === "/api/auth/logout") {
-        const token = cookieHeader
-          .split(";")
-          .map((x) => x.trim())
-          .find((x) => x.startsWith("solere_session="))
-          ?.slice(15);
+        const token = getCookieValue(cookieHeader, "solere_session");
         if (token) await db.deleteSession(hashToken(token));
         setCookie(
-          `solere_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureCookie ? "; Secure" : ""}`,
+          `solere_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${useSecureCookie ? "; Secure" : ""}`,
         );
         send(200, await state(null));
         return;
@@ -1044,7 +1078,7 @@ export function createApp({
           fail(400, "Current password is incorrect");
         const password = validPassword(body.password);
         await db.updatePasswordAndClearSessions(u.id, hashPassword(password));
-        await session(setCookie, u);
+        await session(setCookie, u, useSecureCookie);
         send(200, { ok: true });
         return;
       }
@@ -1642,6 +1676,8 @@ export function createApp({
       secFetchSite: request.headers.get("sec-fetch-site") || "",
       contentType: request.headers.get("content-type") || "",
       cookieHeader: request.headers.get("cookie") || "",
+      forwardedProto: request.headers.get("x-forwarded-proto") || "",
+      protocol: url.protocol,
       forwardedFor: request.headers.get("x-forwarded-for") || "",
       remoteAddress: "unknown",
       readRawBody: async () => {
@@ -1730,6 +1766,8 @@ export function createApp({
         secFetchSite: String(req.headers["sec-fetch-site"] || ""),
         contentType: String(req.headers["content-type"] || ""),
         cookieHeader: req.headers.cookie || "",
+        forwardedProto: String(req.headers["x-forwarded-proto"] || ""),
+        protocol: req.socket?.encrypted ? "https:" : "http:",
         forwardedFor: String(req.headers["x-forwarded-for"] || ""),
         remoteAddress: req.socket?.remoteAddress || "unknown",
         readRawBody: async () => {
