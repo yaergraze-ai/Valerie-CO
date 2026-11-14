@@ -594,6 +594,36 @@ test("Web Standard fetch handler supports Vercel __path rewrites, cookies, and o
     assert.match(logoutRes.headers.get("set-cookie") || "", /Max-Age=0/);
     const loggedOut = await logoutRes.json();
     assert.equal(loggedOut.currentUser, null);
+
+    // Verify 4-tier role persistence (super_admin & staff) on Supabase adapter
+    const claimSuperRes = await app.fetch(
+      new Request("https://valerie.vercel.app/api/index?__path=admin/claim", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://valerie.vercel.app",
+        },
+        body: JSON.stringify({
+          email: "admin@valerieco.id",
+          password: "vercel-admin-password-1",
+          setupToken: "vercel-fetch-token",
+          role: "super_admin",
+        }),
+      }),
+    );
+    assert.equal(claimSuperRes.status, 200);
+    const superCookie = (claimSuperRes.headers.get("set-cookie") || "").split(";")[0];
+    const superData = await claimSuperRes.json();
+    assert.equal(superData.currentUser.role, "super_admin");
+
+    const refreshedState = await (
+      await app.fetch(
+        new Request("https://valerie.vercel.app/api/index?__path=state", {
+          headers: { cookie: superCookie },
+        }),
+      )
+    ).json();
+    assert.equal(refreshedState.currentUser.role, "super_admin");
   } finally {
     app.close();
   }

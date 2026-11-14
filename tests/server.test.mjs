@@ -719,6 +719,27 @@ test("server authentication, authorization and commerce flow", async (t) => {
           ).status,
           403,
         );
+
+        // Signed-in member can elevate account via /api/admin/claim with setupToken
+        const claimBad = await call(
+          "admin/claim",
+          { setupToken: "wrong-token", role: "super_admin" },
+          member,
+        );
+        assert.equal(claimBad.status, 403);
+        const claimGood = await call(
+          "admin/claim",
+          { setupToken: "test-only-setup-token", role: "staff" },
+          member,
+        );
+        assert.equal(claimGood.status, 200);
+        assert.equal(claimGood.data.currentUser.role, "staff");
+        // Revert member back to member role for clean state
+        await call(
+          "admin/role",
+          { userId: claimGood.data.currentUser.id, role: "member" },
+          admin,
+        );
       },
     );
   } finally {

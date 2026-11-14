@@ -14885,4 +14885,99 @@ button.editorial-divider:hover {
   .addresses-panel-shell {
     padding: 16px 14px !important;
   }
+
+  .studio-claim-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .studio-claim-actions {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .studio-claim-actions .button,
+  .studio-claim-actions .studio-signout-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.studio-claim-box {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(255, 252, 247, 0.88);
+  border: 1px solid rgba(110, 82, 58, 0.16);
+  box-shadow: 0 10px 26px -18px rgba(34, 21, 12, 0.18);
+  display: grid;
+  gap: 10px;
+  max-width: 480px;
+}
+
+.studio-claim-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(110, 82, 58, 0.1);
+}
+
+.studio-claim-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.studio-claim-head strong {
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-claim-head small {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-claim-desc {
+  margin: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: #5b483a !important;
+}
+
+.studio-claim-form {
+  display: grid;
+  gap: 10px;
+}
+
+.studio-claim-row {
+  display: grid;
+  grid-template-columns: 135px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.studio-claim-row select,
+.studio-claim-row input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 82, 58, 0.2);
+  background: #fffdf9;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.studio-claim-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }

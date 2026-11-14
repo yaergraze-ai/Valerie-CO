@@ -50,6 +50,7 @@ export type Member = {
   role?: UserRole;
   emailVerified?: boolean;
   phoneVerified?: boolean;
+  hasPassword?: boolean;
   avatar?: string;
   bio?: string;
   preferredSize?: number;
@@ -902,7 +903,10 @@ function useStoreState() {
   };
   const studioRole: UserRole = !serverMode
     ? studioRolePreview || "super_admin"
-    : backendUser?.role === "super_admin" && studioRolePreview
+    : isAdminRole(backendUser?.role) &&
+        studioRolePreview &&
+        (backendUser?.role === "super_admin" ||
+          studioRolePreview !== "super_admin")
       ? studioRolePreview
       : isStudioRole(backendUser?.role)
         ? (backendUser?.role as UserRole)
@@ -917,6 +921,16 @@ function useStoreState() {
       }));
     }
     notify("Hak akses peran diperbarui", "Member role permissions updated");
+  };
+  const claimStudioAccess = async (data: {
+    setupToken: string;
+    role?: UserRole;
+    name?: string;
+    email?: string;
+    password?: string;
+  }) => {
+    receive(await api("admin/claim", data));
+    notify("Akses Studio berhasil diaktifkan", "Studio access activated");
   };
   const applyCoupon = async (code: string) => {
     if (serverMode) {
@@ -949,6 +963,7 @@ function useStoreState() {
     studioRolePreview,
     setStudioRolePreview,
     updateMemberRole,
+    claimStudioAccess,
     needsAdmin,
     pending,
     authenticate,

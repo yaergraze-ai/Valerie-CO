@@ -40,7 +40,10 @@ const hashPassword = (p) => {
   return `${salt}:${scryptSync(p, salt, 64).toString("hex")}`;
 };
 const checkPassword = (p, encoded) => {
+  if (!encoded || typeof encoded !== "string" || encoded.startsWith("nopwd:"))
+    return false;
   const [salt, key] = encoded.split(":");
+  if (!salt || !key) return false;
   const candidate = scryptSync(p, salt, 64);
   const stored = Buffer.from(key, "hex");
   return (
@@ -306,30 +309,50 @@ export function createApp({
     }
     const envAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
     const envAdminPassword = process.env.ADMIN_PASSWORD;
-    if (
-      envAdminEmail &&
-      envAdminPassword &&
-      envAdminPassword.length >= MIN_PASSWORD_LEN &&
-      !(await db.hasAdmin())
-    ) {
-      const adminId = randomUUID();
-      await db.createUserWithMember(
-        {
-          id: adminId,
-          email: envAdminEmail,
-          password: hashPassword(envAdminPassword),
-          role: "admin",
-        },
-        {
-          id: adminId,
-          email: envAdminEmail,
-          name: process.env.ADMIN_NAME || "Valerie & CO Admin",
-          phone: "",
-          addresses: [],
-        },
-        null,
-        { ignoreConflict: true },
-      );
+    if (envAdminEmail) {
+      const existingEnvAdmin = await db.getUserByEmail(envAdminEmail);
+      if (existingEnvAdmin) {
+        if (!isSuperAdminRole(existingEnvAdmin.role)) {
+          await db.updateUserRole(existingEnvAdmin.id, "super_admin");
+        }
+        if (
+          envAdminPassword &&
+          envAdminPassword.length >= MIN_PASSWORD_LEN &&
+          typeof existingEnvAdmin.password === "string" &&
+          existingEnvAdmin.password.startsWith("nopwd:")
+        ) {
+          await db.updatePasswordAndClearSessions(
+            existingEnvAdmin.id,
+            hashPassword(envAdminPassword),
+          );
+        }
+      } else if (
+        envAdminPassword &&
+        envAdminPassword.length >= MIN_PASSWORD_LEN
+      ) {
+        const adminId = randomUUID();
+        const initialRole = (await db.hasAdmin()) ? "super_admin" : "admin";
+        await db.createUserWithMember(
+          {
+            id: adminId,
+            email: envAdminEmail,
+            password: hashPassword(envAdminPassword),
+            role: initialRole,
+          },
+          {
+            id: adminId,
+            email: envAdminEmail,
+            name: process.env.ADMIN_NAME || "Valerie & CO Admin",
+            phone: "",
+            role: initialRole,
+            emailVerified: true,
+            hasPassword: true,
+            addresses: [],
+          },
+          null,
+          { ignoreConflict: true },
+        );
+      }
     }
     initialized = true;
   };
@@ -387,8 +410,23 @@ export function createApp({
       prefetchedMember !== undefined
         ? prefetchedMember
         : await db.getMember(user.id);
-    const effectiveRole =
-      member?.role && VALID_ROLES.has(member.role) ? member.role : user.role;
+    const mRole = member?.role && VALID_ROLES.has(member.role) ? member.role : null;
+    const uRole = VALID_ROLES.has(user.role) ? user.role : null;
+    let effectiveRole =
+      mRole && mRole !== "member"
+        ? mRole
+        : uRole && uRole !== "member"
+          ? uRole
+          : mRole || uRole || "member";
+    const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    if (
+      configuredAdminEmail &&
+      user.email?.toLowerCase() === configuredAdminEmail &&
+      effectiveRole === "member"
+    ) {
+      effectiveRole = "super_admin";
+      await db.updateUserRole(user.id, "super_admin").catch(() => {});
+    }
     return { ...user, role: effectiveRole };
   };
 
@@ -803,37 +841,70 @@ export function createApp({
         if (!consumed)
           fail(401, "Google sign-in expired. Reload and try again.");
         let user = await db.getUserByGoogleSub(profile.sub);
+        const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
         if (!user) {
           const e = email(profile.email);
-          if (await db.getUserByEmail(e))
-            fail(
-              409,
-              "This email already has an account. Sign in with your password.",
+          const existingByEmail = await db.getUserByEmail(e);
+          if (existingByEmail) {
+            const existingMember = await db.getMember(existingByEmail.id);
+            const canLinkGoogle =
+              existingMember?.emailVerified === true ||
+              isStaffRole(existingByEmail.role) ||
+              isStaffRole(existingMember?.role) ||
+              (configuredAdminEmail && e === configuredAdminEmail);
+            if (!canLinkGoogle) {
+              fail(
+                409,
+                "This email already has an account. Sign in with your password.",
+              );
+            }
+            if (db.linkGoogleAccount) {
+              await db.linkGoogleAccount(profile.sub, existingByEmail.id);
+            }
+            user = existingByEmail;
+            if (existingMember && !existingMember.emailVerified) {
+              await db.putMember({ ...existingMember, emailVerified: true });
+            }
+          } else {
+            const assignedRole =
+              configuredAdminEmail && e === configuredAdminEmail
+                ? "super_admin"
+                : "member";
+            user = { id: randomUUID(), email: e, role: assignedRole };
+            await db.createUserWithMember(
+              {
+                id: user.id,
+                email: e,
+                password: `nopwd:${hashPassword(randomBytes(48).toString("hex"))}`,
+                role: assignedRole,
+              },
+              {
+                id: user.id,
+                email: e,
+                name: str(profile.name || e.split("@")[0], 120),
+                phone: "",
+                role: assignedRole,
+                emailVerified: true,
+                phoneVerified: false,
+                hasPassword: false,
+                addresses: [],
+              },
+              profile.sub,
             );
-          user = { id: randomUUID(), email: e, role: "member" };
-          await db.createUserWithMember(
-            {
-              id: user.id,
-              email: e,
-              password: hashPassword(randomBytes(48).toString("hex")),
-              role: "member",
-            },
-            {
-              id: user.id,
-              email: e,
-              name: str(profile.name || e.split("@")[0], 120),
-              phone: "",
-              emailVerified: true,
-              phoneVerified: false,
-              addresses: [],
-            },
-            profile.sub,
-          );
+          }
         } else {
           const existingMember = await db.getMember(user.id);
           if (existingMember && !existingMember.emailVerified) {
             await db.putMember({ ...existingMember, emailVerified: true });
           }
+        }
+        if (
+          configuredAdminEmail &&
+          user.email?.toLowerCase() === configuredAdminEmail &&
+          user.role === "member"
+        ) {
+          await db.updateUserRole(user.id, "super_admin");
+          user = { ...user, role: "super_admin" };
         }
         await session(setCookie, user, useSecureCookie);
         send(200, await state(user));
@@ -943,21 +1014,28 @@ export function createApp({
           fail(409, "WhatsApp number is already registered");
         if (await db.getUserByEmail(memberEmail))
           fail(409, "Email is already registered");
-        user = { id: randomUUID(), email: memberEmail, role: "member" };
+        const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+        const assignedOtpRole =
+          configuredAdminEmail && memberEmail === configuredAdminEmail
+            ? "super_admin"
+            : "member";
+        user = { id: randomUUID(), email: memberEmail, role: assignedOtpRole };
         await db.createUserWithMember(
           {
             id: user.id,
             email: memberEmail,
-            password: hashPassword(randomBytes(48).toString("hex")),
-            role: "member",
+            password: `nopwd:${hashPassword(randomBytes(48).toString("hex"))}`,
+            role: assignedOtpRole,
           },
           {
             id: user.id,
             email: memberEmail,
             name: memberName,
             phone: channel === "phone" ? target : "",
+            role: assignedOtpRole,
             emailVerified: channel === "email",
             phoneVerified: channel === "phone",
+            hasPassword: false,
             addresses: [],
           },
         );
@@ -1107,10 +1185,21 @@ export function createApp({
       if (path === "/api/auth/password") {
         requireUser();
         const old = await db.getUserById(u.id);
-        if (!checkPassword(str(body.current, 256), old.password))
+        const oldMember = await db.getMember(u.id);
+        const isPasswordless =
+          typeof old?.password === "string" &&
+          (old.password.startsWith("nopwd:") ||
+            oldMember?.hasPassword === false);
+        if (
+          !isPasswordless &&
+          !checkPassword(str(body.current, 256), old.password)
+        )
           fail(400, "Current password is incorrect");
         const password = validPassword(body.password);
         await db.updatePasswordAndClearSessions(u.id, hashPassword(password));
+        if (oldMember && oldMember.hasPassword === false) {
+          await db.putMember({ ...oldMember, hasPassword: true });
+        }
         await session(setCookie, u, useSecureCookie);
         send(200, { ok: true });
         return;
@@ -1732,6 +1821,104 @@ export function createApp({
         }
         await db.updateUserRole(userId, nextRole);
         send(200, await state(userId === u.id ? { ...u, role: nextRole } : u));
+        return;
+      }
+      if (path === "/api/admin/claim") {
+        if (method !== "POST") fail(405, "Method not allowed");
+        const providedToken =
+          typeof body.setupToken === "string" ? body.setupToken.trim() : "";
+        const fallbackSecret = process.env.ADMIN_PASSWORD?.trim() || "";
+        const validSetupToken =
+          (setupToken &&
+            providedToken.length === setupToken.length &&
+            timingSafeEqual(
+              Buffer.from(providedToken),
+              Buffer.from(setupToken),
+            )) ||
+          (fallbackSecret.length >= MIN_PASSWORD_LEN &&
+            providedToken.length === fallbackSecret.length &&
+            timingSafeEqual(
+              Buffer.from(providedToken),
+              Buffer.from(fallbackSecret),
+            ));
+        if (!validSetupToken) fail(403, "Invalid setup token");
+        const requestedRole =
+          typeof body.role === "string" &&
+          ["staff", "admin", "super_admin"].includes(body.role)
+            ? body.role
+            : "super_admin";
+        if (u && (!body.email || String(body.email).trim().toLowerCase() === u.email.toLowerCase())) {
+          await db.updateUserRole(u.id, requestedRole);
+          if (typeof body.password === "string" && body.password.trim().length >= MIN_PASSWORD_LEN) {
+            await db.updatePasswordAndClearSessions(
+              u.id,
+              hashPassword(validPassword(body.password)),
+            );
+            const curMem = await db.getMember(u.id);
+            if (curMem && curMem.hasPassword === false) {
+              await db.putMember({ ...curMem, hasPassword: true });
+            }
+            await session(setCookie, { ...u, role: requestedRole }, useSecureCookie);
+          }
+          send(200, await state({ ...u, role: requestedRole }));
+          return;
+        }
+        const e = email(body.email);
+        const existing = await db.getUserByEmail(e);
+        if (existing) {
+          await db.updateUserRole(existing.id, requestedRole);
+          if (typeof body.password === "string" && body.password.trim()) {
+            const pwd = validPassword(body.password);
+            await db.updatePasswordAndClearSessions(
+              existing.id,
+              hashPassword(pwd),
+            );
+          }
+          const existingMember = await db.getMember(existing.id);
+          if (existingMember) {
+            const nextName =
+              typeof body.name === "string" && body.name.trim().length >= 2
+                ? str(body.name, 120)
+                : existingMember.name;
+            await db.putMember({
+              ...existingMember,
+              name: nextName,
+              role: requestedRole,
+              hasPassword: true,
+            });
+          }
+          const elevated = { ...existing, role: requestedRole };
+          await session(setCookie, elevated, useSecureCookie);
+          send(200, await state(elevated));
+          return;
+        }
+        const password = validPassword(body.password);
+        const name =
+          typeof body.name === "string" && body.name.trim().length >= 2
+            ? str(body.name, 120)
+            : e.split("@")[0];
+        const newUser = { id: randomUUID(), email: e, role: requestedRole };
+        await db.createUserWithMember(
+          {
+            id: newUser.id,
+            email: e,
+            password: hashPassword(password),
+            role: requestedRole,
+          },
+          {
+            id: newUser.id,
+            email: e,
+            name,
+            phone: "",
+            role: requestedRole,
+            emailVerified: true,
+            phoneVerified: false,
+            hasPassword: true,
+            addresses: [],
+          },
+        );
+        await session(setCookie, newUser, useSecureCookie);
+        send(200, await state(newUser));
         return;
       }
       fail(404, "Not found");

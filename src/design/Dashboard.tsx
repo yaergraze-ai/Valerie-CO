@@ -213,6 +213,8 @@ export default function Dashboard({
     backendUser,
     studioRole,
     setStudioRolePreview,
+    updateMemberRole,
+    claimStudioAccess,
     logout,
   } = useStore();
   const [tab, setTab] = useState("overview");
@@ -228,8 +230,9 @@ export default function Dashboard({
       : "super_admin"
     : "member";
   const canManageCatalog = !admin || isAdminRole(activeStudioRole);
+  const hasSuperAdmin = db.members.some((m) => m.role === "super_admin");
   const canSwitchPreview =
-    admin && (!serverMode || isSuperAdminRole(backendUser?.role));
+    admin && (!serverMode || isAdminRole(backendUser?.role));
   const adminTabs = (
     [
       ["overview", t("Ringkasan", "Overview"), LayoutDashboard],
@@ -277,14 +280,13 @@ export default function Dashboard({
             )}
           </p>
           {member && (
-            <button
-              type="button"
-              className="studio-signout-btn"
-              onClick={() => void logout()}
-            >
-              <LogOut size={14} strokeWidth={1.7} aria-hidden="true" />
-              <span>{t("Keluar dari akun saat ini", "Sign out of current account")}</span>
-            </button>
+            <StudioClaimBox
+              memberName={member.name}
+              memberEmail={member.email}
+              onClaim={claimStudioAccess}
+              onLogout={() => void logout()}
+              t={t}
+            />
           )}
         </div>
         <MemberEntry admin onDone={() => setTab("overview")} />
@@ -447,16 +449,33 @@ export default function Dashboard({
             <div className="studio-role-pills" role="group">
               {(["super_admin", "admin", "staff"] as const).map((roleKey) => {
                 const isSelected = activeStudioRole === roleKey;
+                const lockedSuper =
+                  serverMode &&
+                  roleKey === "super_admin" &&
+                  !isSuperAdminRole(backendUser?.role) &&
+                  hasSuperAdmin;
                 return (
                   <button
                     key={roleKey}
                     type="button"
+                    disabled={lockedSuper}
                     className={isSelected ? "active" : ""}
-                    onClick={() =>
+                    onClick={() => {
+                      if (
+                        serverMode &&
+                        roleKey === "super_admin" &&
+                        !isSuperAdminRole(backendUser?.role) &&
+                        !hasSuperAdmin &&
+                        backendUser?.id
+                      ) {
+                        setStudioRolePreview(null);
+                        void updateMemberRole(backendUser.id, "super_admin");
+                        return;
+                      }
                       setStudioRolePreview(
                         backendUser?.role === roleKey ? null : roleKey,
-                      )
-                    }
+                      );
+                    }}
                   >
                     {formatRoleLabel(roleKey, t)}
                   </button>
@@ -4784,6 +4803,7 @@ function MemberSettingsPanel({
         </div>
         {serverMode ? (
           <PasswordForm
+            passwordless={member.hasPassword === false}
             onChanged={() =>
               updateSecurity({ lastPasswordChange: new Date().toISOString() })
             }
@@ -5220,7 +5240,121 @@ function SupportPanel({ admin }: { admin: boolean }) {
   );
 }
 
-function PasswordForm({ onChanged }: { onChanged?: () => void }) {
+function StudioClaimBox({
+  memberName,
+  memberEmail,
+  onClaim,
+  onLogout,
+  t,
+}: {
+  memberName: string;
+  memberEmail: string;
+  onClaim: (data: { setupToken: string; role?: UserRole }) => Promise<void>;
+  onLogout: () => void;
+  t: (id: string, en: string) => string;
+}) {
+  const [token, setToken] = useState("");
+  const [role, setRole] = useState<UserRole>("super_admin");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  return (
+    <div className="studio-claim-box">
+      <div className="studio-claim-head">
+        <div>
+          <strong>{memberName}</strong>
+          <small>{memberEmail}</small>
+        </div>
+        <RoleBadge role="member" t={t} />
+      </div>
+      <p className="studio-claim-desc">
+        {t(
+          "Aktifkan hak akses Studio langsung untuk akun yang sedang login menggunakan Kode Aktivasi Studio (SOLERE_SETUP_TOKEN):",
+          "Activate Studio permissions directly for your signed-in account using your Studio Activation Token (SOLERE_SETUP_TOKEN):",
+        )}
+      </p>
+      <form
+        className="studio-claim-form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!token.trim()) return;
+          setBusy(true);
+          setErr("");
+          try {
+            await onClaim({ setupToken: token.trim(), role });
+            setToken("");
+          } catch (error) {
+            const msg = (error as Error).message.toLowerCase();
+            setErr(
+              msg.includes("invalid setup token")
+                ? t(
+                    "Kode aktivasi Studio tidak valid. Periksa SOLERE_SETUP_TOKEN Anda.",
+                    "Invalid Studio activation token. Check your SOLERE_SETUP_TOKEN.",
+                  )
+                : (error as Error).message,
+            );
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div className="studio-claim-row">
+          <select
+            aria-label={t("Pilih peran studio", "Select studio role")}
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            <option value="super_admin">Super Admin</option>
+            <option value="admin">Admin</option>
+            <option value="staff">Staff</option>
+          </select>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={t(
+              "Kode aktivasi Studio (SOLERE_SETUP_TOKEN)",
+              "Studio activation token",
+            )}
+            required
+          />
+        </div>
+        {err && (
+          <p role="alert" className="error-text" style={{ margin: 0 }}>
+            {err}
+          </p>
+        )}
+        <div className="studio-claim-actions">
+          <button
+            type="submit"
+            className="button dark small"
+            disabled={busy || !token.trim()}
+          >
+            <ShieldCheck size={14} />
+            {busy
+              ? t("Mengaktifkan…", "Activating…")
+              : t("Aktifkan Akses Studio", "Activate Studio Access")}
+          </button>
+          <button
+            type="button"
+            className="studio-signout-btn"
+            onClick={onLogout}
+          >
+            <LogOut size={14} strokeWidth={1.7} aria-hidden="true" />
+            <span>{t("Keluar akun", "Sign out")}</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PasswordForm({
+  onChanged,
+  passwordless = false,
+}: {
+  onChanged?: () => void;
+  passwordless?: boolean;
+}) {
   const { t, notify } = useStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -5260,7 +5394,7 @@ function PasswordForm({ onChanged }: { onChanged?: () => void }) {
         setError("");
         try {
           await api("auth/password", {
-            current: String(f.get("current")),
+            current: passwordless ? "" : String(f.get("current") || ""),
             password: String(f.get("password")),
           });
           onChanged?.();
@@ -5277,15 +5411,17 @@ function PasswordForm({ onChanged }: { onChanged?: () => void }) {
         }
       }}
     >
-      <label>
-        {t("Kata sandi saat ini", "Current password")}
-        <input
-          name="current"
-          type={showPwd ? "text" : "password"}
-          autoComplete="current-password"
-          required
-        />
-      </label>
+      {!passwordless && (
+        <label>
+          {t("Kata sandi saat ini", "Current password")}
+          <input
+            name="current"
+            type={showPwd ? "text" : "password"}
+            autoComplete="current-password"
+            required
+          />
+        </label>
+      )}
       <label>
         {t("Kata sandi baru", "New password")}
         <div className="pwd-input-wrap">

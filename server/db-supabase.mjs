@@ -207,14 +207,47 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
     },
 
     async listMembers() {
-      const rows = await fetchAll("members", "seq", false, "data");
-      return rows.map((r) => r.data);
+      const [rows, userRows] = await Promise.all([
+        fetchAll("members", "seq", false, "data"),
+        sb.from("app_users").select("id, role").then(unwrap),
+      ]);
+      const roleMap = new Map((userRows || []).map((u) => [u.id, u.role]));
+      const valid = new Set(["member", "staff", "admin", "super_admin"]);
+      return rows.map((r) => {
+        const m = r.data;
+        if (!m) return m;
+        const dbRole = roleMap.get(m.id);
+        const mRole = valid.has(m.role) ? m.role : null;
+        const uRole = valid.has(dbRole) ? dbRole : null;
+        const role =
+          mRole && mRole !== "member"
+            ? mRole
+            : uRole && uRole !== "member"
+              ? uRole
+              : mRole || uRole || "member";
+        return { ...m, role };
+      });
     },
     async getMember(id) {
       const row = unwrap(
         await sb.from("members").select("data").eq("id", id).maybeSingle(),
       );
-      return row?.data || null;
+      if (!row?.data) return null;
+      const m = row.data;
+      const valid = new Set(["member", "staff", "admin", "super_admin"]);
+      if (valid.has(m.role) && m.role !== "member") return m;
+      const userRow = unwrap(
+        await sb.from("app_users").select("role").eq("id", id).maybeSingle(),
+      );
+      const uRole = valid.has(userRow?.role) ? userRow.role : null;
+      const mRole = valid.has(m.role) ? m.role : null;
+      const role =
+        mRole && mRole !== "member"
+          ? mRole
+          : uRole && uRole !== "member"
+            ? uRole
+            : mRole || uRole || "member";
+      return { ...m, role };
     },
     async findMemberByPhone(phone) {
       const row = unwrap(
@@ -286,16 +319,38 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
       return (rows?.length || 0) > 0;
     },
     async getUserById(id) {
-      const row = unwrap(
-        await sb
+      const [row, memberRow] = await Promise.all([
+         sb
           .from("app_users")
           .select("id, email, password_hash, role")
           .eq("id", id)
-          .maybeSingle(),
-      );
-      return row
-        ? { id: row.id, email: row.email, password: row.password_hash, role: row.role }
+          .maybeSingle()
+          .then(unwrap),
+        sb
+          .from("members")
+          .select("data")
+          .eq("id", id)
+          .maybeSingle()
+          .then(unwrap),
+      ]);
+      if (!row) return null;
+      const valid = new Set(["member", "staff", "admin", "super_admin"]);
+      const mRole = valid.has(memberRow?.data?.role)
+        ? memberRow.data.role
         : null;
+      const uRole = valid.has(row.role) ? row.role : null;
+      const role =
+        mRole && mRole !== "member"
+          ? mRole
+          : uRole && uRole !== "member"
+            ? uRole
+            : mRole || uRole || "member";
+      return {
+        id: row.id,
+        email: row.email,
+        password: row.password_hash,
+        role,
+      };
     },
     async getUserByEmail(email) {
       const row = unwrap(
@@ -305,9 +360,31 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
           .eq("email", email)
           .maybeSingle(),
       );
-      return row
-        ? { id: row.id, email: row.email, password: row.password_hash, role: row.role }
+      if (!row) return null;
+      const memberRow = unwrap(
+        await sb
+          .from("members")
+          .select("data")
+          .eq("id", row.id)
+          .maybeSingle(),
+      );
+      const valid = new Set(["member", "staff", "admin", "super_admin"]);
+      const mRole = valid.has(memberRow?.data?.role)
+        ? memberRow.data.role
         : null;
+      const uRole = valid.has(row.role) ? row.role : null;
+      const role =
+        mRole && mRole !== "member"
+          ? mRole
+          : uRole && uRole !== "member"
+            ? uRole
+            : mRole || uRole || "member";
+      return {
+        id: row.id,
+        email: row.email,
+        password: row.password_hash,
+        role,
+      };
     },
     async getUserByGoogleSub(sub) {
       const link = unwrap(
@@ -320,20 +397,35 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
       if (!link?.user_id) return null;
       return this.getUserById(link.user_id);
     },
+    async linkGoogleAccount(sub, userId) {
+      unwrap(
+        await sb
+          .from("google_accounts")
+          .upsert({ sub, user_id: userId }, { onConflict: "sub" }),
+      );
+    },
     async createUserWithMember(
       user,
       member,
       googleSub = null,
       { ignoreConflict = false } = {},
     ) {
+      const dbRole =
+        user.role === "admin" || user.role === "super_admin"
+          ? "admin"
+          : "member";
+      const enrichedMember =
+        member && typeof member === "object"
+          ? { ...member, role: member.role || user.role || "member" }
+          : member;
       try {
         unwrap(
           await sb.rpc("vco_create_user_tx", {
             p_id: user.id,
             p_email: user.email,
             p_password_hash: user.password,
-            p_role: user.role,
-            p_member: member,
+            p_role: dbRole,
+            p_member: enrichedMember,
             p_google_sub: googleSub,
           }),
         );
@@ -356,7 +448,26 @@ export function createSupabaseStore({ url, secretKey, client = null } = {}) {
       const user = Array.isArray(row?.app_users)
         ? row.app_users[0]
         : row?.app_users;
-      return user ? { id: user.id, email: user.email, role: user.role } : null;
+      if (!user) return null;
+      const memberRow = unwrap(
+        await sb
+          .from("members")
+          .select("data")
+          .eq("id", user.id)
+          .maybeSingle(),
+      );
+      const valid = new Set(["member", "staff", "admin", "super_admin"]);
+      const mRole = valid.has(memberRow?.data?.role)
+        ? memberRow.data.role
+        : null;
+      const uRole = valid.has(user.role) ? user.role : null;
+      const role =
+        mRole && mRole !== "member"
+          ? mRole
+          : uRole && uRole !== "member"
+            ? uRole
+            : mRole || uRole || "member";
+      return { id: user.id, email: user.email, role };
     },
     async createSession(tokenHash, userId, expiresAt, now) {
       unwrap(await sb.from("app_sessions").delete().lt("expires_at", now));

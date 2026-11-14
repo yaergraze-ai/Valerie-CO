@@ -4,9 +4,13 @@ create table if not exists public.app_users (
   id text primary key,
   email text unique not null,
   password_hash text not null,
-  role text not null default 'member' check (role in ('member', 'admin')),
+  role text not null default 'member' check (role in ('member', 'staff', 'admin', 'super_admin')),
   created_at timestamptz not null default now()
 );
+
+alter table public.app_users drop constraint if exists app_users_role_check;
+alter table public.app_users add constraint app_users_role_check
+  check (role in ('member', 'staff', 'admin', 'super_admin'));
 
 create index if not exists app_users_role_idx on public.app_users (role);
 

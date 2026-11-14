@@ -120,10 +120,19 @@ export function createSqliteStore(dbPath) {
     },
 
     async listMembers() {
-      return list("members");
+      const roleRows = sql.prepare("SELECT id, role FROM users").all();
+      const roleMap = new Map(roleRows.map((r) => [r.id, r.role]));
+      return list("members").map((m) => ({
+        ...m,
+        role: m.role || roleMap.get(m.id) || "member",
+      }));
     },
     async getMember(id) {
-      return get("members", id);
+      const m = get("members", id);
+      if (!m) return null;
+      if (m.role) return m;
+      const u = sql.prepare("SELECT role FROM users WHERE id=?").get(id);
+      return { ...m, role: u?.role || "member" };
     },
     async findMemberByPhone(phone) {
       return list("members").find((m) => m.phone === phone) || null;
@@ -169,14 +178,23 @@ export function createSqliteStore(dbPath) {
           .get(sub) || null
       );
     },
+    async linkGoogleAccount(sub, userId) {
+      sql
+        .prepare("INSERT OR REPLACE INTO google_accounts VALUES(?,?)")
+        .run(sub, userId);
+    },
     async createUserWithMember(user, member, googleSub = null, { ignoreConflict = false } = {}) {
+      const enrichedMember =
+        member && typeof member === "object"
+          ? { ...member, role: member.role || user.role || "member" }
+          : member;
       return tx(() => {
         if (ignoreConflict) {
           const info = sql
             .prepare("INSERT OR IGNORE INTO users VALUES(?,?,?,?)")
             .run(user.id, user.email, user.password, user.role);
           if (!info.changes) return false;
-          put("members", member.id, member);
+          put("members", enrichedMember.id, enrichedMember);
           return true;
         }
         sql
@@ -187,7 +205,7 @@ export function createSqliteStore(dbPath) {
             .prepare("INSERT INTO google_accounts VALUES(?,?)")
             .run(googleSub, user.id);
         }
-        put("members", member.id, member);
+        put("members", enrichedMember.id, enrichedMember);
         return true;
       });
     },

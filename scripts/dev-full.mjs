@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
+const devEnv = { ...process.env, NODE_ENV: "development", VITE_BACKEND: "true" };
 const children = [
-  spawn(process.execPath, ["--env-file-if-exists=.env", "server/app.mjs"], { stdio: "inherit" }),
+  spawn(
+    process.execPath,
+    ["--env-file-if-exists=.env", "--env-file-if-exists=.env.local", "server/app.mjs"],
+    { stdio: "inherit", env: devEnv },
+  ),
   spawn(
     process.execPath,
     ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1"],
-    { stdio: "inherit", env: { ...process.env, VITE_BACKEND: "true" } },
+    { stdio: "inherit", env: devEnv },
   ),
 ];
 let closing = false;

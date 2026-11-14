@@ -431,6 +431,7 @@ export function MemberEntry({
   const {
     t,
     authenticate,
+    claimStudioAccess,
     requestAuthOtp,
     verifyAuthOtp,
     requestRegisterOtp,
@@ -493,17 +494,21 @@ export function MemberEntry({
   };
 
   const creating = mode === "register" || mode === "setup";
-  const showMethodToggles = !admin && (mode === "login" || mode === "register");
-  const verifyingRegister = showMethodToggles && mode === "register" && registerOtpSent;
-  const usingLoginOtp = showMethodToggles && mode === "login" && authMethod === "otp";
+  const showMethodToggles =
+    mode === "login" || mode === "register" || (admin && mode === "setup");
+  const verifyingRegister =
+    !admin && mode === "register" && registerOtpSent;
+  const usingLoginOtp = mode === "login" && authMethod === "otp";
   const inOtpStep2 = verifyingRegister || (usingLoginOtp && otpSent);
-  const showChannelTabs = showMethodToggles && !inOtpStep2;
+  const showChannelTabs =
+    (mode === "login" || (!admin && mode === "register")) && !inOtpStep2;
   const passwordNeeded = mode !== "forgot" && !verifyingRegister && !usingLoginOtp;
   const showContactField = mode !== "reset" && !inOtpStep2;
   const showNameField = creating
     ? !verifyingRegister
     : usingLoginOtp && otpSent && otpNeedsName;
-  const showAltActions = showMethodToggles && !inOtpStep2;
+  const showAltActions =
+    (mode === "login" || (!admin && mode === "register")) && !inOtpStep2;
   const minPasswordLen = 8;
 
   const applyOtpChallenge = (
@@ -585,11 +590,15 @@ export function MemberEntry({
             role="tablist"
             aria-label={t("Mode autentikasi", "Authentication mode")}
           >
-            {(
-              [
-                ["login", t("Masuk", "Sign in")],
-                ["register", t("Daftar", "Register")],
-              ] as const
+            {(admin
+              ? ([
+                  ["login", t("Masuk Tim", "Team Sign In")],
+                  ["setup", t("Aktivasi Studio", "Studio Setup")],
+                ] as const)
+              : ([
+                  ["login", t("Masuk", "Sign in")],
+                  ["register", t("Daftar", "Register")],
+                ] as const)
             ).map(([mKey, mLabel]) => (
               <button
                 key={mKey}
@@ -675,12 +684,12 @@ export function MemberEntry({
             emailDraft || String(f.get("email") || "")
           ).trim();
           const normalizedPhone =
-            showMethodToggles && channel === "whatsapp"
+            showChannelTabs && channel === "whatsapp"
               ? normalizeWhatsappInput(rawPhone)
               : "";
 
           if (!inOtpStep2) {
-            if (showMethodToggles && channel === "whatsapp") {
+            if (showChannelTabs && channel === "whatsapp") {
               const digits = normalizedPhone.replace(/\D/g, "");
               if (digits.length < 10 || digits.length > 15) {
                 setError(
@@ -794,11 +803,53 @@ export function MemberEntry({
                   "Password updated. Please sign in with your new password.",
                 ),
               );
+            } else if (mode === "setup") {
+              const nameVal = (
+                nameDraft || String(f.get("name") || "")
+              ).trim();
+              const setupTokenVal = String(f.get("token") || "").trim();
+              if (needsAdmin) {
+                try {
+                  await authenticate("setup", {
+                    name: nameVal,
+                    email: rawEmail,
+                    password,
+                    setupToken: setupTokenVal,
+                  });
+                } catch (setupErr) {
+                  const msg = (setupErr as Error).message.toLowerCase();
+                  if (
+                    msg.includes("already registered") ||
+                    msg.includes("admin already exists")
+                  ) {
+                    await claimStudioAccess({
+                      name: nameVal,
+                      email: rawEmail,
+                      password,
+                      setupToken: setupTokenVal,
+                      role: "super_admin",
+                    });
+                  } else {
+                    throw setupErr;
+                  }
+                }
+              } else {
+                await claimStudioAccess({
+                  name: nameVal,
+                  email: rawEmail,
+                  password,
+                  setupToken: setupTokenVal,
+                  role: "super_admin",
+                });
+              }
+              setPasswordDraft("");
+              setConfirmDraft("");
+              onDone();
             } else {
               await authenticate(mode, {
                 name: String(f.get("name") || "").trim(),
-                email: channel === "email" || admin ? rawEmail : "",
-                phone: channel === "whatsapp" && !admin ? normalizedPhone : "",
+                email: channel === "email" || mode !== "login" ? rawEmail : "",
+                phone: channel === "whatsapp" && mode === "login" ? normalizedPhone : "",
                 password,
                 setupToken: String(f.get("token") || "").trim(),
               });
@@ -832,11 +883,11 @@ export function MemberEntry({
             {showContactField && (
               <div className="auth-field">
                 <label htmlFor={`${pillGroupId}-contact`}>
-                  {channel === "whatsapp" && showMethodToggles
+                  {channel === "whatsapp" && showChannelTabs
                     ? t("Nomor WhatsApp", "WhatsApp number")
                     : "Email"}
                 </label>
-                {channel === "whatsapp" && showMethodToggles ? (
+                {channel === "whatsapp" && showChannelTabs ? (
                   <span className="wa-input-wrap">
                     <span className="wa-prefix">WA +62</span>
                     <input
