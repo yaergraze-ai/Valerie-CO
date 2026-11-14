@@ -16800,8 +16800,16 @@ body:has(.member-landing) {
 
 .profit-sku-breakdown {
   display: grid !important;
-  gap: 2px;
-  margin-top: 2px;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.chart-drilldown-card .profit-sku-breakdown b,
+.chart-drilldown-card .profit-sku-breakdown strong {
+  display: inline;
+  white-space: normal;
+  overflow: visible;
+  font-size: inherit;
 }
 
 .admin-analytics-panel .chart-drilldown-grid {

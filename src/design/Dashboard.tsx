@@ -1734,7 +1734,10 @@ function AdminInteractiveChart({
                         {chartTab === "profit" ? (
                           <small className="profit-sku-breakdown">
                             <span>
-                              {t("Terjual", "Sold")}: <b>{fin.unitsSold} psg</b>{" "}
+                              {t("Terjual", "Sold")}:{" "}
+                              <b>
+                                {fin.unitsSold} {t("psg", "prs")}
+                              </b>{" "}
                               · {t("Harga", "Price")}: {money(fin.unitPrice)}
                             </span>
                             <span>
