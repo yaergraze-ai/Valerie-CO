@@ -55,14 +55,7 @@ export function midtransClient(key, production = false) {
           email: order.email,
           phone: order.address.phone,
         },
-        enabled_payments: [
-          "qris",
-          "bca_va",
-          "bni_va",
-          "bri_va",
-          "permata_va",
-          "echannel",
-        ],
+        credit_card: { secure: true },
         expiry: { unit: "hours", duration: 24 },
       });
       if (!data.redirect_url || new URL(data.redirect_url).origin !== app)

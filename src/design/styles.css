@@ -15765,3 +15765,168 @@ button.editorial-divider:hover {
     right: -44px;
   }
 }
+
+.inline-category-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(110, 82, 58, 0.14);
+}
+
+.inline-category-tab {
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 82, 58, 0.2);
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.inline-category-tab:hover {
+  border-color: var(--ink);
+  background: #faf6ef;
+}
+
+.inline-category-tab.active {
+  background: #171412;
+  border-color: #171412;
+  color: #ffffff;
+}
+
+.inline-channel-chip-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.inline-channel-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(139, 111, 71, 0.14);
+  color: #5c462b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.inline-qris-mini-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.inline-ewallet-phone-box {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #faf6ef;
+  border: 1px solid rgba(110, 82, 58, 0.18);
+}
+
+.inline-ewallet-phone-box label {
+  display: grid;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.inline-ewallet-phone-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.inline-ewallet-phone-row input,
+.inline-card-form-grid input,
+.inline-card-form-grid select,
+.inline-paylater-phone input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 82, 58, 0.22);
+  background: #ffffff;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.inline-va-sublabel {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.inline-card-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inline-card-form-grid label {
+  display: grid;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.inline-card-form-grid .span-two {
+  grid-column: 1 / -1;
+}
+
+.inline-retail-barcode-box {
+  display: grid;
+  gap: 10px;
+}
+
+.inline-barcode-svg {
+  width: 100%;
+  max-width: 280px;
+  height: 56px;
+  border-radius: 8px;
+  border: 1px solid rgba(110, 82, 58, 0.16);
+}
+
+.inline-paylater-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.inline-paylater-phone {
+  display: grid;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.inline-gateway-embed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.payment-channel-options {
+  max-height: 290px;
+  overflow-y: auto;
+  padding-right: 4px;
+}

@@ -68,7 +68,11 @@ import {
 } from "./store";
 import type { Item } from "./catalog";
 import { Modal, Empty, Status, csvDownload } from "./ui";
-import { AddressFields, MemberEntry } from "./Shopping";
+import {
+  AddressFields,
+  InlinePaymentAndReceipt,
+  MemberEntry,
+} from "./Shopping";
 import { api } from "./backend";
 import { ProductCard } from "./Experience";
 import {
@@ -5779,11 +5783,14 @@ function orderValues(
 function PaymentPanel({ order }: { order: Order }) {
   const { t, refresh, money, notify } = useStore();
   const [busy, setBusy] = useState(false);
+  const [showInlineGateway, setShowInlineGateway] = useState(
+    order.payment?.status === "pending",
+  );
   return (
     <div className="notice payment-panel">
-      <div>
+      <div style={{ width: "100%" }}>
         <b>
-          Midtrans · {money(order.total, "IDR")}
+          Payment Gateway · {money(order.total, order.currency || "IDR")}
           {order.payment?.method ? ` · ${order.payment.method.toUpperCase()}` : ""}
         </b>
         <p>
@@ -5795,33 +5802,59 @@ function PaymentPanel({ order }: { order: Order }) {
           {order.payment?.refundedAt &&
             ` · Refunded: ${new Date(order.payment.refundedAt).toLocaleString()}`}
         </p>
-        {order.payment?.status === "pending" && order.payment.url && (
-          <a
-            className="button dark"
-            href={order.payment.url}
-            target="_blank"
-            rel="noreferrer"
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          {order.payment?.status === "pending" && (
+            <button
+              type="button"
+              className="button dark small"
+              onClick={() => setShowInlineGateway((v) => !v)}
+            >
+              {showInlineGateway
+                ? t("Tutup Panel Pembayaran", "Hide Payment Panel")
+                : t(
+                    "Bayar Sekarang di Halaman Ini (QRIS / VA / Kartu)",
+                    "Pay Now Inline (QRIS / VA / Card)",
+                  )}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button small"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api("payments/status", { id: order.id });
+                await refresh();
+              } catch (e) {
+                notify((e as Error).message, (e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
           >
-            {t("Lanjutkan pembayaran", "Continue payment")}
-          </a>
+            {t("Periksa status pembayaran", "Check payment status")}
+          </button>
+        </div>
+        {showInlineGateway && order.payment?.status === "pending" && (
+          <div style={{ marginTop: 16 }}>
+            <InlinePaymentAndReceipt
+              order={order}
+              startInPaymentStage={true}
+              checkingRemote={busy}
+              onCheckRemoteStatus={async () => {
+                setBusy(true);
+                try {
+                  await api("payments/status", { id: order.id });
+                  await refresh();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              onDone={() => setShowInlineGateway(false)}
+            />
+          </div>
         )}
-        <button
-          className="button"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await api("payments/status", { id: order.id });
-              await refresh();
-            } catch (e) {
-              notify((e as Error).message, (e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {t("Periksa status pembayaran", "Check payment status")}
-        </button>
       </div>
     </div>
   );
