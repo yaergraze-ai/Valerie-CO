@@ -3,6 +3,7 @@ import { api, serverMode } from "./backend";
 import { useState, useRef, useEffect } from "react";
 import {
   CourierOptionPicker,
+  isStaleShippingError,
   type ShippingRateOption,
 } from "./CourierPicker";
 import confetti from "canvas-confetti";
@@ -2957,13 +2958,6 @@ export function InlinePaymentAndReceipt({
   );
 }
 
-function isStaleShippingError(err: unknown): boolean {
-  if (!err) return false;
-  if ((err as { status?: number })?.status === 409) return true;
-  const msg = (err as Error).message || String(err);
-  return /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg);
-}
-
 function SimulationCheckout({ onDone }: { onDone: () => void }) {
   const {
     db,
@@ -3028,12 +3022,10 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
       })
       .catch((e) => {
         if (!lifecycle.signal.aborted) {
+          setServerQuote(null);
           const msg = (e as Error).message || "";
           setQuoteError(msg);
-          if (
-            (e as { status?: number })?.status === 409 ||
-            /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg)
-          ) {
+          if (isStaleShippingError(e)) {
             setShippingRefreshKey((k) => k + 1);
           }
         }
@@ -3098,7 +3090,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         if (busy.current) return;
-        if (isRealtime && (ratesLoading || !selectedShipping || !serverQuote)) return;
+        if (isRealtime && (ratesLoading || !selectedShipping || !serverQuote || Boolean(quoteError))) return;
         busy.current = true;
         try {
           const f = new FormData(e.currentTarget);
@@ -3208,8 +3200,8 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             </div>
           ) : (
             <AddressFields
-              name={member.name}
-              phone={member.phone}
+              name={member?.name}
+              phone={member?.phone}
               onDestinationChange={isRealtime ? setNewDestination : undefined}
             />
           )}
@@ -3463,7 +3455,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           type="submit"
           disabled={
             !db.bag.length ||
-            (isRealtime && (ratesLoading || !selectedShipping || !serverQuote))
+            (isRealtime && (ratesLoading || !selectedShipping || !serverQuote || Boolean(quoteError)))
           }
         >
           {isRealtime && ratesLoading

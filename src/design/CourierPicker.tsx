@@ -6,6 +6,13 @@ import type { BagLine } from "./commerce";
 
 export type { ShippingRateOption };
 
+export function isStaleShippingError(err: unknown): boolean {
+  if (!err) return false;
+  if ((err as { status?: number })?.status === 409) return true;
+  const msg = (err as Error).message || String(err);
+  return /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg);
+}
+
 export type CourierPickerProps = {
   lines: BagLine[];
   destination: Partial<Address>;

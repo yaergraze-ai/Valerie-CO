@@ -13,6 +13,7 @@ import { MidtransGatewayBadge } from "./PaymentLogos";
 import { TurnstileWidget } from "./TurnstileWidget";
 import {
   CourierOptionPicker,
+  isStaleShippingError,
   type ShippingRateOption,
 } from "./CourierPicker";
 
@@ -22,13 +23,6 @@ type Quote = {
   shipping: number;
   total: number;
 };
-
-function isStaleShippingError(err: unknown): boolean {
-  if (!err) return false;
-  if ((err as { status?: number })?.status === 409) return true;
-  const msg = (err as Error).message || String(err);
-  return /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg);
-}
 
 export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const { db, member, t, money, checkout, refresh, notify, activePromotions } =
@@ -87,6 +81,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
       })
       .catch((e) => {
         if (!lifecycle.signal.aborted) {
+          setQuote(null);
           const msg = (e as Error).message || "";
           setQuoteError(msg);
           if (isStaleShippingError(e)) {
@@ -178,7 +173,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
       className="checkout-grid"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!quote || submitting.current || ratesLoading || !selectedShipping) return;
+        if (!quote || quoteError || submitting.current || ratesLoading || !selectedShipping) return;
         if (turnstileSiteKey && !turnstileToken) {
           setError(
             t(
@@ -469,7 +464,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
         )}
         <button
           className="button dark full checkout-submit-btn"
-          disabled={!quote || busy || ratesLoading || !selectedShipping}
+          disabled={!quote || Boolean(quoteError) || busy || ratesLoading || !selectedShipping}
           type="submit"
         >
           <span>
