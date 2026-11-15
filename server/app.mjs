@@ -1499,7 +1499,6 @@ export function createApp({
       }
       if (requestPath === "/api/payments/quote") {
         requireUser();
-        if (!gateway) fail(503, "Midtrans is not configured");
         const [coupon, products, settings] = await Promise.all([
           body.code ? db.getCoupon(String(body.code).toUpperCase()) : Promise.resolve(null),
           db.listProducts(),

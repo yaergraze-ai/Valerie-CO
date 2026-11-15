@@ -691,6 +691,19 @@ test("POST /api/orders/create verifies rateToken across stateless instances, rej
   assert.equal(nonMidtransRates.status, 200);
   const nonMidtransOption = nonMidtransRates.data.options[0];
 
+  const nonMidtransQuoteRes = await callNoGateway(
+    "payments/quote",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      destination: { postal: "45611" },
+      shippingOption: { rateToken: nonMidtransOption.rateToken },
+    },
+    member.cookie,
+  );
+  assert.equal(nonMidtransQuoteRes.status, 200);
+  assert.equal(nonMidtransQuoteRes.data.shipping, nonMidtransOption.price);
+  assert.equal(nonMidtransQuoteRes.data.total, 500000 + nonMidtransOption.price);
+
   const nonMidtransOrderRes = await callNoGateway(
     "orders/create",
     {
