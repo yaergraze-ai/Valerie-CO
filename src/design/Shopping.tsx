@@ -107,6 +107,12 @@ export function Bag({
 }) {
   const { db, setDb, t, currency, money, priceText, notify } = useStore();
   const rates = SHIPPING_RATES[currency];
+  const effectiveFreeAbove =
+    currency === "IDR"
+      ? (db.settings?.shipping?.freeAbove ??
+        db.paymentConfig?.shipping?.freeAbove ??
+        rates.freeAbove)
+      : rates.freeAbove;
   const sum = totals(db.bag, db.products, undefined, false, currency);
   if (!db.bag.length)
     return (
@@ -198,35 +204,48 @@ export function Bag({
           );
         })}
       </div>
-      <div className="shipping-progress">
-        <span>
-          <Truck size={16} />
-          {sum.subtotal >= rates.freeAbove
-            ? t(
-                "Anda mendapat gratis ongkir standar",
-                "You qualify for complimentary standard shipping",
-              )
-            : t(
-                `Belanja ${money(rates.freeAbove - sum.subtotal)} lagi untuk gratis ongkir`,
-                `You are ${money(rates.freeAbove - sum.subtotal)} away from complimentary shipping`,
-              )}
-        </span>
-        <progress value={Math.min(sum.subtotal, rates.freeAbove)} max={rates.freeAbove} />
-      </div>
+      {effectiveFreeAbove > 0 && (
+        <div className="shipping-progress">
+          <span>
+            <Truck size={16} />
+            {sum.subtotal >= effectiveFreeAbove
+              ? t(
+                  "Anda mendapat gratis ongkir standar",
+                  "You qualify for complimentary standard shipping",
+                )
+              : t(
+                  `Belanja ${money(effectiveFreeAbove - sum.subtotal)} lagi untuk gratis ongkir`,
+                  `You are ${money(effectiveFreeAbove - sum.subtotal)} away from complimentary shipping`,
+                )}
+          </span>
+          <progress
+            value={Math.min(sum.subtotal, effectiveFreeAbove)}
+            max={effectiveFreeAbove}
+          />
+        </div>
+      )}
       <div className="order-totals">
         <div>
           <span>Subtotal</span>
           <span>{money(sum.subtotal)}</span>
         </div>
         <div>
-          <span>{t("Pengiriman standar", "Standard shipping")}</span>
           <span>
-            {sum.shipping ? money(sum.shipping) : t("Gratis", "Complimentary")}
+            {currency === "IDR"
+              ? t("Ongkos kirim", "Shipping")
+              : t("Pengiriman standar", "Standard shipping")}
+          </span>
+          <span>
+            {currency === "IDR"
+              ? t("Dihitung saat checkout", "Calculated at checkout")
+              : sum.shipping
+                ? money(sum.shipping)
+                : t("Gratis", "Complimentary")}
           </span>
         </div>
         <div className="grand-total">
           <b>Total</b>
-          <b>{money(sum.total)}</b>
+          <b>{money(currency === "IDR" ? sum.subtotal : sum.total)}</b>
         </div>
       </div>
       <div className="bag-footer-actions">
@@ -1005,7 +1024,8 @@ export function downloadOfficialReceiptHtml(
           <small>${lang === "id" ? "Diterbitkan Untuk &amp; Tujuan Kirim" : "Billed To &amp; Shipping Destination"}</small>
           <strong>${escHtml(order.address.name || order.name)}</strong> (${escHtml(order.address.phone)})<br/>
           ${escHtml(order.email)}<br/>
-          ${escHtml(order.address.street)}, ${escHtml(order.address.city)} ${escHtml(order.address.postal)}
+          ${escHtml(order.address.street)}, ${escHtml(order.address.city)}${order.address.province ? `, ${escHtml(order.address.province)}` : ""} ${escHtml(order.address.postal)}
+          ${order.shippingMeta ? `<br/><span style="color:#6b4423;font-weight:600;">${lang === "id" ? "Kurir" : "Courier"}: ${escHtml(order.shippingMeta.courierName)} · ${escHtml(order.shippingMeta.serviceName)}${order.shippingMeta.duration ? ` · ${escHtml(order.shippingMeta.duration)}` : ""}</span>` : ""}
           ${order.tracking ? `<br/><span style="color:#6b4423;font-weight:600;">Resi: ${escHtml(order.tracking)}</span>` : ""}
         </div>
         <div class="card">
@@ -1037,7 +1057,7 @@ export function downloadOfficialReceiptHtml(
         <div class="totals">
           <div><span>Subtotal</span><span>${escHtml(money(itemsSubtotal, cur))}</span></div>
           ${order.discount ? `<div><span>${lang === "id" ? "Potongan Voucher" : "Promo Discount"}</span><span>−${escHtml(money(order.discount, cur))}</span></div>` : ""}
-          <div><span>${lang === "id" ? "Biaya Pengiriman" : "Shipping Fee"}</span><span>${order.shipping ? escHtml(money(order.shipping, cur)) : lang === "id" ? "Gratis" : "Complimentary"}</span></div>
+          <div><span>${lang === "id" ? "Biaya Pengiriman" : "Shipping Fee"}${order.shippingMeta ? ` (${escHtml(order.shippingMeta.courierName)} · ${escHtml(order.shippingMeta.serviceName)}${order.shippingMeta.duration ? " · " + escHtml(order.shippingMeta.duration) : ""})` : ""}</span><span>${order.shipping ? escHtml(money(order.shipping, cur)) : lang === "id" ? "Gratis" : "Complimentary"}</span></div>
           <div><span>${lang === "id" ? "Proteksi &amp; Pengemasan" : "Packaging &amp; Care"}</span><span>${lang === "id" ? "Gratis" : "Complimentary"}</span></div>
           <div class="grand"><span>${isPaidLike ? (lang === "id" ? "Total Dibayar" : "Total Paid") : (lang === "id" ? "Total Faktur" : "Invoice Total")}</span><span>${escHtml(money(order.total, cur))}</span></div>
         </div>
@@ -1153,8 +1173,32 @@ export function OfficialAtelierInvoice({
             {order.address.phone} · {order.email}
           </span>
           <p>
-            {order.address.street}, {order.address.city} {order.address.postal}
+            {order.address.street}, {order.address.city}
+            {order.address.province ? `, ${order.address.province}` : ""}{" "}
+            {order.address.postal}
           </p>
+          {order.shippingMeta && (
+            <span
+              className="vco-invoice-courier-chip"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "12px",
+                color: "#6b4423",
+                fontWeight: 600,
+                marginTop: "4px",
+              }}
+            >
+              <Truck size={12} aria-hidden="true" />
+              <span>
+                {order.shippingMeta.courierName} · {order.shippingMeta.serviceName}
+                {order.shippingMeta.duration
+                  ? ` · ${order.shippingMeta.duration}`
+                  : ""}
+              </span>
+            </span>
+          )}
           {order.tracking && (
             <span className="vco-invoice-tracking-chip">
               <Truck size={12} aria-hidden="true" />
@@ -1322,7 +1366,12 @@ export function OfficialAtelierInvoice({
             </div>
           )}
           <div>
-            <span>{t("Biaya Pengiriman", "Shipping Fee")}</span>
+            <span>
+              {t("Biaya Pengiriman", "Shipping Fee")}
+              {order.shippingMeta
+                ? ` (${order.shippingMeta.courierName} · ${order.shippingMeta.serviceName}${order.shippingMeta.duration ? " · " + order.shippingMeta.duration : ""})`
+                : ""}
+            </span>
             <span>
               {order.shipping
                 ? money(order.shipping, cur)
@@ -2838,9 +2887,32 @@ export function InlinePaymentAndReceipt({
                 {liveOrder.address.name} · {liveOrder.address.phone}
               </b>
               <span>
-                {liveOrder.address.street}, {liveOrder.address.city}{" "}
+                {liveOrder.address.street}, {liveOrder.address.city}
+                {liveOrder.address.province ? `, ${liveOrder.address.province}` : ""}{" "}
                 {liveOrder.address.postal}
               </span>
+              {liveOrder.shippingMeta && (
+                <span
+                  className="vco-invoice-courier-chip"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "12px",
+                    color: "#6b4423",
+                    fontWeight: 600,
+                    marginTop: "4px",
+                  }}
+                >
+                  <Truck size={12} aria-hidden="true" />
+                  <span>
+                    {liveOrder.shippingMeta.courierName} · {liveOrder.shippingMeta.serviceName}
+                    {liveOrder.shippingMeta.duration
+                      ? ` · ${liveOrder.shippingMeta.duration}`
+                      : ""}
+                  </span>
+                </span>
+              )}
               {liveOrder.tracking && (
                 <span className="vco-invoice-tracking-chip">
                   <Truck size={12} aria-hidden="true" />
@@ -2956,6 +3028,22 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
         busy.current = true;
         try {
           const f = new FormData(e.currentTarget);
+          const rawLat = f.get("lat");
+          const rawLon = f.get("lon");
+          const lat =
+            rawLat && Number.isFinite(Number(rawLat))
+              ? Number(rawLat)
+              : undefined;
+          const lon =
+            rawLon && Number.isFinite(Number(rawLon))
+              ? Number(rawLon)
+              : undefined;
+          const province =
+            String(f.get("province") || "").trim() || undefined;
+          const areaId =
+            String(f.get("areaId") || "").trim() || undefined;
+          const areaName =
+            String(f.get("areaName") || "").trim() || undefined;
           const address: Address = savedAddress || {
             id: crypto.randomUUID(),
             label: "Shipping",
@@ -2964,6 +3052,11 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             street: String(f.get("street")),
             city: String(f.get("city")),
             postal: String(f.get("postal")),
+            ...(province ? { province } : {}),
+            ...(areaId ? { areaId } : {}),
+            ...(areaName ? { areaName } : {}),
+            ...(lat !== undefined ? { lat } : {}),
+            ...(lon !== undefined ? { lon } : {}),
           };
           const order = await checkout(
             address,
@@ -3223,9 +3316,19 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
 
 const ATELIER_MAP_PRESETS = [
   {
+    label: "UMC Watubelah (Cirebon)",
+    street: "Jl. Fatahillah No. 40, Watubelah, Sumber",
+    city: "Kabupaten Cirebon",
+    province: "Jawa Barat",
+    postal: "45611",
+    lat: -6.7385,
+    lon: 108.4975,
+  },
+  {
     label: "SCBD / Senayan",
     street: "Jl. Jend. Sudirman Kav. 52-53, SCBD Lot 14, Kebayoran Baru",
     city: "Jakarta Selatan",
+    province: "DKI Jakarta",
     postal: "12190",
     lat: -6.2246,
     lon: 106.8096,
@@ -3234,6 +3337,7 @@ const ATELIER_MAP_PRESETS = [
     label: "Menteng",
     street: "Jl. Teuku Umar No. 24, Menteng",
     city: "Jakarta Pusat",
+    province: "DKI Jakarta",
     postal: "10350",
     lat: -6.1954,
     lon: 106.8342,
@@ -3242,6 +3346,7 @@ const ATELIER_MAP_PRESETS = [
     label: "PIK Avenue",
     street: "Jl. Pantai Indah Kapuk Boulevard, Kamal Muara, Penjaringan",
     city: "Jakarta Utara",
+    province: "DKI Jakarta",
     postal: "14470",
     lat: -6.1095,
     lon: 106.7402,
@@ -3250,6 +3355,7 @@ const ATELIER_MAP_PRESETS = [
     label: "Pondok Indah",
     street: "Jl. Metro Pondok Indah Kav. IV, Kebayoran Lama",
     city: "Jakarta Selatan",
+    province: "DKI Jakarta",
     postal: "12310",
     lat: -6.2655,
     lon: 106.7843,
@@ -3258,6 +3364,7 @@ const ATELIER_MAP_PRESETS = [
     label: "Dago Bandung",
     street: "Jl. Ir. H. Juanda No. 112, Coblong",
     city: "Bandung",
+    province: "Jawa Barat",
     postal: "40132",
     lat: -6.8904,
     lon: 107.6132,
@@ -3266,6 +3373,7 @@ const ATELIER_MAP_PRESETS = [
     label: "Pakuwon Surabaya",
     street: "Jl. Puncak Indah Lontar No. 2, Wiyung",
     city: "Surabaya",
+    province: "Jawa Timur",
     postal: "60216",
     lat: -7.2892,
     lon: 112.6756,
@@ -3274,6 +3382,7 @@ const ATELIER_MAP_PRESETS = [
     label: "Seminyak Bali",
     street: "Jl. Kayu Aya No. 48, Seminyak, Kuta",
     city: "Badung, Bali",
+    province: "Bali",
     postal: "80361",
     lat: -8.6868,
     lon: 115.1583,
@@ -3288,19 +3397,40 @@ type NominatimSearchResult = {
   address?: Record<string, string>;
 };
 
+export type DestinationChangePayload = {
+  street?: string;
+  city?: string;
+  province?: string;
+  postal?: string;
+  areaId?: string;
+  areaName?: string;
+  lat?: number;
+  lon?: number;
+};
+
 export function AddressFields({
   name = "",
   phone = "",
   address,
+  initialAddress,
+  defaultValues,
+  onDestinationChange,
 }: {
   name?: string;
   phone?: string;
   address?: Address;
+  initialAddress?: Partial<Address>;
+  defaultValues?: Partial<Address>;
+  onDestinationChange?: (dest: DestinationChangePayload) => void;
 }) {
+  const base = address || initialAddress || defaultValues;
   const { t, notify } = useStore();
-  const [street, setStreet] = useState(address?.street || "");
-  const [city, setCity] = useState(address?.city || "");
-  const [postal, setPostal] = useState(address?.postal || "");
+  const [street, setStreet] = useState(base?.street || "");
+  const [city, setCity] = useState(base?.city || "");
+  const [postal, setPostal] = useState(base?.postal || "");
+  const [province, setProvince] = useState(base?.province || "");
+  const [areaId, setAreaId] = useState(base?.areaId || "");
+  const [areaName, setAreaName] = useState(base?.areaName || "");
   const [locating, setLocating] = useState(false);
   const [mapQuery, setMapQuery] = useState("");
   const [searchingMap, setSearchingMap] = useState(false);
@@ -3309,7 +3439,143 @@ export function AddressFields({
     lat: number;
     lon: number;
     label: string;
-  } | null>(null);
+  } | null>(() => {
+    if (typeof base?.lat === "number" && typeof base?.lon === "number") {
+      return {
+        lat: base.lat,
+        lon: base.lon,
+        label: base.street || `${base.lat}, ${base.lon}`,
+      };
+    }
+    return null;
+  });
+
+  const [areaQuery, setAreaQuery] = useState("");
+  const [searchingAreas, setSearchingAreas] = useState(false);
+  const [areaResults, setAreaResults] = useState<
+    Array<{
+      id: string;
+      name: string;
+      city: string;
+      province: string;
+      postal: string;
+    }>
+  >([]);
+
+  const onDestinationChangeRef = useRef(onDestinationChange);
+  useEffect(() => {
+    onDestinationChangeRef.current = onDestinationChange;
+  });
+
+  const notifyChange = (next: DestinationChangePayload) => {
+    onDestinationChangeRef.current?.(next);
+  };
+
+  const initialNotified = useRef(false);
+  useEffect(() => {
+    if (!initialNotified.current) {
+      initialNotified.current = true;
+      if (street || city || postal || province || areaId || coords) {
+        onDestinationChangeRef.current?.({
+          street,
+          city,
+          province,
+          postal,
+          areaId,
+          areaName,
+          lat: coords?.lat,
+          lon: coords?.lon,
+        });
+      }
+    }
+  }, [street, city, postal, province, areaId, areaName, coords]);
+
+  const prevAddressId = useRef(address?.id);
+  useEffect(() => {
+    if (address && address.id !== prevAddressId.current) {
+      prevAddressId.current = address.id;
+      setStreet(address.street || "");
+      setCity(address.city || "");
+      setPostal(address.postal || "");
+      setProvince(address.province || "");
+      setAreaId(address.areaId || "");
+      setAreaName(address.areaName || "");
+      const nextCoords =
+        typeof address.lat === "number" && typeof address.lon === "number"
+          ? {
+              lat: address.lat,
+              lon: address.lon,
+              label: address.street || `${address.lat}, ${address.lon}`,
+            }
+          : null;
+      setCoords(nextCoords);
+      onDestinationChangeRef.current?.({
+        street: address.street || "",
+        city: address.city || "",
+        province: address.province || "",
+        postal: address.postal || "",
+        areaId: address.areaId || "",
+        areaName: address.areaName || "",
+        lat: nextCoords?.lat,
+        lon: nextCoords?.lon,
+      });
+    }
+  }, [address]);
+
+  useEffect(() => {
+    const q = areaQuery.trim();
+    if (q.length < 2) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setSearchingAreas(true);
+      try {
+        const res = await api(`shipping/areas?q=${encodeURIComponent(q)}`);
+        if (!cancelled) {
+          setAreaResults(Array.isArray(res?.areas) ? res.areas : []);
+        }
+      } catch {
+        if (!cancelled) setAreaResults([]);
+      } finally {
+        if (!cancelled) setSearchingAreas(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [areaQuery]);
+
+  const displayedAreaResults = areaQuery.trim().length >= 2 ? areaResults : [];
+
+  const selectArea = (item: {
+    id: string;
+    name: string;
+    city: string;
+    province: string;
+    postal: string;
+  }) => {
+    setAreaId(item.id);
+    setAreaName(item.name);
+    setCity(item.city);
+    setProvince(item.province);
+    setPostal(item.postal);
+    setAreaResults([]);
+    setAreaQuery("");
+    notifyChange({
+      street,
+      city: item.city,
+      province: item.province,
+      postal: item.postal,
+      areaId: item.id,
+      areaName: item.name,
+      lat: coords?.lat,
+      lon: coords?.lon,
+    });
+    notify(
+      `Area ${item.name} (${item.postal}) dipilih`,
+      `Area ${item.name} (${item.postal}) selected`,
+    );
+  };
 
   const applyReverseAddress = (
     addr: Record<string, string> | undefined,
@@ -3345,15 +3611,33 @@ export function AddressFields({
       addr?.state_district ||
       addr?.state ||
       "Jakarta";
+    const resolvedProvince =
+      addr?.state ||
+      addr?.province ||
+      addr?.region ||
+      "";
     const resolvedPostal =
       addr?.postcode?.replace(/\D/g, "").slice(0, 5) || "12190";
     setStreet(resolvedStreet);
     setCity(resolvedCity);
+    if (resolvedProvince) setProvince(resolvedProvince);
     setPostal(resolvedPostal);
+    setAreaId("");
+    setAreaName("");
     setCoords({
       lat,
       lon,
       label: `${resolvedStreet}, ${resolvedCity} ${resolvedPostal}`,
+    });
+    notifyChange({
+      street: resolvedStreet,
+      city: resolvedCity,
+      province: resolvedProvince || province,
+      postal: resolvedPostal,
+      areaId: "",
+      areaName: "",
+      lat,
+      lon,
     });
   };
 
@@ -3542,10 +3826,25 @@ export function AddressFields({
                   setStreet(preset.street);
                   setCity(preset.city);
                   setPostal(preset.postal);
-                  setCoords({
+                  const prov = "province" in preset ? preset.province : "";
+                  setProvince(prov);
+                  setAreaId("");
+                  setAreaName("");
+                  const nextCoords = {
                     lat: preset.lat,
                     lon: preset.lon,
                     label: `${preset.street}, ${preset.city} ${preset.postal}`,
+                  };
+                  setCoords(nextCoords);
+                  notifyChange({
+                    street: preset.street,
+                    city: preset.city,
+                    province: prov,
+                    postal: preset.postal,
+                    areaId: "",
+                    areaName: "",
+                    lat: preset.lat,
+                    lon: preset.lon,
                   });
                   notify(
                     `Titik peta ${preset.label} diterapkan ke alamat`,
@@ -3587,6 +3886,110 @@ export function AddressFields({
         )}
       </div>
 
+      <div className="address-area-autocomplete-box" style={{ marginBottom: "14px" }}>
+        <div className="address-area-input-row" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <input
+            type="text"
+            value={areaQuery}
+            onChange={(e) => setAreaQuery(e.target.value)}
+            placeholder={t(
+              "Cari kecamatan / kode pos (contoh: Sumber, Watubelah, Cirebon, 45611)…",
+              "Search district / postal code (e.g. Sumber, Watubelah, Cirebon, 45611)…",
+            )}
+          />
+          {searchingAreas && (
+            <span className="address-area-spinner" style={{ fontSize: "12px", color: "#8c9b7b" }}>…</span>
+          )}
+        </div>
+        {areaName && (
+          <div
+            className="address-selected-area-badge"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 8px",
+              background: "#f4ede4",
+              borderRadius: "4px",
+              fontSize: "12px",
+              marginTop: "6px",
+            }}
+          >
+            <Sparkles size={12} aria-hidden="true" />
+            <span>
+              {t("Area Biteship:", "Biteship Area:")} <b>{areaName}</b> ({postal || city})
+            </span>
+            <button
+              type="button"
+              className="address-clear-area-btn"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: "0 2px",
+                fontSize: "14px",
+              }}
+              onClick={() => {
+                setAreaId("");
+                setAreaName("");
+                notifyChange({
+                  street,
+                  city,
+                  province,
+                  postal,
+                  areaId: "",
+                  areaName: "",
+                  lat: coords?.lat,
+                  lon: coords?.lon,
+                });
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+        {displayedAreaResults.length > 0 && (
+          <div
+            className="address-area-results"
+            role="listbox"
+            style={{
+              background: "#fff",
+              border: "1px solid #d5c6b3",
+              borderRadius: "6px",
+              marginTop: "4px",
+              maxHeight: "200px",
+              overflowY: "auto",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            }}
+          >
+            {displayedAreaResults.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="address-area-result-item"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 12px",
+                  border: "none",
+                  borderBottom: "1px solid #f0eae1",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+                onClick={() => selectArea(item)}
+              >
+                <strong style={{ fontSize: "13px", color: "#24170f" }}>{item.name}</strong>
+                <small style={{ fontSize: "11px", color: "#6b594d" }}>
+                  {item.city}, {item.province} {item.postal}
+                </small>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="form-grid">
         <label>
           {t("Nama penerima", "Recipient name")}
@@ -3617,7 +4020,20 @@ export function AddressFields({
             required
             minLength={5}
             value={street}
-            onChange={(e) => setStreet(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setStreet(val);
+              notifyChange({
+                street: val,
+                city,
+                province,
+                postal,
+                areaId,
+                areaName,
+                lat: coords?.lat,
+                lon: coords?.lon,
+              });
+            }}
             placeholder={t(
               "Nama jalan, nomor rumah/gedung, RT/RW, kelurahan, kecamatan…",
               "Street name, building/house number, district…",
@@ -3626,13 +4042,51 @@ export function AddressFields({
           />
         </label>
         <label>
-          {t("Kota", "City")}
+          {t("Kota / Kabupaten", "City")}
           <input
             name="city"
             required
             value={city}
-            onChange={(e) => setCity(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCity(val);
+              setAreaId("");
+              setAreaName("");
+              notifyChange({
+                street,
+                city: val,
+                province,
+                postal,
+                areaId: "",
+                areaName: "",
+                lat: coords?.lat,
+                lon: coords?.lon,
+              });
+            }}
             autoComplete="address-level2"
+          />
+        </label>
+        <label>
+          {t("Provinsi", "Province")}
+          <input
+            name="province"
+            value={province}
+            onChange={(e) => {
+              const val = e.target.value;
+              setProvince(val);
+              notifyChange({
+                street,
+                city,
+                province: val,
+                postal,
+                areaId,
+                areaName,
+                lat: coords?.lat,
+                lon: coords?.lon,
+              });
+            }}
+            autoComplete="address-level1"
+            placeholder={t("Jawa Barat, DKI Jakarta, dll.", "Province")}
           />
         </label>
         <label>
@@ -3642,10 +4096,37 @@ export function AddressFields({
             inputMode="numeric"
             required
             value={postal}
-            onChange={(e) => setPostal(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setPostal(val);
+              setAreaId("");
+              setAreaName("");
+              notifyChange({
+                street,
+                city,
+                province,
+                postal: val,
+                areaId,
+                areaName,
+                lat: coords?.lat,
+                lon: coords?.lon,
+              });
+            }}
             autoComplete="postal-code"
           />
         </label>
+        <input type="hidden" name="areaId" value={areaId} />
+        <input type="hidden" name="areaName" value={areaName} />
+        <input
+          type="hidden"
+          name="lat"
+          value={coords?.lat !== undefined ? String(coords.lat) : ""}
+        />
+        <input
+          type="hidden"
+          name="lon"
+          value={coords?.lon !== undefined ? String(coords.lon) : ""}
+        />
       </div>
     </div>
   );

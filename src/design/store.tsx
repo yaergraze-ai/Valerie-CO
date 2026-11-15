@@ -26,6 +26,51 @@ export type Address = {
   street: string;
   city: string;
   postal: string;
+  province?: string;
+  areaId?: string;
+  areaName?: string;
+  lat?: number;
+  lon?: number;
+};
+export type ShippingRateOption = {
+  courierCode: string;
+  courierName: string;
+  serviceCode: string;
+  serviceName: string;
+  serviceType: string;
+  duration: string;
+  rawPrice: number;
+  price: number;
+  freeApplied: boolean;
+  source: "biteship" | "zone_fallback";
+  rateToken: string;
+};
+export type ShippingSettings = {
+  originName: string;
+  originAddress: string;
+  originCity: string;
+  originProvince: string;
+  originPostalCode: string;
+  originLat: number;
+  originLon: number;
+  defaultWeightGrams: number;
+  freeAbove: number;
+  enabledCouriers: string[];
+};
+export type ShippingMeta = {
+  courierCode: string;
+  courierName: string;
+  serviceCode: string;
+  serviceName: string;
+  serviceType?: string;
+  duration?: string;
+  weightGrams?: number;
+  rawPrice?: number;
+  price?: number;
+  freeApplied?: boolean;
+  source?: string;
+  originPostalCode?: string;
+  destPostalCode?: string;
 };
 export type MemberSecurity = {
   twoFactorEnabled?: boolean;
@@ -111,6 +156,7 @@ export type Order = {
   address: Address;
   tracking: string;
   currency?: "USD" | "IDR";
+  shippingMeta?: ShippingMeta;
   payment?: {
     provider: "midtrans";
     status: "pending" | "paid" | "failed" | "refunded";
@@ -195,7 +241,18 @@ type Database = {
   paymentConfig?: {
     enabled: boolean;
     production: boolean;
-    shipping: { standard: number; express: number; freeAbove: number };
+    shipping: {
+      standard: number;
+      express: number;
+      freeAbove: number;
+      liveRatesEnabled?: boolean;
+      originName?: string;
+      originCity?: string;
+      originProvince?: string;
+      originPostalCode?: string;
+      defaultWeightGrams?: number;
+      enabledCouriers?: string[];
+    };
     coreApiEnabled?: boolean;
     turnstileSiteKey?: string | null;
   };
@@ -225,6 +282,7 @@ type Database = {
     name: string;
     email: string;
     announcement: { id: string; en: string };
+    shipping?: ShippingSettings;
   };
 };
 const envMeta = (import.meta as any).env || {};
@@ -408,7 +466,24 @@ function useStoreState() {
   }, []);
   const setDb = (action: SetStateAction<Database>) => {
     const old = dbRef.current;
-    const next = typeof action === "function" ? action(old) : action;
+    let next = typeof action === "function" ? action(old) : action;
+    if (next.settings?.shipping && next.paymentConfig?.shipping) {
+      if (
+        JSON.stringify(old.settings?.shipping) !==
+        JSON.stringify(next.settings.shipping)
+      ) {
+        next = {
+          ...next,
+          paymentConfig: {
+            ...next.paymentConfig,
+            shipping: {
+              ...next.paymentConfig.shipping,
+              ...next.settings.shipping,
+            },
+          },
+        };
+      }
+    }
     write(next);
     if (!serverMode) return;
     const changes: { kind: string; data: unknown }[] = [];
@@ -642,6 +717,7 @@ function useStoreState() {
     expectedTotal?: number,
     channel?: string,
     turnstileToken?: string,
+    shippingOption?: { rateToken: string },
   ) => {
     if (serverMode) {
       const result = await api("orders/create", {
@@ -651,9 +727,10 @@ function useStoreState() {
         lines: dbRef.current.bag,
         key,
         ...(turnstileToken ? { turnstileToken } : {}),
+        ...(shippingOption ? { shippingOption } : {}),
         ...(dbRef.current.paymentConfig?.enabled
           ? { payment: "midtrans", expectedTotal, ...(channel ? { channel } : {}) }
-          : { currency }),
+          : { currency, ...(expectedTotal !== undefined ? { expectedTotal } : {}) }),
       });
       receive(result.state);
       write({ ...dbRef.current, bag: [] });
