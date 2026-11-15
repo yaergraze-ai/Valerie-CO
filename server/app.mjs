@@ -10,6 +10,15 @@ import {
   buildSwitchOrderId,
   isFallbackDirectCharge,
 } from "./midtrans.mjs";
+import {
+  biteshipClient,
+  searchShippingAreas,
+  quoteShippingRates,
+  verifyRateToken,
+  mergeShippingSettings,
+  sanitizeShippingSettings,
+  computeBagShippingWeight,
+} from "./shipping.mjs";
 import { verifyGoogle, resetMailer, whatsappMailer } from "./auth-services.mjs";
 import { createSqliteStore } from "./db-sqlite.mjs";
 import { createSupabaseStore } from "./db-supabase.mjs";
@@ -98,15 +107,31 @@ const integer = (v, min, max) => {
   if (!Number.isInteger(v)) fail(400, "Invalid integer");
   return v;
 };
-const address = (a) => ({
-  id: str(a.id, 80),
-  label: str(a.label, 60),
-  name: str(a.name, 120),
-  phone: str(a.phone, 40),
-  street: str(a.street, 400),
-  city: str(a.city, 100),
-  postal: str(a.postal, 20),
-});
+const address = (a) => {
+  if (!a || typeof a !== "object") fail(400, "Invalid address");
+  const lat = Number(a.lat);
+  const lon = Number(a.lon);
+  return {
+    id: str(a.id, 80),
+    label: str(a.label, 60),
+    name: str(a.name, 120),
+    phone: str(a.phone, 40),
+    street: str(a.street, 400),
+    city: str(a.city, 100),
+    postal: str(a.postal, 20),
+    ...(typeof a.province === "string" && a.province.trim()
+      ? { province: a.province.trim().slice(0, 100) }
+      : {}),
+    ...(typeof a.areaId === "string" && a.areaId.trim()
+      ? { areaId: a.areaId.trim().slice(0, 100) }
+      : {}),
+    ...(typeof a.areaName === "string" && a.areaName.trim()
+      ? { areaName: a.areaName.trim().slice(0, 160) }
+      : {}),
+    ...(Number.isFinite(lat) && lat >= -90 && lat <= 90 ? { lat } : {}),
+    ...(Number.isFinite(lon) && lon >= -180 && lon <= 180 ? { lon } : {}),
+  };
+};
 const isSafeImageUrl = (u) =>
   typeof u === "string" &&
   u.length <= 600000 &&
@@ -230,10 +255,129 @@ export function createApp({
     express: Number(process.env.SHIPPING_EXPRESS_IDR || 50000),
     freeAbove: Number(process.env.SHIPPING_FREE_ABOVE_IDR || 2000000),
   },
+  biteshipKey: rawBiteshipKey = process.env.BITESHIP_API_KEY,
+  shippingClient: rawShippingClient = undefined,
+  shippingSecret = process.env.SHIPPING_TOKEN_SECRET,
   store = null,
   supabaseUrl = process.env.SUPABASE_URL,
   supabaseSecretKey = process.env.SUPABASE_SECRET_KEY,
 } = {}) {
+  const biteshipKey = String(rawBiteshipKey || "").trim();
+  const activeBiteship =
+    rawShippingClient !== undefined
+      ? rawShippingClient
+      : biteshipClient(biteshipKey);
+
+  const resolveShippingSecret = () => {
+    const explicit = String(shippingSecret || process.env.SHIPPING_TOKEN_SECRET || "").trim();
+    if (explicit) return explicit;
+    const seedVal = String(supabaseSecretKey || midtransKey || "").trim();
+    if (seedVal) {
+      return createHash("sha256").update("valerie-shipping-v1:" + seedVal).digest("hex");
+    }
+    return randomBytes(32).toString("hex");
+  };
+  const resolvedShippingSecret = resolveShippingSecret();
+
+  const resolveIdrOrderQuote = ({
+    lines,
+    products,
+    coupon,
+    express = false,
+    shippingOption = null,
+    destinationPostal = "",
+    settings = null,
+  }) => {
+    const effectiveShipping = mergeShippingSettings(
+      settings?.shipping,
+      idrShipping.freeAbove,
+    );
+    const catalogMap = (
+      Array.isArray(products)
+        ? products
+        : [...(products?.values?.() || [])]
+    ).map((p) => ({
+      ...p,
+      priceIdr:
+        p.priceIdr && Number.isSafeInteger(p.priceIdr) && p.priceIdr > 0
+          ? p.priceIdr
+          : Math.round((p.price || 0) * 15000),
+    }));
+    const totalWeightGrams = computeBagShippingWeight(
+      lines,
+      catalogMap,
+      effectiveShipping.defaultWeightGrams,
+    );
+    const baseQuote = idrQuote(
+      lines,
+      catalogMap,
+      coupon,
+      express,
+      { ...idrShipping, ...effectiveShipping },
+      { freeAboveOverride: effectiveShipping.freeAbove },
+    );
+
+    let verified = null;
+    if (shippingOption && typeof shippingOption === "object" && shippingOption.rateToken) {
+      const destPostal = String(destinationPostal || "").trim();
+      verified = verifyRateToken(
+        shippingOption.rateToken,
+        {
+          originPostal: effectiveShipping.originPostalCode,
+          destPostal,
+          totalWeightGrams,
+          subtotal: baseQuote.subtotal,
+          freeAbove: effectiveShipping.freeAbove,
+        },
+        resolvedShippingSecret,
+      );
+      if (!verified) {
+        fail(
+          409,
+          "Ongkos kirim sudah berubah atau kedaluwarsa. Muat ulang pilihan kurir.",
+        );
+      }
+    }
+
+    const finalQuote = verified
+      ? idrQuote(
+          lines,
+          catalogMap,
+          coupon,
+          express,
+          { ...idrShipping, ...effectiveShipping },
+          {
+            shippingFeeOverride: verified.price,
+            freeAboveOverride: effectiveShipping.freeAbove,
+          },
+        )
+      : baseQuote;
+
+    const shippingMeta = verified
+      ? {
+          courierCode: verified.courierCode,
+          courierName: verified.courierName,
+          serviceCode: verified.serviceCode,
+          serviceName: verified.serviceName,
+          serviceType: verified.serviceType,
+          duration: verified.duration,
+          rawPrice: verified.rawPrice,
+          price: verified.price,
+          freeApplied: verified.freeApplied,
+          source: verified.source,
+          weightGrams: totalWeightGrams,
+          originPostalCode: effectiveShipping.originPostalCode,
+          destPostalCode: String(destinationPostal || "").trim(),
+        }
+      : null;
+
+    return {
+      quote: finalQuote,
+      shippingMeta,
+      effectiveShipping,
+      totalWeightGrams,
+    };
+  };
   const trimmedGoogleClientId = String(rawGoogleClientId || "").trim();
   const googleClientSecretMisconfigured = /^GOCSPX-/i.test(
     trimmedGoogleClientId,
@@ -583,11 +727,19 @@ export function createApp({
     const promotions = rawCoupons
       .filter((c) => c.active)
       .map((c) => ({ code: c.code, percent: c.percent, active: true }));
+    const effectiveShipping = mergeShippingSettings(
+      settings?.shipping,
+      idrShipping.freeAbove,
+    );
     return {
       paymentConfig: {
         enabled: !!gateway,
         production: paymentProduction,
-        shipping: idrShipping,
+        shipping: {
+          ...idrShipping,
+          ...effectiveShipping,
+          liveRatesEnabled: Boolean(activeBiteship),
+        },
         coreApiEnabled: typeof gateway?.charge === "function",
         turnstileSiteKey: trimmedTurnstileSiteKey || null,
       },
@@ -622,7 +774,7 @@ export function createApp({
         ? allTickets.filter((t) => isStaffRole(role) || t.memberId === resolved.id)
         : [],
       subscribers: allSubscribers,
-      settings,
+      settings: settings ? { ...settings, shipping: effectiveShipping } : settings,
       currentUser: resolved ? { id: resolved.id, role: resolved.role } : null,
       needsAdmin: !adminExists,
     };
@@ -643,7 +795,8 @@ export function createApp({
   };
   const handleApiRequest = async ({
     method,
-    path,
+    path: rawPath,
+    searchParams = null,
     origin = "",
     host = "",
     secFetchSite = "",
@@ -655,6 +808,16 @@ export function createApp({
     remoteAddress = "unknown",
     readRawBody,
   }) => {
+    let requestPath = rawPath;
+    let queryParams = searchParams;
+    if (requestPath.includes("?")) {
+      const [cleanPath, qs] = requestPath.split("?");
+      requestPath = cleanPath;
+      if (!queryParams || !queryParams.toString()) {
+        queryParams = new URLSearchParams(qs);
+      }
+    }
+    const path = requestPath;
     const cookies = [];
     const useSecureCookie = isHttpsCookieContext({
       origin,
@@ -674,11 +837,32 @@ export function createApp({
     const dispatch = async () => {
       await ensureReady();
       const u = await authenticate(cookieHeader);
-      if (path === "/api/state" && method === "GET") {
+      const requireUser = () => {
+        if (!u) fail(401, "Sign in required");
+      };
+      const requireStaff = () => {
+        requireUser();
+        if (!isStaffRole(u.role)) fail(403, "Staff access required");
+      };
+      const requireAdmin = () => {
+        requireUser();
+        if (!isAdminRole(u.role)) fail(403, "Admin access required");
+      };
+      if (requestPath === "/api/state" && method === "GET") {
         send(200, await state(u));
         return;
       }
-      if (path === "/api/auth/config" && method === "GET") {
+      if (requestPath === "/api/shipping/areas" && method === "GET") {
+        requireUser();
+        const q = queryParams?.get?.("q") || "";
+        const areas = await searchShippingAreas({
+          biteship: activeBiteship,
+          query: q,
+        });
+        send(200, { areas });
+        return;
+      }
+      if (requestPath === "/api/auth/config" && method === "GET") {
         const nonce = randomBytes(24).toString("hex");
         const now = Date.now();
         await db.saveGoogleChallenge(hashToken(nonce), now + 1800000, now);
@@ -704,7 +888,7 @@ export function createApp({
         return;
       }
       if (method !== "POST") fail(405, "Method not allowed");
-      const webhook = path === "/api/payments/midtrans/notification";
+      const webhook = requestPath === "/api/payments/midtrans/notification";
       // Same-site mutation guard. No cross-origin CORS permissions are granted.
       if (!webhook && origin) {
         let originHost = "";
@@ -726,17 +910,6 @@ export function createApp({
       } catch {
         fail(400, "Invalid JSON");
       }
-      const requireUser = () => {
-        if (!u) fail(401, "Sign in required");
-      };
-      const requireStaff = () => {
-        requireUser();
-        if (!isStaffRole(u.role)) fail(403, "Staff access required");
-      };
-      const requireAdmin = () => {
-        requireUser();
-        if (!isAdminRole(u.role)) fail(403, "Admin access required");
-      };
       const requestIp =
         (trustProxy
           ? String(forwardedFor || "")
@@ -1269,28 +1442,92 @@ export function createApp({
         });
         return;
       }
-      if (path === "/api/payments/quote") {
+      if (requestPath === "/api/shipping/rates") {
+        requireUser();
+        const lines = body.lines;
+        if (!Array.isArray(lines) || !lines.length || lines.length > 100) {
+          fail(400, "Invalid bag");
+        }
+        const [catalog, settings] = await Promise.all([
+          db.listProducts(),
+          db.getSettings(),
+        ]);
+        const effectiveShipping = mergeShippingSettings(
+          settings?.shipping,
+          idrShipping.freeAbove,
+        );
+        const items = lines.map((l) => {
+          const p = catalog.find((p) => p.id === l.productId && p.active);
+          if (!p) fail(409, "A product is unavailable");
+          integer(l.quantity, 1, 100);
+          const price =
+            p.priceIdr && Number.isSafeInteger(p.priceIdr) && p.priceIdr > 0
+              ? p.priceIdr
+              : Math.round((p.price || 0) * 15000);
+          return {
+            name: p.name,
+            value: price,
+            weightGrams: p.weightGrams,
+            quantity: l.quantity,
+          };
+        });
+        const subtotal = items.reduce((n, i) => n + i.value * i.quantity, 0);
+        const weightGrams = computeBagShippingWeight(
+          lines,
+          catalog,
+          effectiveShipping.defaultWeightGrams,
+        );
+
+        const quotes = await quoteShippingRates({
+          biteship: activeBiteship,
+          config: effectiveShipping,
+          destination: body.destination || {},
+          bagSummary: {
+            subtotal,
+            totalWeightGrams: weightGrams,
+            items: items.map((i) => ({
+              name: i.name,
+              value: i.value,
+              weight: i.weightGrams || effectiveShipping.defaultWeightGrams,
+              quantity: i.quantity,
+            })),
+          },
+          secret: resolvedShippingSecret,
+        });
+        send(200, quotes);
+        return;
+      }
+      if (requestPath === "/api/payments/quote") {
         requireUser();
         if (!gateway) fail(503, "Midtrans is not configured");
-        const [coupon, products] = await Promise.all([
+        const [coupon, products, settings] = await Promise.all([
           body.code ? db.getCoupon(String(body.code).toUpperCase()) : Promise.resolve(null),
           db.listProducts(),
+          db.getSettings(),
         ]);
         if (body.code && !coupon?.active)
           fail(400, "Promotion is no longer valid");
+        const destPostal =
+          body.destination?.postal ??
+          body.destination?.postalCode ??
+          body.address?.postal ??
+          "";
         try {
-          send(
-            200,
-            idrQuote(
-              body.lines,
-              products,
-              coupon,
-              body.express === true,
-              idrShipping,
-            ),
-          );
+          const { quote, shippingMeta } = resolveIdrOrderQuote({
+            lines: body.lines,
+            products,
+            coupon,
+            express: body.express === true,
+            shippingOption: body.shippingOption,
+            destinationPostal: destPostal,
+            settings,
+          });
+          send(200, {
+            ...quote,
+            ...(shippingMeta ? { shippingMeta } : {}),
+          });
         } catch (e) {
-          fail(400, e.message);
+          fail(e.status || 400, e.message);
         }
         return;
       }
@@ -1855,6 +2092,14 @@ export function createApp({
                 ))
             )
               fail(400, "Invalid homepage selection");
+            const currentEffectiveShipping = mergeShippingSettings(
+              virtualSettings?.shipping,
+              idrShipping.freeAbove,
+            );
+            const sanitizedShipping =
+              data.shipping !== undefined
+                ? sanitizeShippingSettings(data.shipping, currentEffectiveShipping)
+                : virtualSettings?.shipping;
             virtualSettings = {
               ...(homepage
                 ? {
@@ -1864,12 +2109,22 @@ export function createApp({
                     },
                   }
                 : {}),
-              name: str(data.name, 24),
-              email: email(data.email),
-              announcement: {
-                id: str(data.announcement?.id, 300),
-                en: str(data.announcement?.en, 300),
-              },
+              name:
+                data.name !== undefined
+                  ? str(data.name, 24)
+                  : virtualSettings?.name || defaultStoreName,
+              email:
+                data.email !== undefined
+                  ? email(data.email)
+                  : virtualSettings?.email || defaultSupportEmail,
+              announcement:
+                data.announcement !== undefined
+                  ? {
+                      id: str(data.announcement?.id, 300),
+                      en: str(data.announcement?.en, 300),
+                    }
+                  : virtualSettings?.announcement || { id: "", en: "" },
+              ...(sanitizedShipping ? { shipping: sanitizedShipping } : {}),
             };
             ops.push({ kind: "settings", data: virtualSettings });
           } else if (kind === "members") {
@@ -2001,7 +2256,10 @@ export function createApp({
         if (body.payment === "midtrans" && !gateway)
           fail(503, "Midtrans is not configured");
         await checkTurnstile(body.turnstileToken, requestIp);
-        const m = await db.getMember(u.id);
+        const [m, settings] = await Promise.all([
+          db.getMember(u.id),
+          db.getSettings(),
+        ]);
         const created = await db.createOrderAtomic(u.id, key, (catalog, getCoupon) => {
           const lines = body.lines;
           if (!Array.isArray(lines) || !lines.length || lines.length > 100)
@@ -2046,38 +2304,54 @@ export function createApp({
             : null;
           if (body.code && !coupon?.active)
             fail(400, "Promotion is no longer valid");
-          const discount =
-            orderCurrency === "IDR"
-              ? Math.round((subtotal * (coupon?.percent || 0)) / 100)
-              : Math.round(subtotal * (coupon?.percent || 0)) / 100;
-          const shipping =
-            orderCurrency === "IDR"
-              ? body.express === true
-                ? idrShipping.express
-                : subtotal >= idrShipping.freeAbove
-                  ? 0
-                  : idrShipping.standard
-              : body.express === true
+
+          let discount;
+          let shipping;
+          let total;
+          let quote = null;
+          let shippingMeta = null;
+
+          if (orderCurrency === "IDR") {
+            const destPostal =
+              body.destination?.postal ??
+              body.destination?.postalCode ??
+              body.address?.postal ??
+              "";
+            try {
+              const idrResult = resolveIdrOrderQuote({
+                lines,
+                products: [...catalog.values()],
+                coupon,
+                express: body.express === true,
+                shippingOption: body.shippingOption,
+                destinationPostal: destPostal,
+                settings,
+              });
+              quote = idrResult.quote;
+              shippingMeta = idrResult.shippingMeta;
+              discount = quote.discount;
+              shipping = quote.shipping;
+              total = quote.total;
+            } catch (e) {
+              fail(e.status || 400, e.message);
+            }
+          } else {
+            discount = Math.round(subtotal * (coupon?.percent || 0)) / 100;
+            shipping =
+              body.express === true
                 ? 25
                 : subtotal >= 250
                   ? 0
                   : 15;
-          let quote;
-          if (body.payment === "midtrans") {
-            try {
-              quote = idrQuote(
-                lines,
-                [...catalog.values()],
-                coupon,
-                body.express === true,
-                idrShipping,
-              );
-            } catch (e) {
-              fail(400, e.message);
-            }
+            total = Math.round((subtotal - discount + shipping) * 100) / 100;
           }
-          if (quote && body.expectedTotal !== quote.total)
+
+          if (body.payment === "midtrans" && body.expectedTotal !== quote?.total) {
             fail(409, "IDR total changed. Refresh the quote before checkout.");
+          }
+          if (body.expectedTotal !== undefined && body.expectedTotal !== total) {
+            fail(409, "IDR total changed. Refresh the quote before checkout.");
+          }
           const selectedChannel =
             typeof body.channel === "string" && /^[a-z0-9_]{2,24}$/.test(body.channel)
               ? body.channel
@@ -2085,6 +2359,7 @@ export function createApp({
           const orderId = "SOL-" + randomUUID();
           const receiptNumber =
             "VCO-INV-" + orderId.replace(/^SOL-/, "").slice(0, 8).toUpperCase();
+          const isMidtrans = body.payment === "midtrans";
           return {
             id: orderId,
             receiptNumber,
@@ -2093,27 +2368,22 @@ export function createApp({
             email: u.email,
             date: new Date().toISOString(),
             status: "processing",
-            paymentMethod: quote ? "midtrans" : "direct",
+            paymentMethod: isMidtrans ? "midtrans" : "direct",
             currency: orderCurrency,
-            items,
-            total:
-              orderCurrency === "IDR"
-                ? Math.round(subtotal - discount + shipping)
-                : Math.round((subtotal - discount + shipping) * 100) / 100,
+            items: quote
+              ? items.map((item, i) => ({
+                  ...item,
+                  price: quote.items[i].price,
+                }))
+              : items,
+            total,
             discount,
             shipping,
             address: address(body.address),
             tracking: "",
-            ...(quote
+            ...(shippingMeta ? { shippingMeta } : {}),
+            ...(isMidtrans
               ? {
-                  items: items.map((item, i) => ({
-                    ...item,
-                    price: quote.items[i].price,
-                  })),
-                  total: quote.total,
-                  shipping: quote.shipping,
-                  discount: quote.discount,
-                  currency: "IDR",
                   payment: {
                     provider: "midtrans",
                     status: "pending",
@@ -2565,6 +2835,7 @@ export function createApp({
     const result = await handleApiRequest({
       method: request.method,
       path: pathname,
+      searchParams: url.searchParams,
       origin: request.headers.get("origin") || "",
       host: host || "",
       secFetchSite: request.headers.get("sec-fetch-site") || "",
@@ -2653,6 +2924,7 @@ export function createApp({
       const result = await handleApiRequest({
         method: req.method,
         path,
+        searchParams: url.searchParams,
         origin: req.headers.origin || "",
         host:
           req.headers.host ||
@@ -2689,7 +2961,13 @@ export function createApp({
     ready,
     close: () => {
       server.close();
-      db.close?.();
+      server.closeAllConnections?.();
+      server.closeIdleConnections?.();
+      if (!store) {
+        try {
+          db.close?.();
+        } catch {}
+      }
     },
   };
 }

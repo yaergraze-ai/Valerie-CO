@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createApp } from "../server/app.mjs";
+import { createSqliteStore } from "../server/db-sqlite.mjs";
 import {
   ALLOWED_COURIERS,
   DEFAULT_SHIPPING_CONFIG,
@@ -21,6 +23,54 @@ const cheapestStandard = (options) => {
   const std = options.filter((o) => o.serviceType === "standard");
   assert.ok(std.length > 0, "Expected at least one standard option");
   return Math.min(...std.map((o) => o.rawPrice));
+};
+
+const startTestApp = async ({
+  store = null,
+  shippingSecret = "test-shared-shipping-secret",
+  supabaseSecretKey = undefined,
+  midtransKey = "test-midtrans-key",
+  gateway = undefined,
+  shippingClient = undefined,
+} = {}) => {
+  const capturedSnapOrders = [];
+  const resolvedGateway =
+    gateway !== undefined
+      ? gateway
+      : {
+          create: async (o) => {
+            capturedSnapOrders.push(o);
+            return "https://app.sandbox.midtrans.com/snap/test";
+          },
+          status: async () => ({}),
+          refund: async () => ({}),
+        };
+  const app = createApp({
+    dbPath: ":memory:",
+    setupToken: "setup-token-123",
+    store,
+    shippingSecret,
+    supabaseSecretKey,
+    midtransKey,
+    gateway: resolvedGateway,
+    shippingClient,
+  });
+  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const call = async (path, body, cookie = "", method = undefined) => {
+    const isGet = method === "GET" || (!method && !body);
+    const r = await fetch(base + "/api/" + path, {
+      method: isGet ? "GET" : "POST",
+      headers: { "Content-Type": "application/json", cookie },
+      body: !isGet && body ? JSON.stringify(body) : undefined,
+    });
+    return {
+      status: r.status,
+      data: await r.json(),
+      cookie: r.headers.get("set-cookie")?.split(";")[0] || "",
+    };
+  };
+  return { app, base, call, capturedSnapOrders };
 };
 
 test("Regional zone fallback prices Cirebon and Jawa Barat lower than outer regions and scales by weight", async () => {
@@ -403,4 +453,372 @@ test("Shipping settings sanitization, merge, weight calculation, and area search
   });
   assert.ok(zoneRates.some((o) => o.courierCode === "gosend"));
   assert.ok(zoneRates.some((o) => o.courierCode === "jne"));
+});
+
+test("GET /api/shipping/areas and POST /api/shipping/rates enforce auth and return regional rates", async (t) => {
+  const { app, call } = await startTestApp();
+  t.after(() => app.close());
+
+  // 1. Unauthenticated gets 401
+  const unauthAreas = await call("shipping/areas?q=watubelah");
+  assert.equal(unauthAreas.status, 401);
+
+  const unauthRates = await call("shipping/rates", {
+    lines: [{ productId: "test", quantity: 1 }],
+    destination: { postal: "45611" },
+  });
+  assert.equal(unauthRates.status, 401);
+
+  // Setup admin & register member
+  await call("auth/setup", {
+    name: "Admin",
+    email: "admin@test.com",
+    password: "test-password-123",
+    setupToken: "setup-token-123",
+  });
+  const memberReg = await call("auth/register", {
+    name: "Member",
+    email: "member@test.com",
+    password: "test-password-123",
+  });
+  assert.equal(memberReg.status, 200);
+  const memberCookie = memberReg.cookie;
+
+  // 2. Member gets Cirebon Watubelah preset in areas
+  const memberAreas = await call("shipping/areas?q=watubelah", undefined, memberCookie);
+  assert.equal(memberAreas.status, 200);
+  assert.ok(Array.isArray(memberAreas.data.areas));
+  assert.ok(memberAreas.data.areas.length > 0);
+  assert.ok(memberAreas.data.areas.some((a) => a.postal === "45611"));
+
+  // Check state to get an active product
+  const st = await call("state", undefined, memberCookie);
+  const p = st.data.products[0];
+
+  // 3. Cirebon destination (45611) costs less than Makassar (90111)
+  const cirebonRatesRes = await call(
+    "shipping/rates",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      destination: { postal: "45611", city: "Cirebon", province: "Jawa Barat" },
+    },
+    memberCookie,
+  );
+  assert.equal(cirebonRatesRes.status, 200);
+  assert.equal(cirebonRatesRes.data.origin.postal, "45611");
+  assert.ok(cirebonRatesRes.data.options.length > 0);
+
+  const makassarRatesRes = await call(
+    "shipping/rates",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      destination: { postal: "90111", city: "Makassar", province: "Sulawesi Selatan" },
+    },
+    memberCookie,
+  );
+  assert.equal(makassarRatesRes.status, 200);
+  assert.ok(makassarRatesRes.data.options.length > 0);
+
+  const cirebonStandard = cheapestStandard(cirebonRatesRes.data.options);
+  const makassarStandard = cheapestStandard(makassarRatesRes.data.options);
+  assert.ok(
+    cirebonStandard < makassarStandard,
+    `Expected Cirebon standard (${cirebonStandard}) < Makassar standard (${makassarStandard})`,
+  );
+});
+
+test("POST /api/orders/create verifies rateToken across stateless instances, rejects tampering/mismatches, and saves shippingMeta", async (t) => {
+  const sharedStore = createSqliteStore(":memory:");
+  const sharedSupabaseKey = "sb_secret_key_stateless_12345";
+  let appNoGateway = null;
+  const { app: appA, call: callA } = await startTestApp({
+    store: sharedStore,
+    shippingSecret: undefined,
+    supabaseSecretKey: sharedSupabaseKey,
+  });
+  const { app: appB, call: callB, capturedSnapOrders } = await startTestApp({
+    store: sharedStore,
+    shippingSecret: undefined,
+    supabaseSecretKey: sharedSupabaseKey,
+  });
+  t.after(() => {
+    appA.close();
+    appB.close();
+    appNoGateway?.close();
+    sharedStore.close();
+  });
+
+  const admin = await callA("auth/setup", {
+    name: "Admin",
+    email: "admin-stateless@test.com",
+    password: "test-password-123",
+    setupToken: "setup-token-123",
+  });
+  const member = await callA("auth/register", {
+    name: "Member",
+    email: "member-stateless@test.com",
+    password: "test-password-123",
+  });
+  assert.equal(member.status, 200);
+
+  // Set product price to 500,000 IDR (below free shipping)
+  let p = member.data.products[0];
+  p = { ...p, priceIdr: 500000 };
+  await callA("patch", { changes: [{ kind: "products", data: p }] }, admin.cookie);
+
+  // 1. App instance A generates rateToken
+  const ratesA = await callA(
+    "shipping/rates",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      destination: { postal: "40115", city: "Kota Bandung", province: "Jawa Barat" },
+    },
+    member.cookie,
+  );
+  assert.equal(ratesA.status, 200);
+  const chosenOption = ratesA.data.options[0];
+  assert.ok(chosenOption.rateToken);
+  assert.ok(chosenOption.price > 0);
+
+  const baseOrderBody = {
+    payment: "midtrans",
+    key: "stateless-checkout-key-1",
+    lines: [
+      {
+        productId: p.id,
+        quantity: 1,
+        size: p.sizes[0],
+        color: p.colors[0].name,
+      },
+    ],
+    address: {
+      id: "addr-1",
+      label: "Rumah",
+      name: "Member",
+      phone: "08123456789",
+      street: "Jl. Dago No. 10",
+      city: "Bandung",
+      postal: "40115",
+    },
+    shippingOption: {
+      rateToken: chosenOption.rateToken,
+    },
+    expectedTotal: 500000 + chosenOption.price,
+  };
+
+  // 2. Reject mismatched postal on App B
+  const mismatchPostal = await callB(
+    "orders/create",
+    {
+      ...baseOrderBody,
+      key: "mismatch-postal",
+      address: { ...baseOrderBody.address, postal: "60271" },
+    },
+    member.cookie,
+  );
+  assert.equal(mismatchPostal.status, 409);
+
+  // 3. Reject modified cart quantity (weight mismatch) on App B
+  const mismatchWeight = await callB(
+    "orders/create",
+    {
+      ...baseOrderBody,
+      key: "mismatch-weight",
+      lines: [{ ...baseOrderBody.lines[0], quantity: 2 }],
+      expectedTotal: 1000000 + chosenOption.price,
+    },
+    member.cookie,
+  );
+  assert.equal(mismatchWeight.status, 409);
+
+  // 4. Reject tampered signature on App B
+  const forgedToken = chosenOption.rateToken.slice(0, -2) + (chosenOption.rateToken.slice(-1) === "a" ? "b" : "a") + "0";
+  const forgedOrder = await callB(
+    "orders/create",
+    {
+      ...baseOrderBody,
+      key: "forged-token",
+      shippingOption: { rateToken: forgedToken },
+    },
+    member.cookie,
+  );
+  assert.equal(forgedOrder.status, 409);
+
+  // 5. Successful matching checkout on App B
+  const successOrder = await callB(
+    "orders/create",
+    baseOrderBody,
+    member.cookie,
+  );
+  assert.equal(successOrder.status, 200);
+  const createdOrder = successOrder.data.order;
+  assert.equal(createdOrder.shipping, chosenOption.price);
+  assert.equal(createdOrder.total, 500000 + chosenOption.price);
+  assert.ok(createdOrder.shippingMeta);
+  assert.equal(createdOrder.shippingMeta.courierCode, chosenOption.courierCode);
+  assert.equal(createdOrder.shippingMeta.serviceCode, chosenOption.serviceCode);
+  assert.equal(createdOrder.shippingMeta.price, chosenOption.price);
+
+  // Verify Midtrans received matching gross_amount
+  assert.equal(capturedSnapOrders.length, 1);
+  assert.equal(capturedSnapOrders[0].total, 500000 + chosenOption.price);
+
+  // 6. Test non-Midtrans currency: "IDR" (gateway: null) path cleanly!
+  const noGw = await startTestApp({
+    store: sharedStore,
+    supabaseSecretKey: sharedSupabaseKey,
+    gateway: null,
+  });
+  appNoGateway = noGw.app;
+  const callNoGateway = noGw.call;
+
+  const nonMidtransRates = await callNoGateway(
+    "shipping/rates",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      destination: { postal: "45611" },
+    },
+    member.cookie,
+  );
+  assert.equal(nonMidtransRates.status, 200);
+  const nonMidtransOption = nonMidtransRates.data.options[0];
+
+  const nonMidtransOrderRes = await callNoGateway(
+    "orders/create",
+    {
+      currency: "IDR",
+      payment: "direct",
+      key: "non-midtrans-key-1",
+      lines: [
+        {
+          productId: p.id,
+          quantity: 1,
+          size: p.sizes[0],
+          color: p.colors[0].name,
+        },
+      ],
+      address: {
+        id: "addr-2",
+        label: "Home",
+        name: "Member",
+        phone: "08123456789",
+        street: "Jl. Fatahillah",
+        city: "Cirebon",
+        postal: "45611",
+      },
+      shippingOption: {
+        rateToken: nonMidtransOption.rateToken,
+      },
+      expectedTotal: 500000 + nonMidtransOption.price,
+    },
+    member.cookie,
+  );
+  assert.equal(nonMidtransOrderRes.status, 200);
+  const nonMidOrder = nonMidtransOrderRes.data.order;
+  assert.equal(nonMidOrder.currency, "IDR");
+  assert.equal(nonMidOrder.paymentMethod, "direct");
+  assert.equal(nonMidOrder.shipping, nonMidtransOption.price);
+  assert.equal(nonMidOrder.total, 500000 + nonMidtransOption.price);
+  assert.ok(nonMidOrder.shippingMeta);
+  assert.equal(nonMidOrder.shippingMeta.courierCode, nonMidtransOption.courierCode);
+});
+
+test("Admin can update settings.shipping to toggle freeAbove = 0 and member receives 403", async (t) => {
+  const { app, call } = await startTestApp();
+  t.after(() => app.close());
+
+  const admin = await call("auth/setup", {
+    name: "Admin",
+    email: "admin-settings@test.com",
+    password: "test-password-123",
+    setupToken: "setup-token-123",
+  });
+  const member = await call("auth/register", {
+    name: "Member",
+    email: "member-settings@test.com",
+    password: "test-password-123",
+  });
+  assert.equal(member.status, 200);
+
+  // Set product price to 5,000,000 IDR (normally free shipping if threshold is 2,000,000)
+  let p = member.data.products[0];
+  p = { ...p, priceIdr: 5000000 };
+  await call("patch", { changes: [{ kind: "products", data: p }] }, admin.cookie);
+
+  // 1. Member receives 403 when trying to patch settings
+  const memberPatch = await call(
+    "patch",
+    {
+      changes: [
+        {
+          kind: "settings",
+          data: {
+            name: "Hacked Valerie",
+            email: "hacked@example.com",
+            announcement: { id: "test", en: "test" },
+            shipping: { freeAbove: 0 },
+          },
+        },
+      ],
+    },
+    member.cookie,
+  );
+  assert.equal(memberPatch.status, 403);
+
+  // 2. Admin updates originPostalCode & freeAbove: 0
+  const adminPatch = await call(
+    "patch",
+    {
+      changes: [
+        {
+          kind: "settings",
+          data: {
+            name: "Valerie & CO",
+            email: "concierge@valerieco.atelier",
+            announcement: { id: "Halo", en: "Hello" },
+            shipping: {
+              originPostalCode: "40115",
+              freeAbove: 0,
+            },
+          },
+        },
+      ],
+    },
+    admin.cookie,
+  );
+  assert.equal(adminPatch.status, 200);
+
+  // 3. Verify /api/state reflects updated paymentConfig.shipping and settings.shipping
+  const stateRes = await call("state", undefined, admin.cookie);
+  assert.equal(stateRes.status, 200);
+  assert.equal(stateRes.data.paymentConfig.shipping.freeAbove, 0);
+  assert.equal(stateRes.data.paymentConfig.shipping.originPostalCode, "40115");
+  assert.equal(stateRes.data.settings.shipping.freeAbove, 0);
+  assert.equal(stateRes.data.settings.shipping.originPostalCode, "40115");
+
+  // 4. Verify quotes honor freeAbove === 0 (shipping is NOT subsidized even for 5,000,000 cart)
+  const ratesRes = await call(
+    "shipping/rates",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      destination: { postal: "40115" },
+    },
+    member.cookie,
+  );
+  assert.equal(ratesRes.status, 200);
+  assert.equal(ratesRes.data.freeAbove, 0);
+  assert.ok(ratesRes.data.options.length > 0);
+  assert.ok(ratesRes.data.options.every((o) => o.freeApplied === false && o.price > 0));
+
+  // Also check /api/payments/quote honors freeAbove === 0
+  const quoteRes = await call(
+    "payments/quote",
+    {
+      lines: [{ productId: p.id, quantity: 1 }],
+      express: false,
+    },
+    member.cookie,
+  );
+  assert.equal(quoteRes.status, 200);
+  assert.ok(quoteRes.data.shipping > 0, "Shipping fee should not be 0 when freeAbove is 0");
 });

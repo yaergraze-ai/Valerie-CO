@@ -249,11 +249,15 @@ function buildItemDetails(order) {
     name: `${item.name}${item.size ? ` (${item.size})` : ""}`.slice(0, 50),
   }));
   if (Number(order.shipping) > 0) {
+    const shippingName =
+      order.shippingMeta?.courierName && order.shippingMeta?.serviceName
+        ? `${order.shippingMeta.courierName} ${order.shippingMeta.serviceName}`.slice(0, 50)
+        : "Shipping / Pengiriman Atelier";
     details.push({
       id: "SHIPPING",
       price: Math.round(Number(order.shipping)),
       quantity: 1,
-      name: "Shipping / Pengiriman Atelier",
+      name: shippingName || "Shipping / Pengiriman Atelier",
     });
   }
   if (Number(order.discount) > 0) {
@@ -445,7 +449,7 @@ export function midtransClient(key, production = false) {
       }),
   };
 }
-export function idrQuote(lines, products, coupon, express, shipping) {
+export function idrQuote(lines, products, coupon, express, shipping, overrides = {}) {
   if (!Array.isArray(lines) || !lines.length || lines.length > 100)
     throw Error("Invalid bag");
   const items = lines.map((l) => {
@@ -458,11 +462,22 @@ export function idrQuote(lines, products, coupon, express, shipping) {
   });
   const subtotal = items.reduce((n, i) => n + i.price * i.quantity, 0);
   const discount = Math.round((subtotal * (coupon?.percent || 0)) / 100);
-  const delivery = express
-    ? shipping.express
-    : subtotal >= shipping.freeAbove
-      ? 0
-      : shipping.standard;
+  const freeThreshold =
+    overrides.freeAboveOverride !== undefined
+      ? Number(overrides.freeAboveOverride)
+      : Number(shipping?.freeAbove);
+  let delivery;
+  if (overrides.shippingFeeOverride !== undefined) {
+    const fee = Number(overrides.shippingFeeOverride);
+    if (!Number.isFinite(fee) || fee < 0) throw Error("Invalid shipping fee override");
+    delivery = Math.round(fee);
+  } else {
+    delivery = express
+      ? shipping.express
+      : freeThreshold > 0 && subtotal >= freeThreshold
+        ? 0
+        : shipping.standard;
+  }
   const total = subtotal - discount + delivery;
   if (!Number.isSafeInteger(total) || total < 1 || total > 999999999)
     throw Error("Invalid IDR amount");
