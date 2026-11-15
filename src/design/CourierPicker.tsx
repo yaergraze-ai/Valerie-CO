@@ -42,15 +42,22 @@ export function CourierOptionPicker({
   const [retryTrigger, setRetryTrigger] = useState(0);
 
   const requestIdRef = useRef(0);
+  const linesRef = useRef(lines);
   const selectedRef = useRef(selected);
   const onSelectRef = useRef(onSelect);
   const onRatesLoadingRef = useRef(onRatesLoading);
 
   useEffect(() => {
+    linesRef.current = lines;
     selectedRef.current = selected;
     onSelectRef.current = onSelect;
     onRatesLoadingRef.current = onRatesLoading;
   });
+
+  const linesKey = lines
+    .map((l) => `${l.productId}:${l.size}:${l.color}:${l.quantity}`)
+    .sort()
+    .join("|");
 
   const destPostal = destination.postal || "";
   const destAreaId = destination.areaId || "";
@@ -60,14 +67,15 @@ export function CourierOptionPicker({
   const destLon = destination.lon;
 
   useEffect(() => {
-    if (!lines.length) {
+    const reqId = ++requestIdRef.current;
+
+    if (!linesKey) {
+      onRatesLoadingRef.current?.(false);
       if (selectedRef.current !== null) {
         onSelectRef.current(null);
       }
       return;
     }
-
-    const reqId = ++requestIdRef.current;
 
     const timer = setTimeout(async () => {
       onRatesLoadingRef.current?.(true);
@@ -76,7 +84,7 @@ export function CourierOptionPicker({
 
       try {
         const payload = {
-          lines,
+          lines: linesRef.current,
           destination: {
             postal: destPostal,
             areaId: destAreaId,
@@ -154,7 +162,7 @@ export function CourierOptionPicker({
       clearTimeout(timer);
     };
   }, [
-    lines,
+    linesKey,
     destPostal,
     destAreaId,
     destProvince,
@@ -170,6 +178,7 @@ export function CourierOptionPicker({
   }, []);
 
   const activeRatesData = lines.length ? ratesData : null;
+  const activeLoading = Boolean(linesKey && loading);
   const postalDigits = (destPostal || "").replace(/\D/g, "");
   const isPostalShort = postalDigits.length < 5;
 
@@ -222,7 +231,7 @@ export function CourierOptionPicker({
         </div>
       )}
 
-      {error && !loading && (
+      {error && !activeLoading && (
         <div className="courier-picker-error" role="alert">
           <div className="courier-picker-error-msg">
             <AlertCircle size={14} aria-hidden="true" />
@@ -239,7 +248,7 @@ export function CourierOptionPicker({
         </div>
       )}
 
-      {loading && !activeRatesData && (
+      {activeLoading && !activeRatesData && (
         <div className="courier-picker-skeleton" aria-busy="true">
           <div className="courier-skeleton-row" />
           <div className="courier-skeleton-row" />

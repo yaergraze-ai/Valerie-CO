@@ -3666,15 +3666,26 @@ export function AddressFields({
             "GPS location automatically filled from map",
           );
         } catch {
-          setStreet(
-            `Titik Koordinat GPS (${lat.toFixed(5)}, ${lon.toFixed(5)})`,
-          );
-          if (!city) setCity("Jakarta");
-          if (!postal) setPostal("12190");
+          const fallbackStreet = `Titik Koordinat GPS (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
+          const fallbackCity = city || "Jakarta";
+          const fallbackPostal = postal || "12190";
+          setStreet(fallbackStreet);
+          if (!city) setCity(fallbackCity);
+          if (!postal) setPostal(fallbackPostal);
           setCoords({
             lat,
             lon,
             label: `GPS (${lat.toFixed(5)}, ${lon.toFixed(5)})`,
+          });
+          notifyChange({
+            street: fallbackStreet,
+            city: fallbackCity,
+            province,
+            postal: fallbackPostal,
+            areaId: "",
+            areaName: "",
+            lat,
+            lon,
           });
           notify(
             "Koordinat GPS berhasil ditangkap ke alamat",
@@ -3892,6 +3903,9 @@ export function AddressFields({
             type="text"
             value={areaQuery}
             onChange={(e) => setAreaQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.preventDefault();
+            }}
             placeholder={t(
               "Cari kecamatan / kode pos (contoh: Sumber, Watubelah, Cirebon, 45611)…",
               "Search district / postal code (e.g. Sumber, Watubelah, Cirebon, 45611)…",
