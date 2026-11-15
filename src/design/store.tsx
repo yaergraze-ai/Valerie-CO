@@ -247,9 +247,12 @@ type Database = {
       freeAbove: number;
       liveRatesEnabled?: boolean;
       originName?: string;
+      originAddress?: string;
       originCity?: string;
       originProvince?: string;
       originPostalCode?: string;
+      originLat?: number;
+      originLon?: number;
       defaultWeightGrams?: number;
       enabledCouriers?: string[];
     };

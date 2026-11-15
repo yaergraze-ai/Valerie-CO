@@ -2405,10 +2405,23 @@ function OrderModal({
               <p>
                 {o.address.street}
                 <br />
-                {o.address.city}, {o.address.postal}
+                {[o.address.city, o.address.province, o.address.postal].filter(Boolean).join(", ")}
                 <br />
                 {o.address.phone}
               </p>
+              {o.shippingMeta && (
+                <>
+                  <h4>{t("Kurir dipilih", "Selected courier")}</h4>
+                  <p className="order-courier-display">
+                    {o.shippingMeta.courierName} · {o.shippingMeta.serviceName}
+                    {o.shippingMeta.duration ? ` · ${o.shippingMeta.duration}` : ""}
+                    {" "}
+                    <small style={{ color: "var(--muted, #666)" }}>
+                      ({o.shippingMeta.freeApplied ? t("Gratis Ongkir", "Free Shipping") : money(o.shipping, o.currency || "USD")})
+                    </small>
+                  </p>
+                </>
+              )}
               <h4>{t("Nomor resi", "Tracking number")}</h4>
               <p>{o.tracking || t("Belum tersedia", "Not available yet")}</p>
             </div>
@@ -2465,6 +2478,11 @@ function OrderModal({
               </label>
               <label>
                 {t("Nomor resi", "Tracking number")}
+                {o.shippingMeta && (
+                  <small style={{ display: "block", color: "var(--muted, #888)", marginBottom: "4px" }}>
+                    {o.shippingMeta.courierName} · {o.shippingMeta.serviceName}
+                  </small>
+                )}
                 <input
                   value={tracking}
                   onChange={(e) => setTracking(e.target.value)}
@@ -4369,8 +4387,96 @@ function CouponsPanel() {
     </div>
   );
 }
+const ALLOWED_SHIPPING_COURIERS = [
+  "jne",
+  "jnt",
+  "sicepat",
+  "anteraja",
+  "pos",
+  "tiki",
+  "gosend",
+  "grab",
+] as const;
+
+const SHIPPING_COURIER_OPTIONS: { code: string; label: string; note: string }[] = [
+  { code: "jne", label: "JNE", note: "Reguler, YES, OKE" },
+  { code: "jnt", label: "J&T Express", note: "EZ, J&T Super" },
+  { code: "sicepat", label: "SiCepat", note: "SIUNTUNG, BEST" },
+  { code: "anteraja", label: "AnterAja", note: "Reguler, Next Day" },
+  { code: "pos", label: "Pos Indonesia", note: "Pos Reguler, Kilat Khusus" },
+  { code: "tiki", label: "TIKI", note: "REG, ONS" },
+  { code: "gosend", label: "GoSend Instant", note: "Instant On-Demand" },
+  { code: "grab", label: "GrabExpress", note: "Instant / Same Day" },
+];
+
+const DEFAULT_SHIPPING_SETTINGS = {
+  originName: "UMC Kampus 2 Watubelah (Cirebon)",
+  originAddress: "Jl. Fatahillah No. 40, Watubelah, Sumber",
+  originCity: "Kabupaten Cirebon",
+  originProvince: "Jawa Barat",
+  originPostalCode: "45611",
+  originLat: -6.7385,
+  originLon: 108.4975,
+  defaultWeightGrams: 1000,
+  freeAbove: 2000000,
+  enabledCouriers: [
+    "jne",
+    "jnt",
+    "sicepat",
+    "anteraja",
+    "pos",
+    "tiki",
+    "gosend",
+    "grab",
+  ],
+};
+
 function SettingsPanel() {
   const { db, setDb, t, notify, serverMode, logout } = useStore();
+  const liveRatesActive = Boolean(db.paymentConfig?.shipping?.liveRatesEnabled);
+  const shippingConfig = {
+    originName:
+      db.settings?.shipping?.originName ||
+      db.paymentConfig?.shipping?.originName ||
+      DEFAULT_SHIPPING_SETTINGS.originName,
+    originAddress:
+      db.settings?.shipping?.originAddress ||
+      db.paymentConfig?.shipping?.originAddress ||
+      DEFAULT_SHIPPING_SETTINGS.originAddress,
+    originCity:
+      db.settings?.shipping?.originCity ||
+      db.paymentConfig?.shipping?.originCity ||
+      DEFAULT_SHIPPING_SETTINGS.originCity,
+    originProvince:
+      db.settings?.shipping?.originProvince ||
+      db.paymentConfig?.shipping?.originProvince ||
+      DEFAULT_SHIPPING_SETTINGS.originProvince,
+    originPostalCode:
+      db.settings?.shipping?.originPostalCode ||
+      db.paymentConfig?.shipping?.originPostalCode ||
+      DEFAULT_SHIPPING_SETTINGS.originPostalCode,
+    originLat:
+      db.settings?.shipping?.originLat ??
+      db.paymentConfig?.shipping?.originLat ??
+      DEFAULT_SHIPPING_SETTINGS.originLat,
+    originLon:
+      db.settings?.shipping?.originLon ??
+      db.paymentConfig?.shipping?.originLon ??
+      DEFAULT_SHIPPING_SETTINGS.originLon,
+    defaultWeightGrams:
+      db.settings?.shipping?.defaultWeightGrams ??
+      db.paymentConfig?.shipping?.defaultWeightGrams ??
+      DEFAULT_SHIPPING_SETTINGS.defaultWeightGrams,
+    freeAbove:
+      db.settings?.shipping?.freeAbove ??
+      db.paymentConfig?.shipping?.freeAbove ??
+      DEFAULT_SHIPPING_SETTINGS.freeAbove,
+    enabledCouriers:
+      db.settings?.shipping?.enabledCouriers ||
+      db.paymentConfig?.shipping?.enabledCouriers ||
+      DEFAULT_SHIPPING_SETTINGS.enabledCouriers,
+  };
+
   return (
     <div className="panel padded settings-panel">
       <span className="eyebrow">STORE IDENTITY</span>
@@ -4382,6 +4488,69 @@ function SettingsPanel() {
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
+
+          const selectedCouriers = f
+            .getAll("enabledCouriers")
+            .map(String)
+            .filter((c) => ALLOWED_SHIPPING_COURIERS.includes(c as any));
+
+          if (selectedCouriers.length === 0) {
+            notify(
+              "Pilih minimal satu kurir ekspedisi aktif",
+              "Please select at least one active courier",
+            );
+            return;
+          }
+
+          const rawFreeAbove = f.get("freeAbove");
+          const parsedFreeAbove =
+            rawFreeAbove !== null && String(rawFreeAbove).trim() !== ""
+              ? Number(rawFreeAbove)
+              : NaN;
+          const freeAbove =
+            Number.isFinite(parsedFreeAbove) && parsedFreeAbove >= 0
+              ? Math.min(100000000, Math.round(parsedFreeAbove))
+              : shippingConfig.freeAbove;
+
+          const rawWeight = f.get("defaultWeightGrams");
+          const parsedWeight = Number(rawWeight);
+          const defaultWeightGrams =
+            Number.isFinite(parsedWeight) && parsedWeight >= 100
+              ? Math.min(50000, Math.max(100, Math.round(parsedWeight)))
+              : shippingConfig.defaultWeightGrams;
+
+          const rawPostal = String(f.get("originPostalCode") || "")
+            .trim()
+            .slice(0, 5);
+          const originPostalCode =
+            /^[0-9]{5}$/.test(rawPostal)
+              ? rawPostal
+              : shippingConfig.originPostalCode;
+
+          const rawLat = Number(f.get("originLat"));
+          const rawLon = Number(f.get("originLon"));
+          const originLat =
+            Number.isFinite(rawLat) && rawLat >= -90 && rawLat <= 90
+              ? rawLat
+              : shippingConfig.originLat;
+          const originLon =
+            Number.isFinite(rawLon) && rawLon >= -180 && rawLon <= 180
+              ? rawLon
+              : shippingConfig.originLon;
+
+          const originName =
+            String(f.get("originName") || "").trim().slice(0, 120) ||
+            shippingConfig.originName;
+          const originAddress =
+            String(f.get("originAddress") || "").trim().slice(0, 240) ||
+            shippingConfig.originAddress;
+          const originCity =
+            String(f.get("originCity") || "").trim().slice(0, 100) ||
+            shippingConfig.originCity;
+          const originProvince =
+            String(f.get("originProvince") || "").trim().slice(0, 100) ||
+            shippingConfig.originProvince;
+
           setDb((d) => ({
             ...d,
             settings: {
@@ -4393,6 +4562,18 @@ function SettingsPanel() {
               name: String(f.get("name")),
               email: String(f.get("email")),
               announcement: d.settings.announcement,
+              shipping: {
+                originName,
+                originAddress,
+                originCity,
+                originProvince,
+                originPostalCode,
+                originLat,
+                originLon,
+                defaultWeightGrams,
+                freeAbove,
+                enabledCouriers: selectedCouriers,
+              },
             },
           }));
           notify("Pengaturan tersimpan", "Settings saved");
@@ -4418,6 +4599,169 @@ function SettingsPanel() {
             />
           </label>
         </div>
+        <fieldset className="shipping-settings">
+          <legend
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              width: "100%",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <span>
+              {t(
+                "Konfigurasi Pengiriman & Ekspedisi",
+                "Shipping & Expedition Configuration",
+              )}
+            </span>
+            <div
+              className={`shipping-connection-badge ${liveRatesActive ? "is-live" : "is-demo"}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 12px",
+                borderRadius: "999px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background: liveRatesActive
+                  ? "rgba(16, 185, 129, 0.12)"
+                  : "rgba(245, 158, 11, 0.12)",
+                color: liveRatesActive ? "#047857" : "#b45309",
+                border: liveRatesActive
+                  ? "1px solid rgba(16, 185, 129, 0.3)"
+                  : "1px solid rgba(245, 158, 11, 0.3)",
+              }}
+            >
+              <span
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  background: liveRatesActive ? "#10b981" : "#f59e0b",
+                  display: "inline-block",
+                }}
+              />
+              {liveRatesActive
+                ? "Ongkir Live Biteship Terhubung"
+                : "Mode Demo Estimasi Zona Cirebon"}
+            </div>
+          </legend>
+          <p>
+            {t(
+              "Konfigurasi titik asal pengiriman pesanan, bobot acuan produk, batas gratis ongkir, serta ekspedisi aktif.",
+              "Configure shipment origin address, fallback package weight, free delivery threshold, and active courier options.",
+            )}
+          </p>
+
+          <input type="hidden" name="originLat" value={shippingConfig.originLat} />
+          <input type="hidden" name="originLon" value={shippingConfig.originLon} />
+
+          <div className="form-grid">
+            <label>
+              {t("Nama lokasi / gudang asal", "Origin location / warehouse name")}
+              <input
+                name="originName"
+                maxLength={120}
+                required
+                defaultValue={shippingConfig.originName}
+              />
+            </label>
+            <label>
+              {t("Kode pos asal (5 digit)", "Origin postal code (5 digits)")}
+              <input
+                name="originPostalCode"
+                required
+                maxLength={5}
+                pattern="[0-9]{5}"
+                defaultValue={shippingConfig.originPostalCode}
+              />
+            </label>
+          </div>
+
+          <label>
+            {t("Alamat lengkap asal", "Origin street address")}
+            <input
+              name="originAddress"
+              maxLength={240}
+              required
+              defaultValue={shippingConfig.originAddress}
+            />
+          </label>
+
+          <div className="form-grid">
+            <label>
+              {t("Kota / Kabupaten asal", "Origin city / regency")}
+              <input
+                name="originCity"
+                maxLength={100}
+                required
+                defaultValue={shippingConfig.originCity}
+              />
+            </label>
+            <label>
+              {t("Provinsi asal", "Origin province")}
+              <input
+                name="originProvince"
+                maxLength={100}
+                required
+                defaultValue={shippingConfig.originProvince}
+              />
+            </label>
+          </div>
+
+          <div className="form-grid">
+            <label>
+              {t("Bobot standar produk (gram)", "Standard product weight (grams)")}
+              <input
+                type="number"
+                name="defaultWeightGrams"
+                min={100}
+                max={50000}
+                required
+                defaultValue={shippingConfig.defaultWeightGrams}
+              />
+            </label>
+            <label>
+              {t(
+                "Ambang batas gratis ongkir (IDR, isi 0 untuk menonaktifkan gratis ongkir)",
+                "Free shipping threshold (IDR, set 0 to disable)",
+              )}
+              <input
+                type="number"
+                name="freeAbove"
+                min={0}
+                max={100000000}
+                required
+                defaultValue={shippingConfig.freeAbove}
+              />
+            </label>
+          </div>
+
+          <div style={{ marginTop: "16px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+              {t("Ekspedisi kurir aktif (minimal 1 dipilih)", "Enabled couriers (at least 1 required)")}
+            </span>
+            <div className="shipping-courier-grid">
+              {SHIPPING_COURIER_OPTIONS.map((c) => (
+                <label key={c.code} className="shipping-courier-option">
+                  <input
+                    type="checkbox"
+                    name="enabledCouriers"
+                    value={c.code}
+                    defaultChecked={shippingConfig.enabledCouriers.includes(c.code)}
+                  />
+                  <span>
+                    <strong>{c.label}</strong>
+                    <small>{c.note}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </fieldset>
         <fieldset className="homepage-settings">
           <legend>
             {t("Produk showcase beranda", "Homepage showcase products")}
