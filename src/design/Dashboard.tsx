@@ -2416,7 +2416,7 @@ function OrderModal({
                     {o.shippingMeta.courierName} · {o.shippingMeta.serviceName}
                     {o.shippingMeta.duration ? ` · ${o.shippingMeta.duration}` : ""}
                     {" "}
-                    <small style={{ color: "var(--muted, #666)" }}>
+                    <small>
                       ({o.shippingMeta.freeApplied ? t("Gratis Ongkir", "Free Shipping") : money(o.shipping, o.currency || "USD")})
                     </small>
                   </p>
@@ -4519,13 +4519,15 @@ function SettingsPanel() {
               ? Math.min(50000, Math.max(100, Math.round(parsedWeight)))
               : shippingConfig.defaultWeightGrams;
 
-          const rawPostal = String(f.get("originPostalCode") || "")
-            .trim()
-            .slice(0, 5);
-          const originPostalCode =
-            /^[0-9]{5}$/.test(rawPostal)
-              ? rawPostal
-              : shippingConfig.originPostalCode;
+          const rawPostal = String(f.get("originPostalCode") || "").trim();
+          if (!/^\d{5}$/.test(rawPostal)) {
+            notify(
+              "Kode pos asal harus 5 digit angka",
+              "Origin postal code must be exactly 5 digits",
+            );
+            return;
+          }
+          const originPostalCode = rawPostal;
 
           const rawLat = Number(f.get("originLat"));
           const rawLon = Number(f.get("originLon"));
@@ -4599,17 +4601,11 @@ function SettingsPanel() {
             />
           </label>
         </div>
-        <fieldset className="shipping-settings">
-          <legend
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              width: "100%",
-              gap: "10px",
-              flexWrap: "wrap",
-            }}
-          >
+        <fieldset
+          className="shipping-settings"
+          key={JSON.stringify(shippingConfig)}
+        >
+          <legend>
             <span>
               {t(
                 "Konfigurasi Pengiriman & Ekspedisi",
@@ -4618,32 +4614,8 @@ function SettingsPanel() {
             </span>
             <div
               className={`shipping-connection-badge ${liveRatesActive ? "is-live" : "is-demo"}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "4px 12px",
-                borderRadius: "999px",
-                fontSize: "12px",
-                fontWeight: 600,
-                background: liveRatesActive
-                  ? "rgba(16, 185, 129, 0.12)"
-                  : "rgba(245, 158, 11, 0.12)",
-                color: liveRatesActive ? "#047857" : "#b45309",
-                border: liveRatesActive
-                  ? "1px solid rgba(16, 185, 129, 0.3)"
-                  : "1px solid rgba(245, 158, 11, 0.3)",
-              }}
             >
-              <span
-                style={{
-                  width: "8px",
-                  height: "8px",
-                  borderRadius: "50%",
-                  background: liveRatesActive ? "#10b981" : "#f59e0b",
-                  display: "inline-block",
-                }}
-              />
+              <span className="shipping-connection-dot" />
               {liveRatesActive
                 ? "Ongkir Live Biteship Terhubung"
                 : "Mode Demo Estimasi Zona Cirebon"}
