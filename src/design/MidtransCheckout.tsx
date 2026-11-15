@@ -17,7 +17,15 @@ import {
 } from "./Shopping";
 import { MidtransGatewayBadge } from "./PaymentLogos";
 import { TurnstileWidget } from "./TurnstileWidget";
-import { CourierOptionPicker } from "./CourierPicker";
+import { CourierSubPage, CourierSummaryCard } from "./CourierPicker";
+import { AddressSubPage, AddressSummaryCard } from "./CheckoutSubpages";
+import {
+  buildAddressFromDraft,
+  formatShortAddress,
+  isAddressComplete,
+  useShippingRates,
+  type CheckoutAddressDraft,
+} from "./useShippingRates";
 
 type Quote = {
   subtotal: number;
@@ -27,12 +35,13 @@ type Quote = {
 };
 
 export function MidtransCheckout({ onDone }: { onDone: () => void }) {
-  const { db, member, t, money, checkout, refresh, notify, activePromotions } =
+  const { db, member, saveMember, t, money, checkout, refresh, notify, activePromotions } =
     useStore();
   const [promoInput, setPromoInput] = useState("");
   const [code, setCode] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<string>("qris");
   const [checkingRemote, setCheckingRemote] = useState(false);
+  const [checkoutView, setCheckoutView] = useState<"main" | "address" | "courier">("main");
   const [addressId, setAddressId] = useState(
     () => member?.addresses[0]?.id || "new",
   );
@@ -40,7 +49,18 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
     useState<ShippingRateOption | null>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [shippingRefreshKey, setShippingRefreshKey] = useState(0);
-  const [newDestination, setNewDestination] = useState<Partial<Address>>({});
+  const [draftAddress, setDraftAddress] = useState<CheckoutAddressDraft>(() => ({
+    label: "Utama",
+    name: member?.name || "",
+    phone: member?.phone || "",
+    street: "",
+    city: "",
+    province: "",
+    postal: "",
+    areaId: "",
+    areaName: "",
+  }));
+  const [addressNotice, setAddressNotice] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [error, setError] = useState("");
@@ -50,13 +70,32 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
   const key = useRef(crypto.randomUUID());
   const submitting = useRef(false);
+  const shellRef = useRef<HTMLDivElement>(null);
   const savedAddress = member?.addresses.find((a) => a.id === addressId);
   const activeDestination: Partial<Address> =
-    addressId !== "new" && savedAddress ? savedAddress : newDestination;
+    addressId !== "new" && savedAddress ? savedAddress : draftAddress;
   const totalItems = db.bag.reduce((sum, line) => sum + line.quantity, 0);
   const turnstileSiteKey = db.paymentConfig?.turnstileSiteKey || "";
   const selectedChannelInfo =
     PAYMENT_CHANNELS.find((c) => c.id === selectedChannel) || PAYMENT_CHANNELS[0];
+
+  const switchView = (next: "main" | "address" | "courier") => {
+    setCheckoutView(next);
+    requestAnimationFrame(() => {
+      shellRef.current?.closest(".modal-inner")?.scrollTo({ top: 0, behavior: "auto" });
+    });
+  };
+
+  const rates = useShippingRates({
+    enabled: !order,
+    lines: db.bag,
+    destination: activeDestination,
+    selected: selectedShipping,
+    onSelect: setSelectedShipping,
+    refreshKey: shippingRefreshKey,
+    onRatesLoading: setRatesLoading,
+  });
+  const isRatesBusy = rates.loading || ratesLoading;
 
   const autoRefreshCountRef = useRef(0);
   const destPostal = (activeDestination.postal || "").trim();
@@ -77,7 +116,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     if (order) return;
-    if (ratesLoading || !selectedShipping?.rateToken) return;
+    if (isRatesBusy || !selectedShipping?.rateToken) return;
     if (!db.bag.length) {
       return;
     }
@@ -117,7 +156,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
     rateToken,
     destPostal,
     order,
-    ratesLoading,
+    isRatesBusy,
     selectedShipping,
   ]);
 
@@ -187,159 +226,168 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   };
 
   const activeError = error || quoteError;
+  const destinationLabel =
+    formatShortAddress(activeDestination) ||
+    [activeDestination.city, activeDestination.postal]
+      .filter(Boolean)
+      .join(" ");
+
+  const handleApplyNewAddress = (
+    nextDraft: CheckoutAddressDraft,
+    saveToAccount: boolean,
+  ) => {
+    setAddressNotice("");
+    if (saveToAccount && member) {
+      const saved = buildAddressFromDraft(
+        nextDraft,
+        member.name,
+        member.phone,
+      );
+      saveMember({ ...member, addresses: [...member.addresses, saved] }, true);
+      setAddressId(saved.id);
+    } else {
+      setDraftAddress(nextDraft);
+      setAddressId("new");
+    }
+    switchView("main");
+  };
 
   return (
-    <form
-      className="checkout-grid"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!quote || quoteError || submitting.current || ratesLoading || !selectedShipping) return;
-        if (turnstileSiteKey && !turnstileToken) {
-          setError(
-            t(
-              "Selesaikan centang keamanan Cloudflare sebelum membuat pesanan.",
-              "Complete the Cloudflare security check before placing your order.",
-            ),
-          );
-          return;
-        }
-        submitting.current = true;
-        setBusy(true);
-        setError("");
-        try {
-          const f = new FormData(e.currentTarget);
-          const rawLat = f.get("lat");
-          const rawLon = f.get("lon");
-          const lat =
-            rawLat && Number.isFinite(Number(rawLat))
-              ? Number(rawLat)
-              : undefined;
-          const lon =
-            rawLon && Number.isFinite(Number(rawLon))
-              ? Number(rawLon)
-              : undefined;
-          const province =
-            String(f.get("province") || "").trim() || undefined;
-          const areaId =
-            String(f.get("areaId") || "").trim() || undefined;
-          const areaName =
-            String(f.get("areaName") || "").trim() || undefined;
-          const address: Address = savedAddress || {
-            id: crypto.randomUUID(),
-            label: "Shipping",
-            name: String(f.get("name")),
-            phone: String(f.get("phone")),
-            street: String(f.get("street")),
-            city: String(f.get("city")),
-            postal: String(f.get("postal")),
-            ...(province ? { province } : {}),
-            ...(areaId ? { areaId } : {}),
-            ...(areaName ? { areaName } : {}),
-            ...(lat !== undefined ? { lat } : {}),
-            ...(lon !== undefined ? { lon } : {}),
-          };
-          setOrder(
-            await checkout(
-              address,
-              code,
-              false,
-              key.current,
-              quote.total,
-              selectedChannel,
-              turnstileToken || undefined,
-              selectedShipping ? { rateToken: selectedShipping.rateToken } : undefined,
-            ),
-          );
-        } catch (err) {
-          const msg = (err as Error).message || "Checkout failed";
-          setError(msg);
-          if (isStaleShippingError(err)) {
-            setSelectedShipping(null);
-            setShippingRefreshKey((k) => k + 1);
-            notify(
-              "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
-              "Shipping rates expired. Refreshing shipping rates...",
-            );
-          }
-          setTurnstileToken("");
-          setTurnstileResetSignal((n) => n + 1);
-        } finally {
-          setBusy(false);
-          submitting.current = false;
-        }
-      }}
-    >
-      <div className="checkout-main">
-        <section className="checkout-step-card">
-          <div className="checkout-step-head">
-            <span className="checkout-step-num">01</span>
-            <div>
-              <h3>{t("Alamat Pengiriman", "Delivery Address")}</h3>
-              <p>
-                {t(
-                  "Pilih alamat tersimpan atau isi tujuan pengiriman baru.",
-                  "Choose a saved address or enter a new destination.",
-                )}
-              </p>
-            </div>
-          </div>
-          {member && member.addresses.length > 0 && (
-            <label className="field checkout-saved-select">
-              {t("Pilih alamat", "Select address")}
-              <select
-                value={addressId}
-                onChange={(e) => setAddressId(e.target.value)}
-              >
-                <option value="new">{t("Alamat baru", "New address")}</option>
-                {member.addresses.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label} — {a.street}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {savedAddress ? (
-            <div className="checkout-saved-address-preview">
-              <b>
-                {savedAddress.label} · {savedAddress.name}
-              </b>
-              <span>{savedAddress.phone}</span>
-              <p>
-                {savedAddress.street}, {savedAddress.city} {savedAddress.postal}
-              </p>
-            </div>
-          ) : (
+    <div ref={shellRef} className="checkout-view-host">
+      {checkoutView === "address" ? (
+        <AddressSubPage
+          savedAddresses={member?.addresses || []}
+          selectedAddressId={addressId}
+          draftAddress={draftAddress}
+          defaultName={member?.name || ""}
+          defaultPhone={member?.phone || ""}
+          validationNotice={addressNotice}
+          canSaveToAccount={Boolean(member)}
+          onSelectSaved={(id) => {
+            setAddressNotice("");
+            setAddressId(id);
+            switchView("main");
+          }}
+          onApplyNewAddress={handleApplyNewAddress}
+          onBack={() => switchView("main")}
+          renderAddressFields={(initial, fieldKey) => (
             <AddressFields
-              name={member?.name}
-              phone={member?.phone}
-              onDestinationChange={setNewDestination}
+              key={fieldKey}
+              name={initial.name || member?.name}
+              phone={initial.phone || member?.phone}
+              initialAddress={initial}
             />
           )}
-        </section>
+        />
+      ) : checkoutView === "courier" ? (
+        <CourierSubPage
+          rates={rates}
+          selected={selectedShipping}
+          destinationLabel={destinationLabel}
+          onSelect={setSelectedShipping}
+          onConfirm={() => switchView("main")}
+          onBack={() => switchView("main")}
+          onEditAddress={() => switchView("address")}
+        />
+      ) : (
+        <form
+          className="checkout-grid"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!isAddressComplete(activeDestination)) {
+              setAddressNotice(
+                t(
+                  "Lengkapi alamat pengiriman terlebih dahulu.",
+                  "Please complete your delivery address first.",
+                ),
+              );
+              switchView("address");
+              return;
+            }
+            if (!quote || quoteError || submitting.current || isRatesBusy || !selectedShipping) return;
+            if (turnstileSiteKey && !turnstileToken) {
+              setError(
+                t(
+                  "Selesaikan centang keamanan Cloudflare sebelum membuat pesanan.",
+                  "Complete the Cloudflare security check before placing your order.",
+                ),
+              );
+              return;
+            }
+            submitting.current = true;
+            setBusy(true);
+            setError("");
+            try {
+              const address: Address =
+                savedAddress ||
+                buildAddressFromDraft(
+                  draftAddress,
+                  member?.name || "",
+                  member?.phone || "",
+                );
+              setOrder(
+                await checkout(
+                  address,
+                  code,
+                  false,
+                  key.current,
+                  quote.total,
+                  selectedChannel,
+                  turnstileToken || undefined,
+                  selectedShipping ? { rateToken: selectedShipping.rateToken } : undefined,
+                ),
+              );
+            } catch (err) {
+              const msg = (err as Error).message || "Checkout failed";
+              setError(msg);
+              if (isStaleShippingError(err)) {
+                setSelectedShipping(null);
+                setShippingRefreshKey((k) => k + 1);
+                notify(
+                  "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
+                  "Shipping rates expired. Refreshing shipping rates...",
+                );
+              }
+              setTurnstileToken("");
+              setTurnstileResetSignal((n) => n + 1);
+            } finally {
+              setBusy(false);
+              submitting.current = false;
+            }
+          }}
+        >
+          <div className="checkout-main">
+            <section className="checkout-step-card checkout-step-card--compact">
+              <div className="checkout-step-head">
+                <span className="checkout-step-num">01</span>
+                <div>
+                  <h3>{t("Alamat Pengiriman", "Delivery Address")}</h3>
+                </div>
+              </div>
+              <AddressSummaryCard
+                address={activeDestination}
+                isSaved={Boolean(savedAddress)}
+                onOpen={() => {
+                  setAddressNotice("");
+                  switchView("address");
+                }}
+                notice={addressNotice}
+              />
+            </section>
 
-        <section className="checkout-step-card">
-          <div className="checkout-step-head">
-            <span className="checkout-step-num">02</span>
-            <div>
-              <h3>{t("Opsi Pengiriman", "Shipping Option")}</h3>
-              <p>
-                {t(
-                  "Pilihan kurir & estimasi pengiriman real-time ke alamat tujuan.",
-                  "Real-time courier options & delivery estimates to your destination.",
-                )}
-              </p>
-            </div>
-          </div>
-          <CourierOptionPicker
-            lines={db.bag}
-            destination={activeDestination}
-            selected={selectedShipping}
-            onSelect={setSelectedShipping}
-            refreshKey={shippingRefreshKey}
-            onRatesLoading={setRatesLoading}
-          />
-        </section>
+            <section className="checkout-step-card checkout-step-card--compact">
+              <div className="checkout-step-head">
+                <span className="checkout-step-num">02</span>
+                <div>
+                  <h3>{t("Opsi Pengiriman", "Shipping Option")}</h3>
+                </div>
+              </div>
+              <CourierSummaryCard
+                rates={rates}
+                selected={selectedShipping}
+                onOpen={() => switchView("courier")}
+              />
+            </section>
 
         <section className="checkout-step-card">
           <div className="checkout-step-head">
@@ -450,7 +498,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             <div>
               <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
               <span>
-                {ratesLoading || !selectedShipping ? (
+                {isRatesBusy || !selectedShipping ? (
                   <small className="checkout-summary-courier-name">
                     {t("Menghitung ongkos kirim…", "Calculating shipping fee…")}
                   </small>
@@ -475,13 +523,13 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             <div className="grand-total">
               <b>{t("Total Pembayaran", "Total Payment")}</b>
               <b>
-                {ratesLoading || !selectedShipping
+                {isRatesBusy || !selectedShipping
                   ? money(quote.subtotal - (quote.discount || 0), "IDR")
                   : money(quote.total, "IDR")}
               </b>
             </div>
           </div>
-        ) : ratesLoading || !selectedShipping ? (
+        ) : isRatesBusy || !selectedShipping ? (
           <div className="order-totals">
             <div>
               <span>Subtotal</span>
@@ -538,11 +586,11 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
         )}
         <button
           className="button dark full checkout-submit-btn"
-          disabled={!quote || Boolean(quoteError) || busy || ratesLoading || !selectedShipping}
+          disabled={!quote || Boolean(quoteError) || busy || isRatesBusy || !selectedShipping}
           type="submit"
         >
           <span>
-            {ratesLoading
+            {isRatesBusy
               ? t("Memuat tarif kurir…", "Loading courier rates…")
               : !selectedShipping
                 ? t("Pilih kurir pengiriman", "Select courier option")
@@ -550,7 +598,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
                   ? t("Membuat Pesanan…", "Placing Order…")
                   : t("Buat Pesanan & Bayar", "Place Order & Pay")}
           </span>
-          {!busy && !ratesLoading && selectedShipping && <ArrowRight size={16} />}
+          {!busy && !isRatesBusy && selectedShipping && <ArrowRight size={16} />}
         </button>
         <div className="checkout-security-footnote">
           <ShieldCheck size={13} aria-hidden="true" />
@@ -567,6 +615,8 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           </span>
         </div>
       </aside>
-    </form>
+        </form>
+      )}
+    </div>
   );
 }

@@ -13967,6 +13967,14 @@ button.editorial-divider:hover {
   min-width: 0;
 }
 
+@media (min-width: 860px) {
+  .modal:has(.checkout-grid) .checkout-grid > .checkout-summary {
+    position: sticky;
+    top: 72px;
+    align-self: start;
+  }
+}
+
 .checkout-summary-head {
   display: flex;
   align-items: center;
@@ -19815,6 +19823,10 @@ body:has(.member-landing) {
   box-shadow: 0 4px 12px rgba(43, 29, 20, 0.08) !important;
 }
 
+.checkout-grid .delivery-option.courier-option-card span {
+  flex: 0 0 auto;
+}
+
 .courier-option-info {
   display: flex;
   flex-direction: column;
@@ -19852,6 +19864,7 @@ body:has(.member-landing) {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  flex: 0 1 auto !important;
 }
 
 .courier-option-duration {
@@ -19908,6 +19921,17 @@ body:has(.member-landing) {
 .address-area-autocomplete-box {
   position: relative;
   width: 100%;
+}
+
+.address-area-input-row {
+  width: 100%;
+}
+
+.address-area-input-row input {
+  flex: 1 1 0%;
+  min-width: 0;
+  width: 100% !important;
+  box-sizing: border-box;
 }
 
 .address-area-results,
@@ -19989,5 +20013,699 @@ body:has(.member-landing) {
 
   .courier-option-price {
     font-size: 12px;
+  }
+}
+
+/* ==========================================================================
+   SHOPEE-STYLE COMPACT CHECKOUT CARDS & SUB-PAGE NAVIGATION
+   ========================================================================== */
+
+@keyframes shopeeSubpageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.checkout-view-host {
+  min-width: 0;
+  width: 100%;
+}
+
+.modal:has(.checkout-grid) .checkout-grid.checkout-subpage-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 12px !important;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) !important;
+  animation: shopeeSubpageEnter 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal:has(.checkout-grid) .checkout-grid.checkout-subpage-grid {
+    animation: none;
+  }
+}
+
+.checkout-step-card--compact .checkout-step-head {
+  align-items: center;
+  margin-bottom: 9px !important;
+}
+
+.shopee-summary-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.shopee-summary-card {
+  position: relative;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  text-align: left;
+  padding: 12px 13px;
+  border-radius: 13px;
+  background: #fffdfa;
+  border: 1px solid rgba(92, 68, 52, 0.18);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.shopee-summary-card:hover {
+  border-color: #2b1d14;
+  box-shadow: 0 6px 16px rgba(43, 29, 20, 0.08);
+}
+
+.shopee-summary-card.is-empty {
+  border-style: dashed;
+  border-color: rgba(140, 98, 57, 0.45);
+  background: linear-gradient(180deg, #fffdf9 0%, #faf3ea 100%);
+}
+
+.shopee-address-ribbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(
+    135deg,
+    #2b1d14 0 11px,
+    transparent 11px 16px,
+    #b0885a 16px 27px,
+    transparent 27px 32px
+  );
+  opacity: 0.72;
+}
+
+.shopee-summary-icon-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #f4ece1;
+  color: #2b1d14;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.shopee-summary-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.shopee-summary-top-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shopee-summary-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #23170f;
+}
+
+.shopee-addr-label-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #2b1d14;
+  color: #fcfaf7;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.25px;
+  flex-shrink: 0;
+}
+
+.shopee-addr-phone {
+  font-size: 11.5px;
+  color: #6e5a4b;
+  font-weight: 500;
+}
+
+.shopee-summary-sub-row {
+  font-size: 12px;
+  color: #5c493b;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.shopee-summary-sub-row.is-multiline span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.shopee-addr-pins-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.shopee-mini-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f4ece1;
+  color: #4d392a;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.shopee-summary-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.shopee-summary-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f5ede2;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #5c3c24;
+  white-space: nowrap;
+}
+
+.shopee-courier-meta-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: #6e5a4b;
+  padding: 0 2px;
+}
+
+.shopee-courier-origin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.shopee-tier-inline-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #2b1d14;
+  color: #fcfaf7;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.shopee-courier-skeleton {
+  width: 100%;
+}
+
+.shopee-inline-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: #a42c1e;
+  font-weight: 600;
+}
+
+.shopee-subpage-topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #fffdf9 0%, #f7efe5 100%);
+  border: 1px solid rgba(92, 68, 52, 0.15);
+}
+
+.shopee-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(92, 68, 52, 0.22);
+  color: #2b1d14;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.shopee-back-btn:hover {
+  background: #f5ede2;
+  border-color: #2b1d14;
+}
+
+.shopee-subpage-title {
+  min-width: 0;
+}
+
+.shopee-subpage-title h3 {
+  margin: 0 !important;
+  font-family: "Cormorant Garamond", Georgia, serif !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #23170f !important;
+  line-height: 1.15 !important;
+}
+
+.shopee-subpage-title small {
+  display: block;
+  font-size: 11px;
+  color: #6e5a4b;
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+.shopee-subpage-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #fff4f2;
+  border: 1px solid #f2cfca;
+  color: #a42c1e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.shopee-courier-route-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: #f8f2ea;
+  border: 1px solid rgba(92, 68, 52, 0.14);
+  font-size: 11.5px;
+  color: #3b2a1f;
+}
+
+.shopee-route-line,
+.shopee-route-dest {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.shopee-route-dest-text {
+  word-break: break-word;
+}
+
+.shopee-inline-link-btn {
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  color: #7a4e2a;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.shopee-tier-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shopee-tier-card {
+  background: #fffdfa;
+  border: 1px solid rgba(92, 68, 52, 0.15);
+  border-radius: 15px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 14px rgba(34, 23, 16, 0.03);
+}
+
+.shopee-tier-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(92, 68, 52, 0.16);
+}
+
+.shopee-tier-title-wrap {
+  min-width: 0;
+}
+
+.shopee-tier-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shopee-tier-title-row h4 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #23170f;
+}
+
+.shopee-tier-pop-pill {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #efe1d0;
+  color: #6b4423;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.shopee-tier-count {
+  font-size: 11px;
+  color: #8c7b6f;
+}
+
+.shopee-tier-title-wrap p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #6e5a4b;
+}
+
+.shopee-tier-min-price {
+  font-size: 11.5px;
+  color: #5c4434;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.shopee-tier-min-price b {
+  color: #23170f;
+  font-size: 12.5px;
+}
+
+.shopee-instant-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: #6e5a4b;
+  padding: 0 4px;
+}
+
+.shopee-saved-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shopee-section-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shopee-section-head-row h4 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #23170f;
+}
+
+.shopee-toggle-new-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+}
+
+.shopee-saved-list {
+  display: grid;
+  gap: 8px;
+}
+
+.shopee-saved-addr-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 12px 13px;
+  border-radius: 13px;
+  background: #fffdfa;
+  border: 1px solid rgba(92, 68, 52, 0.16);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.shopee-saved-addr-card:hover {
+  border-color: #2b1d14;
+}
+
+.shopee-saved-addr-card.selected {
+  border-color: #2b1d14;
+  background: linear-gradient(180deg, #fffdf9 0%, #f5ece0 100%);
+  box-shadow: 0 4px 12px rgba(43, 29, 20, 0.08);
+}
+
+.shopee-radio-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1.5px solid #8c7b6f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #ffffff;
+}
+
+.shopee-saved-addr-card.selected .shopee-radio-dot {
+  border-color: #2b1d14 !important;
+  background: #2b1d14 !important;
+  color: #ffffff !important;
+}
+
+.shopee-saved-addr-content {
+  min-width: 0;
+}
+
+.shopee-saved-addr-line {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #4d392a;
+  line-height: 1.4;
+}
+
+.shopee-saved-use-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b492f;
+  white-space: nowrap;
+}
+
+.shopee-address-form {
+  background: #fffdfa;
+  border: 1px solid rgba(92, 68, 52, 0.15);
+  border-radius: 15px;
+  padding: 14px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shopee-address-form-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shopee-address-form-head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #23170f;
+}
+
+.shopee-label-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shopee-label-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(92, 68, 52, 0.22);
+  background: #ffffff;
+  color: #4d392a;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.shopee-label-chip.active {
+  background: #2b1d14;
+  border-color: #2b1d14;
+  color: #fcfaf7;
+}
+
+.shopee-label-input {
+  min-height: 30px !important;
+  width: 136px;
+  max-width: 100%;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(92, 68, 52, 0.22) !important;
+  font-size: 11.5px !important;
+  background: #ffffff !important;
+  color: #23170f !important;
+}
+
+.shopee-subpage-footer {
+  position: sticky;
+  bottom: -2px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 11px 14px;
+  border-radius: 13px;
+  background: #fbf6ef;
+  border: 1px solid rgba(92, 68, 52, 0.18);
+  box-shadow: 0 -6px 20px rgba(34, 23, 16, 0.08);
+}
+
+.shopee-subpage-footer-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+  font-size: 12px;
+  color: #4d392a;
+}
+
+.shopee-subpage-footer-info b {
+  color: #23170f;
+}
+
+.shopee-footer-price {
+  color: #6b492f;
+}
+
+.shopee-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.shopee-confirm-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px !important;
+  padding: 8px 16px !important;
+}
+
+.shopee-save-addr-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #3b2a1f;
+  cursor: pointer;
+}
+
+.shopee-save-addr-check input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #2b1d14;
+}
+
+@media (max-width: 560px) {
+  .shopee-summary-card {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 9px;
+    padding: 10px 11px;
+  }
+
+  .shopee-summary-icon-badge {
+    width: 30px;
+    height: 30px;
+  }
+
+  .shopee-summary-trailing {
+    gap: 5px;
+  }
+
+  .shopee-subpage-topbar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px 10px;
+  }
+
+  .shopee-subpage-topbar .courier-source-pill {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .shopee-address-form {
+    padding: 11px 12px;
+  }
+
+  .shopee-tier-card {
+    padding: 10px 11px;
+  }
+
+  .shopee-subpage-footer {
+    padding: 10px 12px;
+  }
+
+  .shopee-footer-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }

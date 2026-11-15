@@ -1,7 +1,15 @@
 import { MidtransCheckout } from "./MidtransCheckout";
 import { api, serverMode } from "./backend";
 import { useState, useRef, useEffect } from "react";
-import { CourierOptionPicker } from "./CourierPicker";
+import { CourierSubPage, CourierSummaryCard } from "./CourierPicker";
+import { AddressSubPage, AddressSummaryCard } from "./CheckoutSubpages";
+import {
+  buildAddressFromDraft,
+  formatShortAddress,
+  isAddressComplete,
+  useShippingRates,
+  type CheckoutAddressDraft,
+} from "./useShippingRates";
 import confetti from "canvas-confetti";
 import {
   AlertCircle,
@@ -2968,6 +2976,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     money,
     priceText,
     member,
+    saveMember,
     checkout,
     notify,
     applyCoupon,
@@ -2980,6 +2989,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
   const [express, setExpress] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<string>("qris");
   const [finished, setFinished] = useState<Order | null>(null);
+  const [checkoutView, setCheckoutView] = useState<"main" | "address" | "courier">("main");
   const [addressId, setAddressId] = useState(
     () => member?.addresses[0]?.id || "new",
   );
@@ -2987,12 +2997,42 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     useState<ShippingRateOption | null>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [shippingRefreshKey, setShippingRefreshKey] = useState(0);
-  const [newDestination, setNewDestination] = useState<Partial<Address>>({});
+  const [draftAddress, setDraftAddress] = useState<CheckoutAddressDraft>(() => ({
+    label: "Utama",
+    name: member?.name || "",
+    phone: member?.phone || "",
+    street: "",
+    city: "",
+    province: "",
+    postal: "",
+    areaId: "",
+    areaName: "",
+  }));
+  const [addressNotice, setAddressNotice] = useState("");
   const busy = useRef(false);
+  const shellRef = useRef<HTMLDivElement>(null);
   const checkoutKey = useRef(crypto.randomUUID());
   const savedAddress = member?.addresses.find((a) => a.id === addressId);
   const activeDestination: Partial<Address> =
-    addressId !== "new" && savedAddress ? savedAddress : newDestination;
+    addressId !== "new" && savedAddress ? savedAddress : draftAddress;
+
+  const switchView = (next: "main" | "address" | "courier") => {
+    setCheckoutView(next);
+    requestAnimationFrame(() => {
+      shellRef.current?.closest(".modal-inner")?.scrollTo({ top: 0, behavior: "auto" });
+    });
+  };
+
+  const liveRates = useShippingRates({
+    enabled: isRealtime && !finished && Boolean(member),
+    lines: db.bag,
+    destination: activeDestination,
+    selected: selectedShipping,
+    onSelect: setSelectedShipping,
+    refreshKey: shippingRefreshKey,
+    onRatesLoading: setRatesLoading,
+  });
+  const isRatesBusy = liveRates.loading || ratesLoading;
 
   const [serverQuote, setServerQuote] = useState<{
     subtotal: number;
@@ -3020,7 +3060,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     if (!isRealtime || finished) return;
-    if (ratesLoading || !selectedShipping?.rateToken) return;
+    if (isRatesBusy || !selectedShipping?.rateToken) return;
     if (!db.bag.length) return;
     const lifecycle = new AbortController();
     const payload = {
@@ -3059,7 +3099,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     applied,
     rateToken,
     destPostal,
-    ratesLoading,
+    isRatesBusy,
     selectedShipping,
   ]);
 
@@ -3104,202 +3144,211 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
       notify((e as Error).message, (e as Error).message);
     }
   };
-  return (
-    <form
-      className="checkout-grid"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (busy.current) return;
-        if (isRealtime && (ratesLoading || !selectedShipping || !serverQuote || Boolean(quoteError))) return;
-        busy.current = true;
-        try {
-          const f = new FormData(e.currentTarget);
-          const rawLat = f.get("lat");
-          const rawLon = f.get("lon");
-          const lat =
-            rawLat && Number.isFinite(Number(rawLat))
-              ? Number(rawLat)
-              : undefined;
-          const lon =
-            rawLon && Number.isFinite(Number(rawLon))
-              ? Number(rawLon)
-              : undefined;
-          const province =
-            String(f.get("province") || "").trim() || undefined;
-          const areaId =
-            String(f.get("areaId") || "").trim() || undefined;
-          const areaName =
-            String(f.get("areaName") || "").trim() || undefined;
-          const address: Address = savedAddress || {
-            id: crypto.randomUUID(),
-            label: "Shipping",
-            name: String(f.get("name")),
-            phone: String(f.get("phone")),
-            street: String(f.get("street")),
-            city: String(f.get("city")),
-            postal: String(f.get("postal")),
-            ...(province ? { province } : {}),
-            ...(areaId ? { areaId } : {}),
-            ...(areaName ? { areaName } : {}),
-            ...(lat !== undefined ? { lat } : {}),
-            ...(lon !== undefined ? { lon } : {}),
-          };
-          const order = await checkout(
-            address,
-            applied,
-            isRealtime ? false : express,
-            checkoutKey.current,
-            isRealtime ? serverQuote?.total : undefined,
-            selectedChannel,
-            undefined,
-            isRealtime && selectedShipping ? { rateToken: selectedShipping.rateToken } : undefined,
-          );
-          setFinished(order);
-        } catch (err) {
-          if (isStaleShippingError(err)) {
-            setSelectedShipping(null);
-            setShippingRefreshKey((k) => k + 1);
-            notify(
-              "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
-              "Courier rates expired. Refreshing shipping rates...",
-            );
-          } else {
-            const msg = (err as Error).message;
-            notify(
-              msg ||
-                t(
-                  "Pesanan tidak dapat dibuat. Periksa stok dan tas.",
-                  "Unable to create order. Check your bag and stock.",
-                ),
-              msg || "Unable to create order. Check your bag and stock.",
-            );
-          }
-        } finally {
-          busy.current = false;
-        }
-      }}
-    >
-      <div className="checkout-main">
-        <section className="checkout-step-card">
-          <div className="checkout-step-head">
-            <span className="checkout-step-num">01</span>
-            <div>
-              <h3>{t("Alamat pengiriman", "Delivery address")}</h3>
-              <p>
-                {t(
-                  "Pilih alamat tersimpan atau isi tujuan pengiriman baru.",
-                  "Choose a saved address or enter a new destination.",
-                )}
-              </p>
-            </div>
-          </div>
-          {member.addresses.length > 0 && (
-            <label className="field checkout-saved-select">
-              {t("Pilih alamat", "Select address")}
-              <select
-                value={addressId}
-                onChange={(e) => setAddressId(e.target.value)}
-              >
-                <option value="new">{t("Alamat baru", "New address")}</option>
-                {member.addresses.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label} — {a.street}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {savedAddress ? (
-            <div className="checkout-saved-address-preview">
-              <b>
-                {savedAddress.label} · {savedAddress.name}
-              </b>
-              <span>{savedAddress.phone}</span>
-              <p>
-                {savedAddress.street}, {savedAddress.city} {savedAddress.postal}
-              </p>
-            </div>
-          ) : (
-            <AddressFields
-              name={member?.name}
-              phone={member?.phone}
-              onDestinationChange={isRealtime ? setNewDestination : undefined}
-            />
-          )}
-        </section>
+  const destinationLabel =
+    formatShortAddress(activeDestination) ||
+    [activeDestination.city, activeDestination.postal]
+      .filter(Boolean)
+      .join(" ");
 
-        <section className="checkout-step-card">
-          <div className="checkout-step-head">
-            <span className="checkout-step-num">02</span>
-            <div>
-              <h3>{t("Metode pengiriman", "Delivery method")}</h3>
-              <p>
-                {isRealtime
-                  ? t(
-                      "Pilihan kurir & estimasi pengiriman real-time ke alamat tujuan.",
-                      "Real-time courier options & delivery estimates to your destination.",
-                    )
-                  : t(
-                      "Setiap pasang dikemas dengan kotak atelier & dustbag beludru.",
-                      "Every pair is packed with an atelier box & velvet dustbag.",
-                    )}
-              </p>
-            </div>
-          </div>
-          {isRealtime ? (
-            <CourierOptionPicker
-              lines={db.bag}
-              destination={activeDestination}
-              selected={selectedShipping}
-              onSelect={setSelectedShipping}
-              refreshKey={shippingRefreshKey}
-              onRatesLoading={setRatesLoading}
+  const handleApplyNewAddress = (
+    nextDraft: CheckoutAddressDraft,
+    saveToAccount: boolean,
+  ) => {
+    setAddressNotice("");
+    if (saveToAccount && member) {
+      const saved = buildAddressFromDraft(
+        nextDraft,
+        member.name,
+        member.phone,
+      );
+      saveMember({ ...member, addresses: [...member.addresses, saved] }, true);
+      setAddressId(saved.id);
+    } else {
+      setDraftAddress(nextDraft);
+      setAddressId("new");
+    }
+    switchView("main");
+  };
+
+  return (
+    <div ref={shellRef} className="checkout-view-host">
+      {checkoutView === "address" ? (
+        <AddressSubPage
+          savedAddresses={member.addresses}
+          selectedAddressId={addressId}
+          draftAddress={draftAddress}
+          defaultName={member.name || ""}
+          defaultPhone={member.phone || ""}
+          validationNotice={addressNotice}
+          canSaveToAccount={true}
+          onSelectSaved={(id) => {
+            setAddressNotice("");
+            setAddressId(id);
+            switchView("main");
+          }}
+          onApplyNewAddress={handleApplyNewAddress}
+          onBack={() => switchView("main")}
+          renderAddressFields={(initial, fieldKey) => (
+            <AddressFields
+              key={fieldKey}
+              name={initial.name || member.name}
+              phone={initial.phone || member.phone}
+              initialAddress={initial}
             />
-          ) : (
-            <div className="delivery-options-list">
-              <label className={`delivery-option ${!express ? "selected" : ""}`}>
-                <input
-                  type="radio"
-                  name="delivery"
-                  checked={!express}
-                  onChange={() => setExpress(false)}
-                />
-                <span>
-                  <b>{t("Standar", "Standard")}</b>
-                  <small>
-                    {t(
-                      "Estimasi pengiriman: 3–5 hari kerja",
-                      "Estimated delivery: 3–5 business days",
-                    )}
-                  </small>
-                </span>
-                <strong>
-                  {sum.subtotal >= rates.freeAbove
-                    ? t("Gratis", "Free")
-                    : money(rates.standard)}
-                </strong>
-              </label>
-              <label className={`delivery-option ${express ? "selected" : ""}`}>
-                <input
-                  type="radio"
-                  name="delivery"
-                  checked={express}
-                  onChange={() => setExpress(true)}
-                />
-                <span>
-                  <b>{t("Ekspres", "Express")}</b>
-                  <small>
-                    {t(
-                      "Estimasi pengiriman: 1–2 hari kerja",
-                      "Estimated delivery: 1–2 business days",
-                    )}
-                  </small>
-                </span>
-                <strong>{money(rates.express)}</strong>
-              </label>
-            </div>
           )}
-        </section>
+        />
+      ) : checkoutView === "courier" && isRealtime ? (
+        <CourierSubPage
+          rates={liveRates}
+          selected={selectedShipping}
+          destinationLabel={destinationLabel}
+          onSelect={setSelectedShipping}
+          onConfirm={() => switchView("main")}
+          onBack={() => switchView("main")}
+          onEditAddress={() => switchView("address")}
+        />
+      ) : (
+        <form
+          className="checkout-grid"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!isAddressComplete(activeDestination)) {
+              setAddressNotice(
+                t(
+                  "Lengkapi alamat pengiriman terlebih dahulu.",
+                  "Please complete your delivery address first.",
+                ),
+              );
+              switchView("address");
+              return;
+            }
+            if (busy.current) return;
+            if (isRealtime && (isRatesBusy || !selectedShipping || !serverQuote || Boolean(quoteError))) return;
+            busy.current = true;
+            try {
+              const address: Address =
+                savedAddress ||
+                buildAddressFromDraft(
+                  draftAddress,
+                  member.name || "",
+                  member.phone || "",
+                );
+              const order = await checkout(
+                address,
+                applied,
+                isRealtime ? false : express,
+                checkoutKey.current,
+                isRealtime ? serverQuote?.total : undefined,
+                selectedChannel,
+                undefined,
+                isRealtime && selectedShipping ? { rateToken: selectedShipping.rateToken } : undefined,
+              );
+              setFinished(order);
+            } catch (err) {
+              if (isStaleShippingError(err)) {
+                setSelectedShipping(null);
+                setShippingRefreshKey((k) => k + 1);
+                notify(
+                  "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
+                  "Courier rates expired. Refreshing shipping rates...",
+                );
+              } else {
+                const msg = (err as Error).message;
+                notify(
+                  msg ||
+                    t(
+                      "Pesanan tidak dapat dibuat. Periksa stok dan tas.",
+                      "Unable to create order. Check your bag and stock.",
+                    ),
+                  msg || "Unable to create order. Check your bag and stock.",
+                );
+              }
+            } finally {
+              busy.current = false;
+            }
+          }}
+        >
+          <div className="checkout-main">
+            <section className="checkout-step-card checkout-step-card--compact">
+              <div className="checkout-step-head">
+                <span className="checkout-step-num">01</span>
+                <div>
+                  <h3>{t("Alamat pengiriman", "Delivery address")}</h3>
+                </div>
+              </div>
+              <AddressSummaryCard
+                address={activeDestination}
+                isSaved={Boolean(savedAddress)}
+                onOpen={() => {
+                  setAddressNotice("");
+                  switchView("address");
+                }}
+                notice={addressNotice}
+              />
+            </section>
+
+            <section className="checkout-step-card checkout-step-card--compact">
+              <div className="checkout-step-head">
+                <span className="checkout-step-num">02</span>
+                <div>
+                  <h3>
+                    {isRealtime
+                      ? t("Opsi Pengiriman", "Shipping Option")
+                      : t("Metode pengiriman", "Delivery method")}
+                  </h3>
+                </div>
+              </div>
+              {isRealtime ? (
+                <CourierSummaryCard
+                  rates={liveRates}
+                  selected={selectedShipping}
+                  onOpen={() => switchView("courier")}
+                />
+              ) : (
+                <div className="delivery-options-list">
+                  <label className={`delivery-option ${!express ? "selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name="delivery"
+                      checked={!express}
+                      onChange={() => setExpress(false)}
+                    />
+                    <span>
+                      <b>{t("Standar", "Standard")}</b>
+                      <small>
+                        {t(
+                          "Estimasi pengiriman: 3–5 hari kerja",
+                          "Estimated delivery: 3–5 business days",
+                        )}
+                      </small>
+                    </span>
+                    <strong>
+                      {sum.subtotal >= rates.freeAbove
+                        ? t("Gratis", "Free")
+                        : money(rates.standard)}
+                    </strong>
+                  </label>
+                  <label className={`delivery-option ${express ? "selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name="delivery"
+                      checked={express}
+                      onChange={() => setExpress(true)}
+                    />
+                    <span>
+                      <b>{t("Ekspres", "Express")}</b>
+                      <small>
+                        {t(
+                          "Estimasi pengiriman: 1–2 hari kerja",
+                          "Estimated delivery: 1–2 business days",
+                        )}
+                      </small>
+                    </span>
+                    <strong>{money(rates.express)}</strong>
+                  </label>
+                </div>
+              )}
+            </section>
 
         <section className="checkout-step-card">
           <div className="checkout-step-head">
@@ -3409,7 +3458,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             <div>
               <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
               <span>
-                {ratesLoading || !selectedShipping ? (
+                {isRatesBusy || !selectedShipping ? (
                   <small className="checkout-summary-courier-name">
                     {t("Menghitung ongkos kirim…", "Calculating shipping fee…")}
                   </small>
@@ -3430,7 +3479,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             <div className="grand-total">
               <b>Total IDR</b>
               <b>
-                {ratesLoading || !selectedShipping
+                {isRatesBusy || !selectedShipping
                   ? money(serverQuote.subtotal - (serverQuote.discount || 0), "IDR")
                   : money(serverQuote.total, "IDR")}
               </b>
@@ -3521,20 +3570,22 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           type="submit"
           disabled={
             !db.bag.length ||
-            (isRealtime && (ratesLoading || !selectedShipping || !serverQuote || Boolean(quoteError)))
+            (isRealtime && (isRatesBusy || !selectedShipping || !serverQuote || Boolean(quoteError)))
           }
         >
-          {isRealtime && ratesLoading
+          {isRealtime && isRatesBusy
             ? t("Memuat tarif kurir…", "Loading courier rates…")
             : isRealtime && !selectedShipping
               ? t("Pilih kurir pengiriman", "Select courier option")
               : t("Lanjutkan ke Pembayaran", "Proceed to Inline Payment")}
-          {(!isRealtime || (!ratesLoading && selectedShipping)) && (
+          {(!isRealtime || (!isRatesBusy && selectedShipping)) && (
             <ArrowRight size={16} />
           )}
         </button>
       </aside>
-    </form>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -4234,7 +4285,7 @@ export function AddressFields({
           <input
             name="name"
             required
-            defaultValue={address?.name || name}
+            defaultValue={base?.name || name}
             autoComplete="name"
           />
         </label>
@@ -4246,7 +4297,7 @@ export function AddressFields({
             inputMode="tel"
             required
             minLength={7}
-            defaultValue={address?.phone || phone}
+            defaultValue={base?.phone || phone}
             autoComplete="tel"
           />
         </label>
