@@ -199,6 +199,13 @@ test("Biteship client maps rates, gates instant couriers without coords, caches 
             duration: "1 hari",
             price: 22000,
           },
+          {
+            courier_code: "unknown_courier",
+            courier_name: "Rogue Carrier",
+            courier_service_code: "fast",
+            service_type: "standard",
+            price: 50000,
+          },
           ...(String(body?.couriers || "").includes("gosend")
             ? [
                 {
@@ -230,6 +237,7 @@ test("Biteship client maps rates, gates instant couriers without coords, caches 
   });
 
   assert.equal(noCoordsQuote.source, "biteship");
+  assert.ok(!noCoordsQuote.options.some((o) => o.courierCode === "unknown_courier"));
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://api.biteship.com/v1/rates/couriers");
   assert.equal(calls[0].headers.Authorization, "Bearer bs_test_key_123");

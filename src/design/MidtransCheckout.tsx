@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, ShieldCheck } from "lucide-react";
-import { useStore, type Address, type Order } from "./store";
+import {
+  useStore,
+  isStaleShippingError,
+  type Address,
+  type Order,
+  type ShippingRateOption,
+} from "./store";
 import { api } from "./backend";
 import {
   AddressFields,
@@ -11,11 +17,7 @@ import {
 } from "./Shopping";
 import { MidtransGatewayBadge } from "./PaymentLogos";
 import { TurnstileWidget } from "./TurnstileWidget";
-import {
-  CourierOptionPicker,
-  isStaleShippingError,
-  type ShippingRateOption,
-} from "./CourierPicker";
+import { CourierOptionPicker } from "./CourierPicker";
 
 type Quote = {
   subtotal: number;
@@ -56,12 +58,26 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const selectedChannelInfo =
     PAYMENT_CHANNELS.find((c) => c.id === selectedChannel) || PAYMENT_CHANNELS[0];
 
+  const autoRefreshCountRef = useRef(0);
   const destPostal = (activeDestination.postal || "").trim();
   const rateToken = selectedShipping?.rateToken;
 
+  const linesKey = db.bag
+    .map((l) => `${l.productId}:${l.size}:${l.color}:${l.quantity}`)
+    .sort()
+    .join("|");
+  const prevQuoteInputRef = useRef(`${linesKey}|${destPostal}`);
+  useEffect(() => {
+    const currentInput = `${linesKey}|${destPostal}`;
+    if (currentInput !== prevQuoteInputRef.current) {
+      prevQuoteInputRef.current = currentInput;
+      autoRefreshCountRef.current = 0;
+    }
+  }, [linesKey, destPostal]);
+
   useEffect(() => {
     if (order) return;
-    if (ratesLoading && !selectedShipping) return;
+    if (ratesLoading || !selectedShipping?.rateToken) return;
     if (!db.bag.length) {
       return;
     }
@@ -75,6 +91,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
     void api("payments/quote", payload)
       .then((q) => {
         if (!lifecycle.signal.aborted) {
+          autoRefreshCountRef.current = 0;
           setQuote(q as Quote);
           setQuoteError("");
         }
@@ -85,7 +102,11 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           const msg = (e as Error).message || "";
           setQuoteError(msg);
           if (isStaleShippingError(e)) {
-            setShippingRefreshKey((k) => k + 1);
+            setSelectedShipping(null);
+            if (autoRefreshCountRef.current < 1) {
+              autoRefreshCountRef.current += 1;
+              setShippingRefreshKey((k) => k + 1);
+            }
           }
         }
       });
@@ -98,7 +119,6 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
     order,
     ratesLoading,
     selectedShipping,
-    shippingRefreshKey,
   ]);
 
   useEffect(() => {
@@ -234,6 +254,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           const msg = (err as Error).message || "Checkout failed";
           setError(msg);
           if (isStaleShippingError(err)) {
+            setSelectedShipping(null);
             setShippingRefreshKey((k) => k + 1);
             notify(
               "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
@@ -403,7 +424,7 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           hasUnclaimed={hasUnclaimedPromos}
           onSelect={(c) => applyPromoCode(c)}
         />
-        {quote && (
+        {quote ? (
           <div className="order-totals">
             <div>
               <span>Subtotal</span>
@@ -429,14 +450,22 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             <div>
               <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
               <span>
-                {selectedShipping && (
+                {ratesLoading || !selectedShipping ? (
                   <small className="checkout-summary-courier-name">
-                    {selectedShipping.courierName} · {selectedShipping.serviceName}{" "}
+                    {t("Menghitung ongkos kirim…", "Calculating shipping fee…")}
                   </small>
+                ) : (
+                  <>
+                    {selectedShipping && (
+                      <small className="checkout-summary-courier-name">
+                        {selectedShipping.courierName} · {selectedShipping.serviceName}{" "}
+                      </small>
+                    )}
+                    {quote.shipping === 0
+                      ? t("Gratis", "Free")
+                      : money(quote.shipping, "IDR")}
+                  </>
                 )}
-                {quote.shipping === 0
-                  ? t("Gratis", "Free")
-                  : money(quote.shipping, "IDR")}
               </span>
             </div>
             <div>
@@ -445,10 +474,41 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             </div>
             <div className="grand-total">
               <b>{t("Total Pembayaran", "Total Payment")}</b>
-              <b>{money(quote.total, "IDR")}</b>
+              <b>
+                {ratesLoading || !selectedShipping
+                  ? money(quote.subtotal - (quote.discount || 0), "IDR")
+                  : money(quote.total, "IDR")}
+              </b>
             </div>
           </div>
-        )}
+        ) : ratesLoading || !selectedShipping ? (
+          <div className="order-totals">
+            <div>
+              <span>Subtotal</span>
+              <span>
+                {money(
+                  db.bag.reduce((sum, line) => {
+                    const p = db.products.find((prod) => prod.id === line.productId);
+                    return sum + (p?.priceIdr || 0) * line.quantity;
+                  }, 0),
+                  "IDR",
+                )}
+              </span>
+            </div>
+            <div>
+              <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
+              <span>
+                <small className="checkout-summary-courier-name">
+                  {t("Menghitung ongkos kirim…", "Calculating shipping fee…")}
+                </small>
+              </span>
+            </div>
+            <div>
+              <span>{t("Metode Dipilih", "Selected Method")}</span>
+              <span>{selectedChannelInfo.badge}</span>
+            </div>
+          </div>
+        ) : null}
         {turnstileSiteKey && (
           <TurnstileWidget
             siteKey={turnstileSiteKey}
@@ -458,9 +518,23 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           />
         )}
         {activeError && (
-          <p className="error-text" role="alert">
-            {activeError}
-          </p>
+          <div className="error-text" role="alert">
+            <span>{activeError}</span>
+            {isStaleShippingError(activeError) && (
+              <button
+                type="button"
+                className="button ghost small"
+                style={{ marginLeft: 8, display: "inline-flex", verticalAlign: "middle" }}
+                onClick={() => {
+                  setSelectedShipping(null);
+                  autoRefreshCountRef.current = 0;
+                  setShippingRefreshKey((k) => k + 1);
+                }}
+              >
+                {t("Muat ulang kurir", "Reload couriers")}
+              </button>
+            )}
+          </div>
         )}
         <button
           className="button dark full checkout-submit-btn"

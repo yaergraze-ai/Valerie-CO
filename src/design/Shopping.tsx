@@ -1,11 +1,7 @@
 import { MidtransCheckout } from "./MidtransCheckout";
 import { api, serverMode } from "./backend";
 import { useState, useRef, useEffect } from "react";
-import {
-  CourierOptionPicker,
-  isStaleShippingError,
-  type ShippingRateOption,
-} from "./CourierPicker";
+import { CourierOptionPicker } from "./CourierPicker";
 import confetti from "canvas-confetti";
 import {
   AlertCircle,
@@ -39,7 +35,13 @@ import {
   Truck,
   Wallet,
 } from "lucide-react";
-import { useStore, type Address, type Order } from "./store";
+import {
+  useStore,
+  isStaleShippingError,
+  type Address,
+  type Order,
+  type ShippingRateOption,
+} from "./store";
 import { lineKey, SHIPPING_RATES, totals, validateBag, type Coupon } from "./commerce";
 import { Empty } from "./ui";
 import {
@@ -2999,12 +3001,26 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     total: number;
   } | null>(null);
   const [quoteError, setQuoteError] = useState("");
+  const autoRefreshCountRef = useRef(0);
   const destPostal = (activeDestination.postal || "").trim();
   const rateToken = selectedShipping?.rateToken;
 
+  const linesKey = db.bag
+    .map((l) => `${l.productId}:${l.size}:${l.color}:${l.quantity}`)
+    .sort()
+    .join("|");
+  const prevQuoteInputRef = useRef(`${linesKey}|${destPostal}`);
+  useEffect(() => {
+    const currentInput = `${linesKey}|${destPostal}`;
+    if (currentInput !== prevQuoteInputRef.current) {
+      prevQuoteInputRef.current = currentInput;
+      autoRefreshCountRef.current = 0;
+    }
+  }, [linesKey, destPostal]);
+
   useEffect(() => {
     if (!isRealtime || finished) return;
-    if (ratesLoading && !selectedShipping) return;
+    if (ratesLoading || !selectedShipping?.rateToken) return;
     if (!db.bag.length) return;
     const lifecycle = new AbortController();
     const payload = {
@@ -3016,6 +3032,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     void api("payments/quote", payload)
       .then((q) => {
         if (!lifecycle.signal.aborted) {
+          autoRefreshCountRef.current = 0;
           setServerQuote(q);
           setQuoteError("");
         }
@@ -3026,7 +3043,11 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           const msg = (e as Error).message || "";
           setQuoteError(msg);
           if (isStaleShippingError(e)) {
-            setShippingRefreshKey((k) => k + 1);
+            setSelectedShipping(null);
+            if (autoRefreshCountRef.current < 1) {
+              autoRefreshCountRef.current += 1;
+              setShippingRefreshKey((k) => k + 1);
+            }
           }
         }
       });
@@ -3040,7 +3061,6 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     destPostal,
     ratesLoading,
     selectedShipping,
-    shippingRefreshKey,
   ]);
 
   const coupon = (
@@ -3137,6 +3157,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           setFinished(order);
         } catch (err) {
           if (isStaleShippingError(err)) {
+            setSelectedShipping(null);
             setShippingRefreshKey((k) => k + 1);
             notify(
               "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
@@ -3388,19 +3409,50 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             <div>
               <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
               <span>
-                {selectedShipping && (
+                {ratesLoading || !selectedShipping ? (
                   <small className="checkout-summary-courier-name">
-                    {selectedShipping.courierName} · {selectedShipping.serviceName}{" "}
+                    {t("Menghitung ongkos kirim…", "Calculating shipping fee…")}
                   </small>
+                ) : (
+                  <>
+                    {selectedShipping && (
+                      <small className="checkout-summary-courier-name">
+                        {selectedShipping.courierName} · {selectedShipping.serviceName}{" "}
+                      </small>
+                    )}
+                    {serverQuote.shipping === 0
+                      ? t("Gratis", "Free")
+                      : money(serverQuote.shipping, "IDR")}
+                  </>
                 )}
-                {serverQuote.shipping === 0
-                  ? t("Gratis", "Free")
-                  : money(serverQuote.shipping, "IDR")}
               </span>
             </div>
             <div className="grand-total">
               <b>Total IDR</b>
-              <b>{money(serverQuote.total, "IDR")}</b>
+              <b>
+                {ratesLoading || !selectedShipping
+                  ? money(serverQuote.subtotal - (serverQuote.discount || 0), "IDR")
+                  : money(serverQuote.total, "IDR")}
+              </b>
+            </div>
+          </div>
+        ) : isRealtime ? (
+          <div className="order-totals">
+            <div>
+              <span>Subtotal</span>
+              <span>{money(sum.subtotal, "IDR")}</span>
+            </div>
+            <div>
+              <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
+              <span>
+                <small className="checkout-summary-courier-name">
+                  {t("Menghitung ongkos kirim…", "Calculating shipping fee…")}
+                </small>
+              </span>
+            </div>
+            <div className="grand-total">
+              <b>Total IDR</b>
+              <b>{money(sum.subtotal, "IDR")}</b>
             </div>
           </div>
         ) : (
@@ -3437,9 +3489,23 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           </div>
         )}
         {quoteError && isRealtime && (
-          <p className="error-text" role="alert">
-            {quoteError}
-          </p>
+          <div className="error-text" role="alert">
+            <span>{quoteError}</span>
+            {isStaleShippingError(quoteError) && (
+              <button
+                type="button"
+                className="button ghost small"
+                style={{ marginLeft: 8, display: "inline-flex", verticalAlign: "middle" }}
+                onClick={() => {
+                  setSelectedShipping(null);
+                  autoRefreshCountRef.current = 0;
+                  setShippingRefreshKey((k) => k + 1);
+                }}
+              >
+                {t("Muat ulang kurir", "Reload couriers")}
+              </button>
+            )}
+          </div>
         )}
         <label className="checkbox-label" htmlFor="checkout-terms">
           <input id="checkout-terms" name="terms" type="checkbox" required />

@@ -6,13 +6,6 @@ import type { BagLine } from "./commerce";
 
 export type { ShippingRateOption };
 
-export function isStaleShippingError(err: unknown): boolean {
-  if (!err) return false;
-  if ((err as { status?: number })?.status === 409) return true;
-  const msg = (err as Error).message || String(err);
-  return /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg);
-}
-
 export type CourierPickerProps = {
   lines: BagLine[];
   destination: Partial<Address>;
@@ -41,7 +34,7 @@ export function CourierOptionPicker({
   destination,
   selected,
   onSelect,
-  refreshKey,
+  refreshKey = 0,
   onRatesLoading,
 }: CourierPickerProps) {
   const { t, money } = useStore();
@@ -49,12 +42,17 @@ export function CourierOptionPicker({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [retryTrigger, setRetryTrigger] = useState(0);
+  const [fetchedSignature, setFetchedSignature] = useState("");
 
   const requestIdRef = useRef(0);
   const linesRef = useRef(lines);
   const selectedRef = useRef(selected);
   const onSelectRef = useRef(onSelect);
   const onRatesLoadingRef = useRef(onRatesLoading);
+  const hasLoadedOnceRef = useRef(false);
+  const prevRefreshKeyRef = useRef(refreshKey);
+  const prevRetryTriggerRef = useRef(retryTrigger);
+  const fetchedSignatureRef = useRef("");
 
   useEffect(() => {
     linesRef.current = lines;
@@ -75,6 +73,8 @@ export function CourierOptionPicker({
   const destLat = destination.lat;
   const destLon = destination.lon;
 
+  const requestSignature = `${linesKey}|${destPostal}|${destAreaId}|${destCity}|${destProvince}|${destLat ?? ""}|${destLon ?? ""}`;
+
   useEffect(() => {
     const reqId = ++requestIdRef.current;
 
@@ -85,6 +85,23 @@ export function CourierOptionPicker({
       }
       return;
     }
+
+    const isRefresh = refreshKey !== prevRefreshKeyRef.current;
+    const isRetry = retryTrigger !== prevRetryTriggerRef.current;
+    const isInitial = !hasLoadedOnceRef.current;
+    const isSignatureChanged = requestSignature !== fetchedSignatureRef.current;
+
+    prevRefreshKeyRef.current = refreshKey;
+    prevRetryTriggerRef.current = retryTrigger;
+
+    if (isSignatureChanged || isRefresh || isRetry) {
+      onRatesLoadingRef.current?.(true);
+      if (selectedRef.current !== null) {
+        onSelectRef.current(null);
+      }
+    }
+
+    const delay = isInitial || isRefresh || isRetry ? 0 : 350;
 
     const timer = setTimeout(async () => {
       onRatesLoadingRef.current?.(true);
@@ -108,6 +125,9 @@ export function CourierOptionPicker({
 
         if (reqId !== requestIdRef.current) return;
 
+        fetchedSignatureRef.current = requestSignature;
+        setFetchedSignature(requestSignature);
+        hasLoadedOnceRef.current = true;
         setRatesData(res);
         setError("");
 
@@ -157,6 +177,8 @@ export function CourierOptionPicker({
         }
       } catch (err) {
         if (reqId !== requestIdRef.current) return;
+        hasLoadedOnceRef.current = true;
+        setFetchedSignature(requestSignature);
         const msg = (err as Error).message || "Gagal memuat tarif pengiriman";
         setError(msg);
       } finally {
@@ -165,7 +187,7 @@ export function CourierOptionPicker({
           onRatesLoadingRef.current?.(false);
         }
       }
-    }, 350);
+    }, delay);
 
     return () => {
       clearTimeout(timer);
@@ -180,6 +202,7 @@ export function CourierOptionPicker({
     destLon,
     refreshKey,
     retryTrigger,
+    requestSignature,
   ]);
 
   const handleRetry = useCallback(() => {
@@ -187,7 +210,8 @@ export function CourierOptionPicker({
   }, []);
 
   const activeRatesData = lines.length ? ratesData : null;
-  const activeLoading = Boolean(linesKey && loading);
+  const isSignaturePending = Boolean(linesKey && requestSignature !== fetchedSignature);
+  const activeLoading = Boolean(linesKey && (loading || isSignaturePending || !fetchedSignature));
   const postalDigits = (destPostal || "").replace(/\D/g, "");
   const isPostalShort = postalDigits.length < 5;
 

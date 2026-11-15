@@ -783,9 +783,10 @@ function formatDuration(row) {
 function normalizeBiteshipRate(row) {
   if (!row || typeof row !== "object") return null;
   const courierCode = String(row.courier_code || row.company || "").trim().toLowerCase();
+  if (!courierCode || !ALLOWED_COURIER_SET.has(courierCode)) return null;
   const serviceCode = String(row.courier_service_code || row.service_code || row.type || "").trim().toLowerCase();
   const rawPrice = Math.round(Number(row.price));
-  if (!courierCode || !serviceCode || !Number.isFinite(rawPrice) || rawPrice < 0) return null;
+  if (!serviceCode || !Number.isFinite(rawPrice) || rawPrice < 0) return null;
 
   const courierName = String(row.courier_name || COURIER_LABELS[courierCode] || courierCode.toUpperCase()).trim();
   const serviceName = String(row.courier_service_name || row.service_name || serviceCode.toUpperCase()).trim();
