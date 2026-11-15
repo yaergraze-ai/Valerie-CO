@@ -11,6 +11,10 @@ import {
 } from "./Shopping";
 import { MidtransGatewayBadge } from "./PaymentLogos";
 import { TurnstileWidget } from "./TurnstileWidget";
+import {
+  CourierOptionPicker,
+  type ShippingRateOption,
+} from "./CourierPicker";
 
 type Quote = {
   subtotal: number;
@@ -19,10 +23,16 @@ type Quote = {
   total: number;
 };
 
+function isStaleShippingError(err: unknown): boolean {
+  if (!err) return false;
+  if ((err as { status?: number })?.status === 409) return true;
+  const msg = (err as Error).message || String(err);
+  return /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg);
+}
+
 export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const { db, member, t, money, checkout, refresh, notify, activePromotions } =
     useStore();
-  const [express, setExpress] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [code, setCode] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<string>("qris");
@@ -30,7 +40,13 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const [addressId, setAddressId] = useState(
     () => member?.addresses[0]?.id || "new",
   );
+  const [selectedShipping, setSelectedShipping] =
+    useState<ShippingRateOption | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [shippingRefreshKey, setShippingRefreshKey] = useState(0);
+  const [newDestination, setNewDestination] = useState<Partial<Address>>({});
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteError, setQuoteError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [order, setOrder] = useState<Order | null>(null);
@@ -39,25 +55,56 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
   const key = useRef(crypto.randomUUID());
   const submitting = useRef(false);
   const savedAddress = member?.addresses.find((a) => a.id === addressId);
+  const activeDestination: Partial<Address> =
+    addressId !== "new" && savedAddress ? savedAddress : newDestination;
   const totalItems = db.bag.reduce((sum, line) => sum + line.quantity, 0);
   const turnstileSiteKey = db.paymentConfig?.turnstileSiteKey || "";
   const selectedChannelInfo =
     PAYMENT_CHANNELS.find((c) => c.id === selectedChannel) || PAYMENT_CHANNELS[0];
 
+  const destPostal = (activeDestination.postal || "").trim();
+  const rateToken = selectedShipping?.rateToken;
+
   useEffect(() => {
     if (order) return;
+    if (ratesLoading && !selectedShipping) return;
+    if (!db.bag.length) {
+      return;
+    }
     const lifecycle = new AbortController();
-    setQuote(null);
-    setError("");
-    void api("payments/quote", { lines: db.bag, code, express })
+    const payload = {
+      lines: db.bag,
+      code,
+      shippingOption: rateToken ? { rateToken } : undefined,
+      destination: { postal: destPostal },
+    };
+    void api("payments/quote", payload)
       .then((q) => {
-        if (!lifecycle.signal.aborted) setQuote(q);
+        if (!lifecycle.signal.aborted) {
+          setQuote(q as Quote);
+          setQuoteError("");
+        }
       })
       .catch((e) => {
-        if (!lifecycle.signal.aborted) setError(e.message);
+        if (!lifecycle.signal.aborted) {
+          const msg = (e as Error).message || "";
+          setQuoteError(msg);
+          if (isStaleShippingError(e)) {
+            setShippingRefreshKey((k) => k + 1);
+          }
+        }
       });
     return () => lifecycle.abort();
-  }, [db.bag, code, express, order]);
+  }, [
+    db.bag,
+    code,
+    rateToken,
+    destPostal,
+    order,
+    ratesLoading,
+    selectedShipping,
+    shippingRefreshKey,
+  ]);
 
   useEffect(() => {
     if (!order?.id) return;
@@ -124,12 +171,14 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
     setCode(nextCode);
   };
 
+  const activeError = error || quoteError;
+
   return (
     <form
       className="checkout-grid"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!quote || submitting.current) return;
+        if (!quote || submitting.current || ratesLoading || !selectedShipping) return;
         if (turnstileSiteKey && !turnstileToken) {
           setError(
             t(
@@ -144,6 +193,22 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
         setError("");
         try {
           const f = new FormData(e.currentTarget);
+          const rawLat = f.get("lat");
+          const rawLon = f.get("lon");
+          const lat =
+            rawLat && Number.isFinite(Number(rawLat))
+              ? Number(rawLat)
+              : undefined;
+          const lon =
+            rawLon && Number.isFinite(Number(rawLon))
+              ? Number(rawLon)
+              : undefined;
+          const province =
+            String(f.get("province") || "").trim() || undefined;
+          const areaId =
+            String(f.get("areaId") || "").trim() || undefined;
+          const areaName =
+            String(f.get("areaName") || "").trim() || undefined;
           const address: Address = savedAddress || {
             id: crypto.randomUUID(),
             label: "Shipping",
@@ -152,20 +217,34 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             street: String(f.get("street")),
             city: String(f.get("city")),
             postal: String(f.get("postal")),
+            ...(province ? { province } : {}),
+            ...(areaId ? { areaId } : {}),
+            ...(areaName ? { areaName } : {}),
+            ...(lat !== undefined ? { lat } : {}),
+            ...(lon !== undefined ? { lon } : {}),
           };
           setOrder(
             await checkout(
               address,
               code,
-              express,
+              false,
               key.current,
               quote.total,
               selectedChannel,
               turnstileToken || undefined,
+              selectedShipping ? { rateToken: selectedShipping.rateToken } : undefined,
             ),
           );
         } catch (err) {
-          setError((err as Error).message);
+          const msg = (err as Error).message || "Checkout failed";
+          setError(msg);
+          if (isStaleShippingError(err)) {
+            setShippingRefreshKey((k) => k + 1);
+            notify(
+              "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
+              "Shipping rates expired. Refreshing shipping rates...",
+            );
+          }
           setTurnstileToken("");
           setTurnstileResetSignal((n) => n + 1);
         } finally {
@@ -215,7 +294,11 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
               </p>
             </div>
           ) : (
-            <AddressFields name={member?.name} phone={member?.phone} />
+            <AddressFields
+              name={member?.name}
+              phone={member?.phone}
+              onDestinationChange={setNewDestination}
+            />
           )}
         </section>
 
@@ -226,58 +309,20 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
               <h3>{t("Opsi Pengiriman", "Shipping Option")}</h3>
               <p>
                 {t(
-                  "Dikemas rapi dengan kotak atelier & dustbag beludru.",
-                  "Packed in our signature atelier box & velvet dustbag.",
+                  "Pilihan kurir & estimasi pengiriman real-time ke alamat tujuan.",
+                  "Real-time courier options & delivery estimates to your destination.",
                 )}
               </p>
             </div>
           </div>
-          <div className="delivery-options-list">
-            <label className={`delivery-option ${!express ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name="service"
-                value="standard"
-                checked={!express}
-                onChange={() => setExpress(false)}
-              />
-              <span>
-                <b>{t("Reguler", "Standard")}</b>
-                <small>
-                  {t("Estimasi 3–5 hari kerja", "Estimated 3–5 business days")}
-                </small>
-              </span>
-              <strong>
-                {quote
-                  ? quote.shipping === 0
-                    ? t("Gratis", "Free")
-                    : !express
-                      ? money(quote.shipping, "IDR")
-                      : t("Reguler", "Standard")
-                  : "…"}
-              </strong>
-            </label>
-            <label className={`delivery-option ${express ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name="service"
-                value="express"
-                checked={express}
-                onChange={() => setExpress(true)}
-              />
-              <span>
-                <b>{t("Ekspres Prioritas", "Express Priority")}</b>
-                <small>
-                  {t("Estimasi 1–2 hari kerja", "Estimated 1–2 business days")}
-                </small>
-              </span>
-              <strong>
-                {quote && express
-                  ? money(quote.shipping, "IDR")
-                  : t("Prioritas", "Priority")}
-              </strong>
-            </label>
-          </div>
+          <CourierOptionPicker
+            lines={db.bag}
+            destination={activeDestination}
+            selected={selectedShipping}
+            onSelect={setSelectedShipping}
+            refreshKey={shippingRefreshKey}
+            onRatesLoading={setRatesLoading}
+          />
         </section>
 
         <section className="checkout-step-card">
@@ -389,9 +434,14 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             <div>
               <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
               <span>
-                {quote.shipping
-                  ? money(quote.shipping, "IDR")
-                  : t("Gratis", "Free")}
+                {selectedShipping && (
+                  <small className="checkout-summary-courier-name">
+                    {selectedShipping.courierName} · {selectedShipping.serviceName}{" "}
+                  </small>
+                )}
+                {quote.shipping === 0
+                  ? t("Gratis", "Free")
+                  : money(quote.shipping, "IDR")}
               </span>
             </div>
             <div>
@@ -412,22 +462,26 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
             onExpired={() => setTurnstileToken("")}
           />
         )}
-        {error && (
+        {activeError && (
           <p className="error-text" role="alert">
-            {error}
+            {activeError}
           </p>
         )}
         <button
           className="button dark full checkout-submit-btn"
-          disabled={!quote || busy}
+          disabled={!quote || busy || ratesLoading || !selectedShipping}
           type="submit"
         >
           <span>
-            {busy
-              ? t("Membuat Pesanan…", "Placing Order…")
-              : t("Buat Pesanan & Bayar", "Place Order & Pay")}
+            {ratesLoading
+              ? t("Memuat tarif kurir…", "Loading courier rates…")
+              : !selectedShipping
+                ? t("Pilih kurir pengiriman", "Select courier option")
+                : busy
+                  ? t("Membuat Pesanan…", "Placing Order…")
+                  : t("Buat Pesanan & Bayar", "Place Order & Pay")}
           </span>
-          {!busy && <ArrowRight size={16} />}
+          {!busy && !ratesLoading && selectedShipping && <ArrowRight size={16} />}
         </button>
         <div className="checkout-security-footnote">
           <ShieldCheck size={13} aria-hidden="true" />

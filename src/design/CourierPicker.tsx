@@ -4,6 +4,8 @@ import { api } from "./backend";
 import { useStore, type Address, type ShippingRateOption } from "./store";
 import type { BagLine } from "./commerce";
 
+export type { ShippingRateOption };
+
 export type CourierPickerProps = {
   lines: BagLine[];
   destination: Partial<Address>;

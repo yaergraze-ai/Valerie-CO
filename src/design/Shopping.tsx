@@ -1,6 +1,10 @@
 import { MidtransCheckout } from "./MidtransCheckout";
-import { api } from "./backend";
+import { api, serverMode } from "./backend";
 import { useState, useRef, useEffect } from "react";
+import {
+  CourierOptionPicker,
+  type ShippingRateOption,
+} from "./CourierPicker";
 import confetti from "canvas-confetti";
 import {
   AlertCircle,
@@ -2953,6 +2957,13 @@ export function InlinePaymentAndReceipt({
   );
 }
 
+function isStaleShippingError(err: unknown): boolean {
+  if (!err) return false;
+  if ((err as { status?: number })?.status === 409) return true;
+  const msg = (err as Error).message || String(err);
+  return /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg);
+}
+
 function SimulationCheckout({ onDone }: { onDone: () => void }) {
   const {
     db,
@@ -2967,6 +2978,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     activePromotions,
   } = useStore();
   const rates = SHIPPING_RATES[currency];
+  const isRealtime = serverMode && currency === "IDR";
   const [code, setCode] = useState("");
   const [applied, setApplied] = useState("");
   const [express, setExpress] = useState(false);
@@ -2975,14 +2987,75 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
   const [addressId, setAddressId] = useState(
     () => member?.addresses[0]?.id || "new",
   );
+  const [selectedShipping, setSelectedShipping] =
+    useState<ShippingRateOption | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [shippingRefreshKey, setShippingRefreshKey] = useState(0);
+  const [newDestination, setNewDestination] = useState<Partial<Address>>({});
   const busy = useRef(false);
   const checkoutKey = useRef(crypto.randomUUID());
+  const savedAddress = member?.addresses.find((a) => a.id === addressId);
+  const activeDestination: Partial<Address> =
+    addressId !== "new" && savedAddress ? savedAddress : newDestination;
+
+  const [serverQuote, setServerQuote] = useState<{
+    subtotal: number;
+    discount: number;
+    shipping: number;
+    total: number;
+  } | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  const destPostal = (activeDestination.postal || "").trim();
+  const rateToken = selectedShipping?.rateToken;
+
+  useEffect(() => {
+    if (!isRealtime || finished) return;
+    if (ratesLoading && !selectedShipping) return;
+    if (!db.bag.length) return;
+    const lifecycle = new AbortController();
+    const payload = {
+      lines: db.bag,
+      code: applied,
+      shippingOption: rateToken ? { rateToken } : undefined,
+      destination: { postal: destPostal },
+    };
+    void api("payments/quote", payload)
+      .then((q) => {
+        if (!lifecycle.signal.aborted) {
+          setServerQuote(q);
+          setQuoteError("");
+        }
+      })
+      .catch((e) => {
+        if (!lifecycle.signal.aborted) {
+          const msg = (e as Error).message || "";
+          setQuoteError(msg);
+          if (
+            (e as { status?: number })?.status === 409 ||
+            /ongkos kirim|kedaluwarsa|muat ulang|stale|rate token/i.test(msg)
+          ) {
+            setShippingRefreshKey((k) => k + 1);
+          }
+        }
+      });
+    return () => lifecycle.abort();
+  }, [
+    isRealtime,
+    finished,
+    db.bag,
+    applied,
+    rateToken,
+    destPostal,
+    ratesLoading,
+    selectedShipping,
+    shippingRefreshKey,
+  ]);
+
   const coupon = (
     activePromotions.find((c) => c.code === applied && c.active) ||
     db.coupons.find((c) => c.code === applied && c.active)
   );
   const sum = totals(db.bag, db.products, coupon, express, currency);
-  const savedAddress = member?.addresses.find((a) => a.id === addressId);
   const totalItems = db.bag.reduce((count, line) => count + line.quantity, 0);
   const claimedSet = new Set(member?.claimedCoupons || []);
   const claimedPromos = activePromotions.filter((c) => claimedSet.has(c.code));
@@ -3025,6 +3098,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         if (busy.current) return;
+        if (isRealtime && (ratesLoading || !selectedShipping || !serverQuote)) return;
         busy.current = true;
         try {
           const f = new FormData(e.currentTarget);
@@ -3061,17 +3135,32 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           const order = await checkout(
             address,
             applied,
-            express,
+            isRealtime ? false : express,
             checkoutKey.current,
-            undefined,
+            isRealtime ? serverQuote?.total : undefined,
             selectedChannel,
+            undefined,
+            isRealtime && selectedShipping ? { rateToken: selectedShipping.rateToken } : undefined,
           );
           setFinished(order);
-        } catch {
-          notify(
-            "Pesanan tidak dapat dibuat. Periksa stok dan tas.",
-            "Unable to create order. Check your bag and stock.",
-          );
+        } catch (err) {
+          if (isStaleShippingError(err)) {
+            setShippingRefreshKey((k) => k + 1);
+            notify(
+              "Tarif kurir telah kedaluwarsa. Memuat ulang tarif pengiriman...",
+              "Courier rates expired. Refreshing shipping rates...",
+            );
+          } else {
+            const msg = (err as Error).message;
+            notify(
+              msg ||
+                t(
+                  "Pesanan tidak dapat dibuat. Periksa stok dan tas.",
+                  "Unable to create order. Check your bag and stock.",
+                ),
+              msg || "Unable to create order. Check your bag and stock.",
+            );
+          }
         } finally {
           busy.current = false;
         }
@@ -3118,7 +3207,11 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
               </p>
             </div>
           ) : (
-            <AddressFields name={member.name} phone={member.phone} />
+            <AddressFields
+              name={member.name}
+              phone={member.phone}
+              onDestinationChange={isRealtime ? setNewDestination : undefined}
+            />
           )}
         </section>
 
@@ -3128,55 +3221,71 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             <div>
               <h3>{t("Metode pengiriman", "Delivery method")}</h3>
               <p>
-                {t(
-                  "Setiap pasang dikemas dengan kotak atelier & dustbag beludru.",
-                  "Every pair is packed with an atelier box & velvet dustbag.",
-                )}
+                {isRealtime
+                  ? t(
+                      "Pilihan kurir & estimasi pengiriman real-time ke alamat tujuan.",
+                      "Real-time courier options & delivery estimates to your destination.",
+                    )
+                  : t(
+                      "Setiap pasang dikemas dengan kotak atelier & dustbag beludru.",
+                      "Every pair is packed with an atelier box & velvet dustbag.",
+                    )}
               </p>
             </div>
           </div>
-          <div className="delivery-options-list">
-            <label className={`delivery-option ${!express ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name="delivery"
-                checked={!express}
-                onChange={() => setExpress(false)}
-              />
-              <span>
-                <b>{t("Standar", "Standard")}</b>
-                <small>
-                  {t(
-                    "Estimasi pengiriman: 3–5 hari kerja",
-                    "Estimated delivery: 3–5 business days",
-                  )}
-                </small>
-              </span>
-              <strong>
-                {sum.subtotal >= rates.freeAbove
-                  ? t("Gratis", "Free")
-                  : money(rates.standard)}
-              </strong>
-            </label>
-            <label className={`delivery-option ${express ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name="delivery"
-                checked={express}
-                onChange={() => setExpress(true)}
-              />
-              <span>
-                <b>{t("Ekspres", "Express")}</b>
-                <small>
-                  {t(
-                    "Estimasi pengiriman: 1–2 hari kerja",
-                    "Estimated delivery: 1–2 business days",
-                  )}
-                </small>
-              </span>
-              <strong>{money(rates.express)}</strong>
-            </label>
-          </div>
+          {isRealtime ? (
+            <CourierOptionPicker
+              lines={db.bag}
+              destination={activeDestination}
+              selected={selectedShipping}
+              onSelect={setSelectedShipping}
+              refreshKey={shippingRefreshKey}
+              onRatesLoading={setRatesLoading}
+            />
+          ) : (
+            <div className="delivery-options-list">
+              <label className={`delivery-option ${!express ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="delivery"
+                  checked={!express}
+                  onChange={() => setExpress(false)}
+                />
+                <span>
+                  <b>{t("Standar", "Standard")}</b>
+                  <small>
+                    {t(
+                      "Estimasi pengiriman: 3–5 hari kerja",
+                      "Estimated delivery: 3–5 business days",
+                    )}
+                  </small>
+                </span>
+                <strong>
+                  {sum.subtotal >= rates.freeAbove
+                    ? t("Gratis", "Free")
+                    : money(rates.standard)}
+                </strong>
+              </label>
+              <label className={`delivery-option ${express ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="delivery"
+                  checked={express}
+                  onChange={() => setExpress(true)}
+                />
+                <span>
+                  <b>{t("Ekspres", "Express")}</b>
+                  <small>
+                    {t(
+                      "Estimasi pengiriman: 1–2 hari kerja",
+                      "Estimated delivery: 1–2 business days",
+                    )}
+                  </small>
+                </span>
+                <strong>{money(rates.express)}</strong>
+              </label>
+            </div>
+          )}
         </section>
 
         <section className="checkout-step-card">
@@ -3261,37 +3370,85 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
           hasUnclaimed={hasUnclaimedPromos}
           onSelect={(c) => void applyPromoCode(c)}
         />
-        <div className="order-totals">
-          <div>
-            <span>Subtotal</span>
-            <span>{money(sum.subtotal)}</span>
-          </div>
-          {coupon && (
+        {isRealtime && serverQuote ? (
+          <div className="order-totals">
             <div>
-              <span>
-                {coupon.code}{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setApplied("");
-                    setCode("");
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-              <span>−{money(sum.discount)}</span>
+              <span>Subtotal</span>
+              <span>{money(serverQuote.subtotal, "IDR")}</span>
             </div>
-          )}
-          <div>
-            <span>{t("Pengiriman", "Shipping")}</span>
-            <span>{sum.shipping ? money(sum.shipping) : t("Gratis", "Complimentary")}</span>
+            {applied && serverQuote.discount > 0 && (
+              <div>
+                <span>
+                  {applied}{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplied("");
+                      setCode("");
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+                <span>−{money(serverQuote.discount, "IDR")}</span>
+              </div>
+            )}
+            <div>
+              <span>{t("Ongkos Kirim", "Shipping Fee")}</span>
+              <span>
+                {selectedShipping && (
+                  <small className="checkout-summary-courier-name">
+                    {selectedShipping.courierName} · {selectedShipping.serviceName}{" "}
+                  </small>
+                )}
+                {serverQuote.shipping === 0
+                  ? t("Gratis", "Free")
+                  : money(serverQuote.shipping, "IDR")}
+              </span>
+            </div>
+            <div className="grand-total">
+              <b>Total IDR</b>
+              <b>{money(serverQuote.total, "IDR")}</b>
+            </div>
           </div>
-          <div className="grand-total">
-            <b>Total {currency}</b>
-            <b>{money(sum.total)}</b>
+        ) : (
+          <div className="order-totals">
+            <div>
+              <span>Subtotal</span>
+              <span>{money(sum.subtotal)}</span>
+            </div>
+            {coupon && (
+              <div>
+                <span>
+                  {coupon.code}{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplied("");
+                      setCode("");
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+                <span>−{money(sum.discount)}</span>
+              </div>
+            )}
+            <div>
+              <span>{t("Pengiriman", "Shipping")}</span>
+              <span>{sum.shipping ? money(sum.shipping) : t("Gratis", "Complimentary")}</span>
+            </div>
+            <div className="grand-total">
+              <b>Total {currency}</b>
+              <b>{money(sum.total)}</b>
+            </div>
           </div>
-        </div>
+        )}
+        {quoteError && isRealtime && (
+          <p className="error-text" role="alert">
+            {quoteError}
+          </p>
+        )}
         <label className="checkbox-label" htmlFor="checkout-terms">
           <input id="checkout-terms" name="terms" type="checkbox" required />
           <span>
@@ -3304,10 +3461,19 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
         <button
           className="button dark full checkout-submit-btn"
           type="submit"
-          disabled={!db.bag.length}
+          disabled={
+            !db.bag.length ||
+            (isRealtime && (ratesLoading || !selectedShipping || !serverQuote))
+          }
         >
-          {t("Lanjutkan ke Pembayaran", "Proceed to Inline Payment")}
-          <ArrowRight size={16} />
+          {isRealtime && ratesLoading
+            ? t("Memuat tarif kurir…", "Loading courier rates…")
+            : isRealtime && !selectedShipping
+              ? t("Pilih kurir pengiriman", "Select courier option")
+              : t("Lanjutkan ke Pembayaran", "Proceed to Inline Payment")}
+          {(!isRealtime || (!ratesLoading && selectedShipping)) && (
+            <ArrowRight size={16} />
+          )}
         </button>
       </aside>
     </form>
@@ -3964,7 +4130,7 @@ export function AddressFields({
         )}
         {displayedAreaResults.length > 0 && (
           <div
-            className="address-area-results"
+            className="address-area-results area-suggest-list"
             role="listbox"
             style={{
               background: "#fff",
@@ -3980,7 +4146,7 @@ export function AddressFields({
               <button
                 key={item.id}
                 type="button"
-                className="address-area-result-item"
+                className="address-area-result-item area-suggest-item"
                 style={{
                   display: "flex",
                   flexDirection: "column",
