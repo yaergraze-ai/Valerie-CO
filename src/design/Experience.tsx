@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import {
   motion,
   AnimatePresence,
@@ -23,6 +23,7 @@ import {
   Home,
   Check,
   Globe,
+  Tag,
 } from "lucide-react";
 import { useStore, isStudioRole } from "./store";
 import { itemPrice, SHIPPING_RATES } from "./commerce";
@@ -68,7 +69,21 @@ function pickCurated(items: Item[], category: string, limit = 8): Item[] {
 
 export function Experience() {
   const s = useStore();
-  const { db, t, lang, setLang, currency, money, priceText, member, backendUser, serverMode } = s;
+  const {
+    db,
+    t,
+    lang,
+    setLang,
+    currency,
+    money,
+    priceText,
+    member,
+    backendUser,
+    serverMode,
+    activePromotions,
+    claimCoupon,
+    notify,
+  } = s;
   const reduced = useReducedMotion();
   const [view, setView] = useState<View>(() =>
     location.hash.startsWith("#product/")
@@ -91,8 +106,10 @@ export function Experience() {
       : null,
   );
   const [overlay, setOverlay] = useState<
-    "search" | "bag" | "checkout" | "entry" | "about" | null
+    "search" | "bag" | "checkout" | "entry" | "about" | "promo" | null
   >(null);
+  const [pendingClaimCode, setPendingClaimCode] = useState<string | null>(null);
+  const autoPromoTriggered = useRef(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("featured");
   const products = db.products.filter((p) => p.active);
@@ -136,13 +153,40 @@ export function Experience() {
         setView(v as View);
     };
     const openCheckout = () => setOverlay("checkout");
+    const openPromo = () => setOverlay("promo");
     window.addEventListener("hashchange", handler);
     window.addEventListener("solere:open-checkout", openCheckout);
+    window.addEventListener("solere:open-promo", openPromo);
     return () => {
       window.removeEventListener("hashchange", handler);
       window.removeEventListener("solere:open-checkout", openCheckout);
+      window.removeEventListener("solere:open-promo", openPromo);
     };
   }, []);
+  useEffect(() => {
+    if (!member || !pendingClaimCode) return;
+    const codeToClaim = pendingClaimCode;
+    setPendingClaimCode(null);
+    claimCoupon(codeToClaim);
+    setOverlay("promo");
+  }, [member, pendingClaimCode]);
+  const hasUnclaimedPromo = activePromotions.some(
+    (c) => !(member?.claimedCoupons || []).includes(c.code),
+  );
+  useEffect(() => {
+    if (autoPromoTriggered.current || !hasUnclaimedPromo) return;
+    if ((serverMode && !s.ready) || view === "admin" || overlay) return;
+    try {
+      if (sessionStorage.getItem("vco.promoPopupDismissed") === "1") return;
+    } catch {
+      // ignore storage errors
+    }
+    const timer = window.setTimeout(() => {
+      autoPromoTriggered.current = true;
+      setOverlay((cur) => cur || "promo");
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [serverMode, s.ready, view, overlay, hasUnclaimedPromo]);
   useEffect(() => {
     document.documentElement.lang = lang;
     const brandName = db.settings.name || "Valerie & CO";
@@ -903,10 +947,17 @@ export function Experience() {
       {overlay === "entry" && (
         <Modal
           title={t("Selamat datang di Valerie & CO", "Welcome to Valerie & CO")}
-          onClose={() => setOverlay(null)}
+          onClose={() => {
+            setPendingClaimCode(null);
+            setOverlay(null);
+          }}
         >
           <MemberEntry
-            onDone={() => setOverlay(db.bag.length ? "checkout" : null)}
+            onDone={() => {
+              if (!pendingClaimCode) {
+                setOverlay(db.bag.length ? "checkout" : null);
+              }
+            }}
           />
         </Modal>
       )}
@@ -1009,6 +1060,148 @@ export function Experience() {
           </div>
         </Modal>
       )}
+      {overlay === "promo" && (
+        <Modal
+          title={t("Voucher Diskon Member", "Member Discount Vouchers")}
+          onClose={() => {
+            try {
+              sessionStorage.setItem("vco.promoPopupDismissed", "1");
+            } catch {
+              // ignore storage errors
+            }
+            setOverlay(null);
+          }}
+        >
+          {(() => {
+            const claimedSet = new Set(member?.claimedCoupons || []);
+            const markDismissed = () => {
+              try {
+                sessionStorage.setItem("vco.promoPopupDismissed", "1");
+              } catch {
+                // ignore storage errors
+              }
+            };
+            const closePromoModal = () => {
+              markDismissed();
+              setOverlay(null);
+            };
+            return (
+              <div className="promo-modal">
+                <div className="promo-modal-head">
+                  <span className="eyebrow">
+                    {t("PRIVILESE MEMBER EKSKLUSIF", "EXCLUSIVE MEMBER PRIVILEGE")}
+                  </span>
+                  <p>
+                    {member
+                      ? t(
+                          `Halo ${member.name}, klaim voucher pilihan Anda agar dapat langsung digunakan saat checkout.`,
+                          `Hello ${member.name}, claim your voucher below to unlock it for checkout.`,
+                        )
+                      : t(
+                          "Klaim voucher diskon berikut sebelum checkout. Masuk atau daftar member terlebih dahulu untuk mengklaim.",
+                          "Claim these discount vouchers before checkout. Sign in or register as a member first to claim.",
+                        )}
+                  </p>
+                </div>
+                <div className="promo-voucher-list">
+                  {activePromotions.map((c) => {
+                    const isClaimed = claimedSet.has(c.code);
+                    return (
+                      <div
+                        className={`promo-voucher-card ${isClaimed ? "claimed" : ""}`}
+                        key={c.code}
+                      >
+                        <div className="promo-voucher-discount">
+                          <strong>{c.percent}%</strong>
+                          <span>OFF</span>
+                        </div>
+                        <div className="promo-voucher-info">
+                          <b>{c.code}</b>
+                          <small>
+                            {isClaimed
+                              ? t(
+                                  "Sudah diklaim — siap dipakai di checkout",
+                                  "Claimed — ready to apply at checkout",
+                                )
+                              : member
+                                ? t(
+                                    "Klik Klaim untuk simpan ke akun Anda",
+                                    "Click Claim to save to your account",
+                                  )
+                                : t(
+                                    "Khusus member — wajib klaim terlebih dahulu",
+                                    "Members only — claim before checkout",
+                                  )}
+                          </small>
+                        </div>
+                        {isClaimed ? (
+                          <span className="promo-claimed-pill">
+                            <Check size={14} />
+                            {t("Diklaim", "Claimed")}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button dark promo-claim-btn"
+                            onClick={() => {
+                              if (!member) {
+                                setPendingClaimCode(c.code);
+                                notify(
+                                  "Masuk atau daftar member untuk klaim voucher",
+                                  "Sign in or register as a member to claim vouchers",
+                                );
+                                setOverlay("entry");
+                                return;
+                              }
+                              claimCoupon(c.code);
+                            }}
+                          >
+                            {t("Klaim", "Claim")}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="promo-modal-footer">
+                  <button
+                    type="button"
+                    className="button ghost"
+                    onClick={closePromoModal}
+                  >
+                    {t("Nanti saja", "Maybe later")}
+                  </button>
+                  {db.bag.length > 0 ? (
+                    <button
+                      type="button"
+                      className="button dark"
+                      onClick={() => {
+                        markDismissed();
+                        setOverlay(member ? "checkout" : "entry");
+                      }}
+                    >
+                      {t("Lanjut Checkout", "Proceed to Checkout")}
+                      <ArrowRight size={15} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="button dark"
+                      onClick={() => {
+                        closePromoModal();
+                        shop();
+                      }}
+                    >
+                      {t("Belanja Koleksi", "Shop Collection")}
+                      <ArrowRight size={15} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
       {s.pending && (
         <div role="status" className="saving-indicator">
           {t("Menyimpan ke server…", "Saving to server…")}
@@ -1028,6 +1221,31 @@ export function Experience() {
           )}
         </div>
       )}
+      {activePromotions.length > 0 &&
+        view !== "admin" &&
+        (() => {
+          const claimedSet = new Set(member?.claimedCoupons || []);
+          const maxPercent = Math.max(...activePromotions.map((c) => c.percent));
+          const hasUnclaimed = activePromotions.some((c) => !claimedSet.has(c.code));
+          return (
+            <button
+              type="button"
+              className="promo-float-trigger"
+              onClick={() => setOverlay("promo")}
+              aria-label={t(
+                "Buka popup voucher diskon member",
+                "Open member discount voucher popup",
+              )}
+            >
+              <Tag size={15} />
+              <span>
+                {hasUnclaimed
+                  ? t(`DISKON ${maxPercent}%`, `UP TO ${maxPercent}% OFF`)
+                  : t("VOUCHER SAYA", "MY VOUCHERS")}
+              </span>
+            </button>
+          );
+        })()}
       {String(import.meta.env.VITE_WHATSAPP_NUMBER || "").trim() && (
         <a
           href={`https://wa.me/${String(import.meta.env.VITE_WHATSAPP_NUMBER).replace(/\D/g, "")}?text=${encodeURIComponent(

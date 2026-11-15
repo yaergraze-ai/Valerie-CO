@@ -31,3 +31,7 @@ data/
 .env.server
 .vercel
 *.sqlite*
+
+# SDD scratch & git worktrees
+.superpowers/
+.worktrees/

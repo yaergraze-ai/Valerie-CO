@@ -8,19 +8,22 @@ import {
   Ban,
   Building2,
   Check,
+  CheckCircle2,
   ChevronDown,
   Clock,
   Copy,
   CreditCard,
   Download,
   ExternalLink,
+  FileText,
   LocateFixed,
-  LockKeyhole,
   MapPin,
   Minus,
+  Package,
   Plus,
   Printer,
   QrCode,
+  Receipt,
   RefreshCw,
   RotateCcw,
   Search,
@@ -32,13 +35,69 @@ import {
   Wallet,
 } from "lucide-react";
 import { useStore, type Address, type Order } from "./store";
-import { lineKey, SHIPPING_RATES, totals, validateBag } from "./commerce";
+import { lineKey, SHIPPING_RATES, totals, validateBag, type Coupon } from "./commerce";
 import { Empty } from "./ui";
 import {
   MidtransGatewayBadge,
   PaymentBrandLogo,
   PaymentPartnersStrip,
 } from "./PaymentLogos";
+export function CheckoutVoucherBar({
+  claimedPromos,
+  activeCode,
+  hasUnclaimed,
+  onSelect,
+}: {
+  claimedPromos: Coupon[];
+  activeCode: string;
+  hasUnclaimed: boolean;
+  onSelect: (code: string) => void;
+}) {
+  const { t } = useStore();
+  if (!claimedPromos.length && !hasUnclaimed) {
+    return (
+      <small className="checkout-coupon-hint">
+        {t(
+          "Masukkan kode voucher Valerie & CO bila tersedia.",
+          "Have a Valerie & CO voucher code? Apply it before confirming.",
+        )}
+      </small>
+    );
+  }
+  return (
+    <div className="promo-claimed-bar">
+      {claimedPromos.length > 0 && (
+        <div className="promo-claimed-row">
+          <span className="promo-claimed-label">
+            {t("Voucher Anda:", "Your vouchers:")}
+          </span>
+          {claimedPromos.map((c) => (
+            <button
+              key={c.code}
+              type="button"
+              className={`promo-chip ${activeCode === c.code ? "active" : ""}`}
+              onClick={() => onSelect(c.code)}
+            >
+              {c.code} · −{c.percent}%
+            </button>
+          ))}
+        </div>
+      )}
+      {hasUnclaimed && (
+        <button
+          type="button"
+          className="promo-claim-link"
+          onClick={() => window.dispatchEvent(new Event("solere:open-promo"))}
+        >
+          {t(
+            "Klaim voucher diskon member →",
+            "Claim member discount vouchers →",
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
 export function Bag({
   onShop,
   onCheckout,
@@ -432,7 +491,7 @@ const PAYMENT_ACCORDION_GROUPS: readonly PaymentGroupSpec[] = [
     titleEn: "Instant E-Wallets",
     tagId: "Bayar cepat",
     tagEn: "One-tap",
-    channels: ["gopay", "shopeepay", "dana", "ovo", "linkaja"],
+    channels: ["gopay", "dana", "ovo", "shopeepay", "linkaja"],
   },
   {
     id: "card",
@@ -549,11 +608,27 @@ export function PaymentChannelOptions({
                   <GroupIcon id={group.id} />
                 </span>
                 <span className="shopee-pay-group-text">
-                  <b>{t(group.titleId, group.titleEn)}</b>
-                  {activeInGroup && (
-                    <small className="shopee-pay-chosen-pill">
-                      {activeInGroup.badge}
-                    </small>
+                  <span className="shopee-pay-group-title-line">
+                    <b>{t(group.titleId, group.titleEn)}</b>
+                    {activeInGroup && (
+                      <PaymentBrandLogo channelId={activeInGroup.id} size="sm" />
+                    )}
+                  </span>
+                  {!expanded && (
+                    <span
+                      className="shopee-pay-group-logos"
+                      aria-hidden="true"
+                      translate="no"
+                    >
+                      {items.slice(0, 4).map((ch) => (
+                        <PaymentBrandLogo key={ch.id} channelId={ch.id} size="sm" />
+                      ))}
+                      {items.length > 4 && (
+                        <small className="shopee-pay-more-count">
+                          +{items.length - 4}
+                        </small>
+                      )}
+                    </span>
                   )}
                 </span>
               </span>
@@ -583,7 +658,7 @@ export function PaymentChannelOptions({
                         checked={isSelected}
                         onChange={() => onSelect(ch.id)}
                       />
-                      <span className="shopee-pay-subrow-brand">
+                      <span className="shopee-pay-subrow-brand" translate="no">
                         <PaymentBrandLogo channelId={ch.id} size="sm" />
                         <b>{ch.label}</b>
                       </span>
@@ -623,107 +698,113 @@ function formatReceiptDateTime(iso: string, lang: "id" | "en") {
   return `${datePart} · ${timePart} WIB`;
 }
 
-function downloadOfficialReceiptHtml(
-  order: Order,
-  money: (n: number, c?: "USD" | "IDR") => string,
-) {
-  const cur = order.currency || "IDR";
-  const receiptNo =
-    order.receiptNumber ||
-    `VCO-INV-${order.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
-  const txId =
-    order.payment?.transactionId ||
-    `VCO-TX-${order.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
-  const paidTime = formatReceiptDateTime(
-    order.payment?.paidAt || order.date,
-    "id",
+function escHtml(s: string) {
+  return String(s || "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c] || c,
   );
-  const method =
-    order.payment?.method ||
-    order.paymentMethod ||
-    "QRIS Instan (Semua Bank & E-Wallet)";
-  const itemsSubtotal = order.items.reduce(
-    (s, i) => s + i.price * i.quantity,
-    0,
+}
+
+function inferPaymentChannelId(order: Order, fallback = "qris"): string {
+  const explicit =
+    order.payment?.directCharge?.channel || order.payment?.channel || "";
+  if (explicit && PAYMENT_CHANNELS.some((c) => c.id === explicit)) {
+    return explicit;
+  }
+  const raw = `${explicit} ${order.payment?.method || ""} ${order.paymentMethod || ""}`.toLowerCase();
+  if (raw.includes("echannel")) return "mandiri_va";
+  if (raw.includes("cstore")) return "indomaret";
+  if (raw.includes("bank_transfer") && !raw.includes("bca") && !raw.includes("bni") && !raw.includes("bri") && !raw.includes("mandiri") && !raw.includes("permata") && !raw.includes("cimb")) {
+    return "bca_va";
+  }
+  const matched = PAYMENT_CHANNELS.find(
+    (c) =>
+      raw.includes(c.id.replace("_va", "")) ||
+      raw.includes(c.badge.toLowerCase()),
   );
-  const rows = order.items
-    .map(
-      (i) => `
-      <tr>
-        <td style="padding:10px 8px;border-bottom:1px solid #e6dfd5;">
-          <strong>${i.name}</strong><br/>
-          <small style="color:#6d6258;">SKU: ${i.productCode || i.productId.toUpperCase()} · EU ${i.size}${i.color ? ` · ${i.color}` : ""}</small>
-        </td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e6dfd5;text-align:center;">${i.quantity}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e6dfd5;text-align:right;">${money(i.price, cur)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e6dfd5;text-align:right;font-weight:600;">${money(i.price * i.quantity, cur)}</td>
-      </tr>`,
-    )
-    .join("");
-  const html = `<!doctype html>
-<html lang="id">
-<head>
-<meta charset="utf-8"/>
-<title>Struk Pembayaran ${receiptNo} — Valerie & CO</title>
-<style>
-  body { font-family: system-ui, -apple-system, sans-serif; background:#f6f2eb; color:#181512; padding:32px 16px; margin:0; }
-  .sheet { max-width:680px; margin:0 auto; background:#fff; border:1px solid #dcd3c6; border-radius:16px; padding:32px; }
-  .head { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #181512; padding-bottom:18px; margin-bottom:20px; }
-  .badge { background:#1f5f3b; color:#fff; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:0.08em; }
-  .meta { display:grid; grid-template-columns:1fr 1fr; gap:12px; background:#faf7f2; padding:16px; border-radius:12px; margin-bottom:20px; font-size:13px; }
-  table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px; }
-  th { text-align:left; padding:8px; border-bottom:2px solid #181512; font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:#6d6258; }
-  .totals { margin-left:auto; width:280px; font-size:13px; }
-  .totals div { display:flex; justify-content:space-between; padding:5px 0; }
-  .totals .grand { border-top:2px solid #181512; margin-top:8px; padding-top:10px; font-size:16px; font-weight:700; }
-</style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="head">
-      <div>
-        <div style="font-size:11px;letter-spacing:0.2em;color:#8b6f47;font-weight:700;">VALERIE &amp; CO · OFFICIAL ATELIER RECEIPT</div>
-        <h1 style="margin:6px 0 4px;font-family:Georgia,serif;font-size:24px;">Struk Pembayaran Resmi</h1>
-        <div style="font-size:13px;color:#6d6258;">${receiptNo} · ${order.id}</div>
-      </div>
-      <span class="badge">LUNAS / PAID</span>
-    </div>
-    <div class="meta">
-      <div><strong>Penerima:</strong><br/>${order.address.name} (${order.address.phone})<br/>${order.email}</div>
-      <div><strong>Alamat Pengiriman:</strong><br/>${order.address.street}, ${order.address.city} ${order.address.postal}</div>
-      <div><strong>Metode Pembayaran:</strong><br/>${method}</div>
-      <div><strong>Waktu &amp; Ref Transaksi:</strong><br/>${paidTime}<br/>Ref: ${txId}</div>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Produk Atelier</th>
-          <th style="text-align:center;">Qty</th>
-          <th style="text-align:right;">Harga Satuan</th>
-          <th style="text-align:right;">Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="totals">
-      <div><span>Subtotal</span><span>${money(itemsSubtotal, cur)}</span></div>
-      ${order.discount ? `<div><span>Diskon Promo</span><span>−${money(order.discount, cur)}</span></div>` : ""}
-      <div><span>Pengiriman</span><span>${order.shipping ? money(order.shipping, cur) : "Gratis"}</span></div>
-      <div class="grand"><span>Total Dibayar</span><span>${money(order.total, cur)}</span></div>
-    </div>
-    <p style="margin-top:28px;font-size:12px;color:#6d6258;text-align:center;border-top:1px dashed #dcd3c6;padding-top:16px;">
-      Terima kasih telah berbelanja di Valerie &amp; CO Atelier · Dokumen ini adalah bukti pembayaran sah.
-    </p>
-  </div>
-</body>
-</html>`;
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Struk-Valerie-CO-${order.id}.html`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return matched?.id || fallback;
+}
+
+function buildBarcodeBars(code: string): Array<{ x: number; w: number }> {
+  const bars: Array<{ x: number; w: number }> = [];
+  let x = 3;
+  const seed = code || "VCO-INVOICE";
+  for (let i = 0; i < 42 && x < 176; i++) {
+    const ch = seed.charCodeAt(i % seed.length);
+    const w = ((ch + i) % 3) + 1;
+    const gap = ((ch >> (i % 4)) % 2) + 1.4;
+    if (i % 2 === 0 || w > 1) {
+      bars.push({ x: Number(x.toFixed(1)), w });
+    }
+    x += w + gap;
+  }
+  return bars;
+}
+
+function renderFallbackQrSvg(seedText: string) {
+  const size = 21;
+  const cells: Array<{ x: number; y: number }> = [];
+  const isFinderArea = (r: number, c: number) =>
+    (r < 8 && c < 8) || (r < 8 && c >= size - 8) || (r >= size - 8 && c < 8);
+  const drawFinder = (r0: number, c0: number) => {
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        const border = r === 0 || r === 6 || c === 0 || c === 6;
+        const inner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+        if (border || inner) cells.push({ x: c0 + c, y: r0 + r });
+      }
+    }
+  };
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+
+  let hash = 2166136261;
+  const src = seedText || "VALERIE-QRIS";
+  for (let i = 0; i < src.length; i++) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (isFinderArea(r, c)) continue;
+      if (r === 6 || c === 6) {
+        if ((r + c) % 2 === 0) cells.push({ x: c, y: r });
+        continue;
+      }
+      const step = (r * size + c) ^ hash;
+      const mixed = Math.imul(step ^ (step >>> 7), 2246822519);
+      if ((mixed >>> 0) % 10 < 5) cells.push({ x: c, y: r });
+    }
+  }
+  return (
+    <svg
+      viewBox={`-1.5 -1.5 ${size + 3} ${size + 3}`}
+      className="inline-qris-fallback-svg"
+      role="img"
+      aria-label="QR Code Pembayaran"
+    >
+      <rect x="-1.5" y="-1.5" width={size + 3} height={size + 3} fill="#ffffff" />
+      {cells.map((cell, i) => (
+        <rect
+          key={i}
+          x={cell.x}
+          y={cell.y}
+          width="0.92"
+          height="0.92"
+          rx="0.08"
+          fill="#171412"
+        />
+      ))}
+    </svg>
+  );
 }
 
 type LifecycleOutcome =
@@ -754,7 +835,612 @@ function resolveOrderOutcome(order: Order): LifecycleOutcome {
       : "failed";
   }
   if (order.payment?.status === "failed") return "failed";
+  if (!order.payment) return "paid";
   return "pending";
+}
+
+function resolveInvoiceStamp(order: Order, lang: "id" | "en") {
+  const outcome = resolveOrderOutcome(order);
+  if (outcome === "paid" && order.status === "delivered") {
+    return {
+      variant: "is-delivered",
+      label: lang === "id" ? "SELESAI · LUNAS" : "DELIVERED · PAID",
+    };
+  }
+  if (outcome === "paid") {
+    return {
+      variant: "is-paid",
+      label: lang === "id" ? "LUNAS · TERVERIFIKASI" : "PAID · VERIFIED",
+    };
+  }
+  if (outcome === "cancelled") {
+    return {
+      variant: "is-cancelled",
+      label: lang === "id" ? "DIBATALKAN" : "CANCELLED",
+    };
+  }
+  if (outcome === "expired") {
+    return {
+      variant: "is-expired",
+      label: lang === "id" ? "KEDALUWARSA" : "EXPIRED",
+    };
+  }
+  if (outcome === "failed") {
+    return {
+      variant: "is-failed",
+      label: lang === "id" ? "PEMBAYARAN GAGAL" : "PAYMENT FAILED",
+    };
+  }
+  if (outcome === "refunded") {
+    return {
+      variant: "is-refunded",
+      label: lang === "id" ? "REFUND SELESAI" : "REFUNDED",
+    };
+  }
+  return {
+    variant: "is-pending",
+    label: lang === "id" ? "MENUNGGU PEMBAYARAN" : "AWAITING PAYMENT",
+  };
+}
+
+export function downloadOfficialReceiptHtml(
+  order: Order,
+  money: (n: number, c?: "USD" | "IDR") => string,
+  lang: "id" | "en" = "id",
+) {
+  const cur = order.currency || "IDR";
+  const receiptNo =
+    order.receiptNumber ||
+    `VCO-INV-${order.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
+  const txId =
+    order.payment?.transactionId ||
+    order.payment?.directCharge?.transactionId ||
+    `VCO-TX-${order.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
+  const paidTime = formatReceiptDateTime(
+    order.payment?.paidAt ||
+      order.payment?.cancelledAt ||
+      order.payment?.expiredAt ||
+      order.date,
+    lang,
+  );
+  const method =
+    order.payment?.method ||
+    order.paymentMethod ||
+    "QRIS Instan (Semua Bank & E-Wallet)";
+  const itemsSubtotal = order.items.reduce(
+    (s, i) => s + i.price * i.quantity,
+    0,
+  );
+  const stamp = resolveInvoiceStamp(order, lang);
+  const stampColor =
+    stamp.variant === "is-paid" || stamp.variant === "is-delivered"
+      ? { bg: "#ecfdf5", fg: "#065f46", border: "#6ee7b7" }
+      : stamp.variant === "is-cancelled"
+        ? { bg: "#f5f5f4", fg: "#44403c", border: "#d6d3d1" }
+        : stamp.variant === "is-expired"
+          ? { bg: "#fff7ed", fg: "#9a3412", border: "#fdba74" }
+          : stamp.variant === "is-failed"
+            ? { bg: "#fef2f2", fg: "#991b1b", border: "#fca5a5" }
+            : stamp.variant === "is-refunded"
+              ? { bg: "#eef2ff", fg: "#3730a3", border: "#a5b4fc" }
+              : { bg: "#fffbeb", fg: "#92400e", border: "#fcd34d" };
+  const barcodeRects = buildBarcodeBars(receiptNo)
+    .map(
+      (b) =>
+        `<rect x="${b.x}" y="2" width="${b.w}" height="28" rx="0.6" fill="#24170f" />`,
+    )
+    .join("");
+  const rows = order.items
+    .map(
+      (i) => `
+      <tr>
+        <td style="padding:12px 10px;border-bottom:1px solid #ede4d8;">
+          <strong style="color:#24170f;font-size:13.5px;">${escHtml(i.name)}</strong><br/>
+          <small style="color:#6d6258;">SKU: ${escHtml(i.productCode || i.productId.toUpperCase())} · EU ${i.size}${i.color ? ` · ${escHtml(i.color)}` : ""}</small>
+        </td>
+        <td style="padding:12px 10px;border-bottom:1px solid #ede4d8;text-align:center;">${i.quantity}</td>
+        <td style="padding:12px 10px;border-bottom:1px solid #ede4d8;text-align:right;">${escHtml(money(i.price, cur))}</td>
+        <td style="padding:12px 10px;border-bottom:1px solid #ede4d8;text-align:right;font-weight:700;color:#24170f;">${escHtml(money(i.price * i.quantity, cur))}</td>
+      </tr>`,
+    )
+    .join("");
+  const refundBlock = order.refund
+    ? `<div style="margin-top:16px;padding:12px 14px;border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;font-size:12.5px;color:#312e81;">
+        <strong>${lang === "id" ? "CATATAN REFUND RESMI" : "OFFICIAL REFUND RECORD"} (${escHtml(order.refund.status.toUpperCase())})</strong><br/>
+        ${lang === "id" ? "Nominal" : "Amount"}: <b>${escHtml(money(order.refund.amount, order.refund.currency || cur))}</b>${order.refund.reference ? ` · Ref: ${escHtml(order.refund.reference)}` : ""}<br/>
+        ${lang === "id" ? "Alasan" : "Reason"}: ${escHtml(order.refund.reason)}
+      </div>`
+    : "";
+  const isPaidLike =
+    stamp.variant === "is-paid" ||
+    stamp.variant === "is-delivered" ||
+    stamp.variant === "is-refunded";
+  const html = `<!doctype html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8"/>
+<title>Invoice ${escHtml(receiptNo)} — Valerie &amp; CO</title>
+<style>
+  * { box-sizing:border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#f5efe6; color:#24170f; padding:28px 14px; margin:0; line-height:1.5; }
+  .sheet { max-width:740px; margin:0 auto; background:#ffffff; border:1px solid #e2d8ca; border-radius:20px; overflow:hidden; box-shadow:0 20px 50px rgba(36,23,15,0.08); }
+  .banner { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; flex-wrap:wrap; background:linear-gradient(135deg,#24170f 0%,#442c1d 100%); color:#fcfaf7; padding:26px 28px; }
+  .kicker { font-size:10.5px; letter-spacing:0.2em; text-transform:uppercase; color:#d8b384; font-weight:700; }
+  .banner h1 { margin:6px 0 4px; font-family:Georgia,serif; font-size:26px; font-weight:600; color:#ffffff; }
+  .banner p { margin:0; font-size:12.5px; color:rgba(252,250,247,0.75); }
+  .head-right { text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+  .stamp { display:inline-block; padding:5px 12px; border-radius:999px; background:${stampColor.bg}; color:${stampColor.fg}; border:1px solid ${stampColor.border}; font-size:11px; font-weight:800; letter-spacing:0.08em; }
+  .body { padding:24px 28px 28px; }
+  .parties { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:20px; }
+  .card { background:#faf6ef; border:1px solid #ebe1d4; border-radius:12px; padding:14px 16px; font-size:12.8px; }
+  .card small { display:block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#7c6858; margin-bottom:5px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px; border:1px solid #ebe1d4; border-radius:12px; overflow:hidden; }
+  th { text-align:left; padding:10px; background:#f8f3eb; border-bottom:1px solid #dfd3c3; font-size:11px; text-transform:uppercase; letter-spacing:0.07em; color:#6d5a4b; }
+  .bottom { display:grid; grid-template-columns:1.1fr 0.9fr; gap:18px; align-items:start; }
+  .seal { background:#fcfaf7; border:1px dashed #d5c6b3; border-radius:12px; padding:14px; font-size:11.8px; color:#5e4e41; }
+  .totals { background:#faf6ef; border:1px solid #ebe1d4; border-radius:12px; padding:14px 16px; font-size:13px; }
+  .totals div { display:flex; justify-content:space-between; padding:5px 0; }
+  .totals .grand { border-top:2px solid #24170f; margin-top:8px; padding-top:10px; font-size:16px; font-weight:800; color:#24170f; }
+  @media print { body { background:#fff; padding:0; } .sheet { border:0; box-shadow:none; border-radius:0; } }
+  @media (max-width:600px) { .parties, .bottom { grid-template-columns:1fr; } .head-right { align-items:flex-start; text-align:left; } }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="banner">
+      <div>
+        <div class="kicker">VALERIE &amp; CO · OFFICIAL ATELIER INVOICE</div>
+        <h1>${lang === "id" ? "Faktur &amp; Bukti Pembayaran" : "Official Tax &amp; Payment Invoice"}</h1>
+        <p>Atelier Curated Footwear · SCBD Lot 14, Jakarta Selatan · valerie-co.my.id</p>
+      </div>
+      <div class="head-right">
+        <span class="stamp">${escHtml(stamp.label)}</span>
+        <div style="font-size:14px;font-weight:700;">${escHtml(receiptNo)}</div>
+        <div style="font-size:12px;color:rgba(252,250,247,0.78);">${escHtml(order.id)} · ${escHtml(paidTime)}</div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="parties">
+        <div class="card">
+          <small>${lang === "id" ? "Diterbitkan Untuk &amp; Tujuan Kirim" : "Billed To &amp; Shipping Destination"}</small>
+          <strong>${escHtml(order.address.name || order.name)}</strong> (${escHtml(order.address.phone)})<br/>
+          ${escHtml(order.email)}<br/>
+          ${escHtml(order.address.street)}, ${escHtml(order.address.city)} ${escHtml(order.address.postal)}
+          ${order.tracking ? `<br/><span style="color:#6b4423;font-weight:600;">Resi: ${escHtml(order.tracking)}</span>` : ""}
+        </div>
+        <div class="card">
+          <small>${lang === "id" ? "Verifikasi &amp; Referensi Pembayaran" : "Payment Verification &amp; Reference"}</small>
+          <strong>${escHtml(method)}</strong><br/>
+          Ref Transaksi: <code>${escHtml(txId)}</code><br/>
+          Status: <strong>${escHtml(stamp.label)}</strong>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>${lang === "id" ? "Produk &amp; SKU" : "Product &amp; SKU"}</th>
+            <th style="text-align:center;">Qty</th>
+            <th style="text-align:right;">${lang === "id" ? "Harga Satuan" : "Unit Price"}</th>
+            <th style="text-align:right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="bottom">
+        <div class="seal">
+          <strong style="display:block;color:#24170f;margin-bottom:6px;">${lang === "id" ? "SEGEL OTENTIKASI DIGITAL" : "DIGITAL AUTHENTICITY SEAL"}</strong>
+          <svg width="180" height="34" viewBox="0 0 180 34" aria-hidden="true">${barcodeRects}</svg>
+          <div style="font-family:monospace;font-size:11px;margin:2px 0 6px;color:#24170f;">${escHtml(receiptNo)}</div>
+          ${lang === "id" ? "Dokumen elektronik resmi diterbitkan otomatis oleh sistem Valerie &amp; CO sebagai bukti transaksi sah." : "Official electronic invoice generated automatically by Valerie &amp; CO."}
+          ${refundBlock}
+        </div>
+        <div class="totals">
+          <div><span>Subtotal</span><span>${escHtml(money(itemsSubtotal, cur))}</span></div>
+          ${order.discount ? `<div><span>${lang === "id" ? "Potongan Voucher" : "Promo Discount"}</span><span>−${escHtml(money(order.discount, cur))}</span></div>` : ""}
+          <div><span>${lang === "id" ? "Biaya Pengiriman" : "Shipping Fee"}</span><span>${order.shipping ? escHtml(money(order.shipping, cur)) : lang === "id" ? "Gratis" : "Complimentary"}</span></div>
+          <div><span>${lang === "id" ? "Proteksi &amp; Pengemasan" : "Packaging &amp; Care"}</span><span>${lang === "id" ? "Gratis" : "Complimentary"}</span></div>
+          <div class="grand"><span>${isPaidLike ? (lang === "id" ? "Total Dibayar" : "Total Paid") : (lang === "id" ? "Total Faktur" : "Invoice Total")}</span><span>${escHtml(money(order.total, cur))}</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Invoice-Valerie-CO-${receiptNo}.html`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+export function OfficialAtelierInvoice({
+  order,
+  showActions = false,
+  onDone,
+  onPrint,
+}: {
+  order: Order;
+  showActions?: boolean;
+  onDone?: () => void;
+  onPrint?: () => void;
+}) {
+  const { db, t, lang, money } = useStore();
+  const [showMap, setShowMap] = useState(false);
+  const cur = order.currency || "IDR";
+  const receiptNo =
+    order.receiptNumber ||
+    `VCO-INV-${order.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
+  const txId =
+    order.payment?.transactionId ||
+    order.payment?.directCharge?.transactionId ||
+    `VCO-TX-${order.id.replace(/^SOL-/, "").slice(0, 8).toUpperCase()}`;
+  const channelId = inferPaymentChannelId(order);
+  const stamp = resolveInvoiceStamp(order, lang);
+  const itemsSubtotal = order.items.reduce(
+    (s, i) => s + i.price * i.quantity,
+    0,
+  );
+  const barcodeBars = buildBarcodeBars(receiptNo);
+  const storeEmail = db.settings.email || "concierge@valerie-co.my.id";
+  const isPaidLike =
+    stamp.variant === "is-paid" ||
+    stamp.variant === "is-delivered" ||
+    stamp.variant === "is-refunded";
+  const invoiceTimestamp = formatReceiptDateTime(
+    order.payment?.paidAt ||
+      order.payment?.cancelledAt ||
+      order.payment?.expiredAt ||
+      order.date,
+    lang,
+  );
+  const mapQuery = encodeURIComponent(
+    `${order.address.street}, ${order.address.city} ${order.address.postal}`,
+  );
+
+  return (
+    <div className="vco-invoice-sheet" id="official-receipt-print-area">
+      <div className="vco-invoice-head">
+        <div className="vco-invoice-brand">
+          <span className="vco-invoice-kicker">
+            VALERIE &amp; CO · ATELIER CURATED FOOTWEAR
+          </span>
+          <h3>{t("Faktur & Invoice Resmi", "Official Tax & Payment Invoice")}</h3>
+          <p>
+            SCBD Lot 14, Jakarta Selatan · {storeEmail} · valerie-co.my.id
+          </p>
+        </div>
+        <div className="vco-invoice-head-right">
+          <span className={`vco-invoice-stamp ${stamp.variant}`}>
+            {stamp.variant === "is-paid" || stamp.variant === "is-delivered" ? (
+              <Check size={12} aria-hidden="true" />
+            ) : stamp.variant === "is-cancelled" ? (
+              <Ban size={12} aria-hidden="true" />
+            ) : stamp.variant === "is-expired" ? (
+              <Clock size={12} aria-hidden="true" />
+            ) : stamp.variant === "is-failed" ? (
+              <AlertCircle size={12} aria-hidden="true" />
+            ) : stamp.variant === "is-refunded" ? (
+              <RotateCcw size={12} aria-hidden="true" />
+            ) : (
+              <ShieldCheck size={12} aria-hidden="true" />
+            )}
+            <span>{stamp.label}</span>
+          </span>
+          <strong className="vco-invoice-no">{receiptNo}</strong>
+          <small className="vco-invoice-subref">
+            {order.id} · {invoiceTimestamp}
+          </small>
+        </div>
+      </div>
+
+      <div className="vco-invoice-parties">
+        <div className="vco-invoice-party-card">
+          <div className="vco-invoice-party-head">
+            <small>{t("Diterbitkan Untuk & Tujuan Kirim", "Billed To & Delivery Destination")}</small>
+            <button
+              type="button"
+              className="vco-invoice-map-btn no-print"
+              onClick={() => setShowMap((v) => !v)}
+            >
+              <MapPin size={12} aria-hidden="true" />
+              <span>{showMap ? t("Tutup Peta", "Hide Map") : t("Peta", "Map")}</span>
+            </button>
+          </div>
+          <b>{order.address.name || order.name}</b>
+          <span className="vco-invoice-party-meta">
+            {order.address.phone} · {order.email}
+          </span>
+          <p>
+            {order.address.street}, {order.address.city} {order.address.postal}
+          </p>
+          {order.tracking && (
+            <span className="vco-invoice-tracking-chip">
+              <Truck size={12} aria-hidden="true" />
+              <span>
+                {t("Resi:", "Tracking:")} {order.tracking}
+              </span>
+            </span>
+          )}
+        </div>
+
+        <div className="vco-invoice-party-card">
+          <div className="vco-invoice-party-head">
+            <small>{t("Verifikasi & Metode Pembayaran", "Payment Verification & Method")}</small>
+            <MidtransGatewayBadge compact />
+          </div>
+          <div className="vco-invoice-pay-brand">
+            <PaymentBrandLogo channelId={channelId} size="md" />
+            <b>
+              {order.payment?.method ||
+                order.paymentMethod ||
+                t("Pembayaran Digital", "Digital Payment")}
+            </b>
+          </div>
+          <div className="vco-invoice-pay-meta">
+            <span>
+              {t("Ref Transaksi:", "Tx Ref:")} <code>{txId}</code>
+            </span>
+            <span>
+              {t("Pembaruan:", "Updated:")} {invoiceTimestamp}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {showMap && (
+        <div className="address-map-preview no-print">
+          <div className="address-map-preview-head">
+            <span>
+              <MapPin size={13} aria-hidden="true" />{" "}
+              <b>
+                {order.address.street}, {order.address.city}
+              </b>
+            </span>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${mapQuery}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t("Buka di Google Maps", "Open in Google Maps")}{" "}
+              <ExternalLink size={11} aria-hidden="true" />
+            </a>
+          </div>
+          <iframe
+            title="Peta Tujuan Pengiriman Invoice"
+            className="address-map-iframe"
+            loading="lazy"
+            src="https://www.openstreetmap.org/export/embed.html?bbox=106.7800%2C-6.2450%2C106.8400%2C-6.1950&layer=mapnik&marker=-6.2246%2C106.8096"
+          />
+        </div>
+      )}
+
+      <div className="vco-invoice-table-wrap">
+        <table className="vco-invoice-table">
+          <thead>
+            <tr>
+              <th>{t("Produk & Kode SKU", "Product & SKU Code")}</th>
+              <th>{t("Ukuran / Varian", "Size / Variant")}</th>
+              <th className="num">Qty</th>
+              <th className="num">{t("Harga Satuan", "Unit Price")}</th>
+              <th className="num">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {order.items.map((item, idx) => (
+              <tr key={`${item.productId}-${item.size}-${idx}`}>
+                <td>
+                  <div className="vco-invoice-sku-cell">
+                    <img src={item.image} alt={item.name} />
+                    <div>
+                      <b>{item.name}</b>
+                      <span className="vco-invoice-sku-pill">
+                        {item.productCode || item.productId.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  EU {item.size}
+                  {item.color ? ` · ${item.color}` : ""}
+                </td>
+                <td className="num">{item.quantity}</td>
+                <td className="num">{money(item.price, cur)}</td>
+                <td className="num strong">
+                  {money(item.price * item.quantity, cur)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="vco-invoice-bottom-grid">
+        <div className="vco-invoice-seal-card">
+          <div className="vco-invoice-seal-head">
+            <div className="vco-invoice-seal-emblem" aria-hidden="true">
+              <ShieldCheck size={20} />
+            </div>
+            <div>
+              <b>{t("VALERIE & CO · VERIFIED DIGITAL INVOICE", "VALERIE & CO · VERIFIED DIGITAL INVOICE")}</b>
+              <small>
+                {t(
+                  "Bukti pembayaran & faktur sah diterbitkan secara elektronik",
+                  "Official electronically verified invoice & proof of transaction",
+                )}
+              </small>
+            </div>
+          </div>
+          <div className="vco-invoice-barcode">
+            <svg
+              viewBox="0 0 180 34"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {barcodeBars.map((bar, idx) => (
+                <rect
+                  key={idx}
+                  x={bar.x}
+                  y={2}
+                  width={bar.w}
+                  height={28}
+                  rx={0.6}
+                  fill="#24170f"
+                />
+              ))}
+            </svg>
+            <code>{receiptNo}</code>
+          </div>
+          {order.refund && (
+            <div className={`vco-invoice-refund-box ${order.refund.status}`}>
+              <b>
+                {order.refund.status === "refunded"
+                  ? t("BUKTI REFUND RESMI", "OFFICIAL REFUND RECORD")
+                  : order.refund.status === "requested"
+                    ? t("PENGAJUAN REFUND DIPROSES", "REFUND PENDING")
+                    : t("PENGAJUAN REFUND DITOLAK", "REFUND DECLINED")}
+              </b>
+              <span>
+                {money(order.refund.amount, order.refund.currency || cur)}
+                {order.refund.reference ? ` · Ref: ${order.refund.reference}` : ""}
+              </span>
+              <small>{order.refund.reason}</small>
+            </div>
+          )}
+        </div>
+
+        <div className="vco-invoice-totals-card">
+          <div>
+            <span>Subtotal</span>
+            <span>{money(itemsSubtotal, cur)}</span>
+          </div>
+          {order.discount > 0 && (
+            <div className="discount-row">
+              <span>{t("Potongan Voucher", "Promo Discount")}</span>
+              <span>−{money(order.discount, cur)}</span>
+            </div>
+          )}
+          <div>
+            <span>{t("Biaya Pengiriman", "Shipping Fee")}</span>
+            <span>
+              {order.shipping
+                ? money(order.shipping, cur)
+                : t("Gratis", "Complimentary")}
+            </span>
+          </div>
+          <div>
+            <span>{t("Proteksi & Pengemasan Atelier", "Atelier Packaging & Care")}</span>
+            <span>{t("Gratis", "Complimentary")}</span>
+          </div>
+          <div className="vco-invoice-grand-row">
+            <b>
+              {isPaidLike
+                ? t("Total Dibayar", "Total Paid")
+                : t("Total Faktur", "Invoice Total")}
+            </b>
+            <b>{money(order.total, cur)}</b>
+          </div>
+        </div>
+      </div>
+
+      {showActions && (
+        <div className="vco-invoice-actions no-print">
+          <button
+            type="button"
+            className="button ghost small"
+            onClick={() => (onPrint ? onPrint() : window.print())}
+          >
+            <Printer size={15} aria-hidden="true" />
+            {t("Cetak Invoice / PDF", "Print Invoice / PDF")}
+          </button>
+          <button
+            type="button"
+            className="button ghost small"
+            onClick={() => downloadOfficialReceiptHtml(order, money, lang)}
+          >
+            <Download size={15} aria-hidden="true" />
+            {t("Unduh Invoice (.HTML)", "Download Invoice (.HTML)")}
+          </button>
+          {onDone && (
+            <button type="button" className="button dark small" onClick={onDone}>
+              {t("Lihat & Lacak Pesanan", "Track My Order")}
+              <ArrowRight size={15} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderedItemsPreview({
+  order,
+  money,
+  t,
+}: {
+  order: Order;
+  money: (n: number, c?: "USD" | "IDR") => string;
+  t: (id: string, en: string) => string;
+}) {
+  const cur = order.currency || "IDR";
+  return (
+    <div className="vco-lifecycle-items">
+      <div className="vco-lifecycle-items-head">
+        <span>{t("Rincian Produk Pesanan", "Order Items")}</span>
+        <small>
+          {order.items.reduce((sum, item) => sum + item.quantity, 0)}{" "}
+          {t("pasang", "pairs")}
+        </small>
+      </div>
+      {order.items.map((item, idx) => (
+        <div
+          key={`${item.productId}-${item.size}-${idx}`}
+          className="vco-lifecycle-item-row"
+        >
+          <img src={item.image} alt={item.name} />
+          <div className="vco-lifecycle-item-copy">
+            <b>{item.name}</b>
+            <small>
+              EU {item.size}
+              {item.color ? ` · ${item.color}` : ""} · ×{item.quantity}
+            </small>
+          </div>
+          <strong>{money(item.price * item.quantity, cur)}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type StepperItem = {
+  label: string;
+  state: "done" | "active" | "upcoming" | "warn" | "danger" | "muted";
+};
+
+function LifecycleStepper({ steps }: { steps: StepperItem[] }) {
+  return (
+    <div className="vco-lifecycle-stepper">
+      {steps.map((step, idx) => (
+        <div key={step.label} className={`vco-step-node ${step.state}`}>
+          <span className="vco-step-dot" aria-hidden="true">
+            {step.state === "done" ? (
+              <Check size={12} />
+            ) : step.state === "warn" ? (
+              <Clock size={12} />
+            ) : step.state === "danger" ? (
+              <AlertCircle size={12} />
+            ) : step.state === "muted" ? (
+              <Ban size={12} />
+            ) : (
+              idx + 1
+            )}
+          </span>
+          <small>{step.label}</small>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function resolveDeadlineMs(order: Order): number {
@@ -817,14 +1503,22 @@ export function InlinePaymentAndReceipt({
   } = useStore();
   const liveOrder = db.orders.find((o) => o.id === order.id) || order;
   const directCharge = liveOrder.payment?.directCharge;
+  const [selectedChannelOverride, setSelectedChannelOverride] = useState<string>("");
+  const [showMethodSwitcher, setShowMethodSwitcher] = useState(false);
+  const [selectedTenor, setSelectedTenor] = useState<number>(1);
+  const [qrImgError, setQrImgError] = useState(false);
   const channelId =
-    directCharge?.channel || liveOrder.payment?.channel || initialChannel;
+    selectedChannelOverride ||
+    directCharge?.channel ||
+    liveOrder.payment?.channel ||
+    initialChannel;
   const activeChannel =
     PAYMENT_CHANNELS.find((c) => c.id === channelId) || PAYMENT_CHANNELS[0];
   const outcome = resolveOrderOutcome(liveOrder);
   const prevOutcomeRef = useRef<LifecycleOutcome>(outcome);
 
-  const [showReceiptMap, setShowReceiptMap] = useState(false);
+  const [paidTab, setPaidTab] = useState<"summary" | "invoice">("summary");
+  const [showOutcomeInvoice, setShowOutcomeInvoice] = useState(false);
   const [syncingLocal, setSyncingLocal] = useState(false);
   const [charging, setCharging] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -838,6 +1532,30 @@ export function InlinePaymentAndReceipt({
     Math.max(0, Math.floor((deadlineMs - Date.now()) / 1000)),
   );
   const autoExpiredSyncedRef = useRef(false);
+
+  const rawDigits = String(liveOrder.id || "").replace(/\D/g, "");
+  const hashDigits = Array.from(String(liveOrder.id || "SOL000000"))
+    .reduce((acc, c, idx) => acc + c.charCodeAt(0) * (idx + 17), 104857)
+    .toString()
+    .replace(/\D/g, "");
+  const orderDigits = (rawDigits + hashDigits + "8840291736").slice(0, 10);
+
+  const handleSwitchChannel = async (nextChannelId: string) => {
+    setSelectedChannelOverride(nextChannelId);
+    setShowMethodSwitcher(false);
+    setQrImgError(false);
+    setSelectedTenor(1);
+    if (liveOrder.payment?.status === "pending") {
+      setCharging(true);
+      try {
+        await chargeOrderPayment(liveOrder.id, nextChannelId);
+      } catch (e) {
+        notify((e as Error).message, (e as Error).message);
+      } finally {
+        setCharging(false);
+      }
+    }
+  };
 
   const handleSyncStatus = async () => {
     if (checkingRemote || syncingLocal) return;
@@ -908,15 +1626,24 @@ export function InlinePaymentAndReceipt({
 
   const chargeMatchesChannel =
     Boolean(directCharge) && directCharge?.channel === activeChannel.id;
+  const isFallbackCharge = Boolean(
+    chargeMatchesChannel &&
+      (directCharge?.isFallback ||
+        directCharge?.statusMessage === "Tagihan siap dibayar"),
+  );
+  const hasRealChannelCharge = chargeMatchesChannel && !isFallbackCharge;
   const virtualAccountNumber =
-    (chargeMatchesChannel && (directCharge?.vaNumber || directCharge?.billKey)) ||
+    (hasRealChannelCharge && (directCharge?.vaNumber || directCharge?.billKey)) ||
     "";
   const effectiveBillerCode =
-    (chargeMatchesChannel && directCharge?.billerCode) || activeChannel.billerCode;
+    (hasRealChannelCharge && directCharge?.billerCode) || activeChannel.billerCode;
   const retailPaymentCode =
-    (chargeMatchesChannel && directCharge?.paymentCode) || "";
-  const liveQrImageUrl = chargeMatchesChannel ? directCharge?.qrUrl || "" : "";
-  const activeQrString = chargeMatchesChannel ? directCharge?.qrString || "" : "";
+    (hasRealChannelCharge && directCharge?.paymentCode) || "";
+  const liveMerchantId = hasRealChannelCharge
+    ? directCharge?.merchantId || ""
+    : "";
+  const liveQrImageUrl = hasRealChannelCharge ? directCharge?.qrUrl || "" : "";
+  const activeQrString = hasRealChannelCharge ? directCharge?.qrString || "" : "";
   const liveDeeplinkUrl = chargeMatchesChannel
     ? directCharge?.deeplinkUrl || ""
     : "";
@@ -963,20 +1690,6 @@ export function InlinePaymentAndReceipt({
       setCancelling(false);
     }
   };
-
-  const isCoreCapable = [
-    "qris",
-    "gopay",
-    "shopeepay",
-    "bca_va",
-    "bni_va",
-    "bri_va",
-    "permata_va",
-    "cimb_va",
-    "mandiri_va",
-    "indomaret",
-    "alfamart",
-  ].includes(activeChannel.id);
 
   const howToSteps =
     activeChannel.id === "qris" || activeChannel.category === "qris_ewallet"
@@ -1053,43 +1766,84 @@ export function InlinePaymentAndReceipt({
   // Outcome Views: Expired / Failed / Cancelled / Refunded
   if (outcome === "expired") {
     return (
-      <div className="shopee-outcome-card is-expired">
-        <div className="shopee-outcome-icon is-expired">
-          <Clock size={26} />
-        </div>
-        <h3>{t("Waktu Pembayaran Habis", "Payment Window Expired")}</h3>
-        <p className="shopee-outcome-sub">
-          {t(
-            `Batas waktu pembayaran untuk pesanan ${receiptNo} telah berakhir. Stok produk telah dikembalikan secara otomatis.`,
-            `The payment window for order ${receiptNo} has ended. Reserved items have been returned to stock automatically.`,
-          )}
-        </p>
-        <div className="shopee-outcome-meta">
-          <div>
-            <span>{t("No. Pesanan", "Order No.")}</span>
-            <b>{receiptNo}</b>
+      <div className="vco-lifecycle-popup is-expired">
+        <div className="vco-lifecycle-banner is-expired">
+          <div className="vco-lifecycle-emblem is-expired" aria-hidden="true">
+            <Clock size={26} />
           </div>
-          <div>
-            <span>{t("Total Tagihan", "Order Total")}</span>
-            <b>{money(liveOrder.total, cur)}</b>
+          <div className="vco-lifecycle-copy">
+            <span className="vco-lifecycle-kicker">
+              {t("BATAS WAKTU BERAKHIR · OTOMATIS DIBATALKAN", "PAYMENT WINDOW ENDED · AUTO-RELEASED")}
+            </span>
+            <h3>{t("Waktu Pembayaran Habis", "Payment Window Expired")}</h3>
+            <p>
+              {t(
+                `Batas waktu pembayaran 24 jam untuk pesanan ${receiptNo} telah berakhir. Stok produk dikembalikan otomatis ke katalog.`,
+                `The 24-hour payment window for order ${receiptNo} has ended. Reserved items have been returned to stock.`,
+              )}
+            </p>
           </div>
-          <div>
-            <span>{t("Metode", "Method")}</span>
-            <b>{activeChannel.label}</b>
-          </div>
-          <div>
-            <span>{t("Status", "Status")}</span>
-            <b className="status-tag-expired">{t("KEDALUWARSA", "EXPIRED")}</b>
+          <div className="vco-lifecycle-amount">
+            <small>{t("Total Tagihan", "Order Total")}</small>
+            <strong>{money(liveOrder.total, cur)}</strong>
           </div>
         </div>
+
+        <LifecycleStepper
+          steps={[
+            { label: t("Pesanan Dibuat", "Order Created"), state: "done" },
+            { label: t("Batas Waktu 24 Jam", "24h Payment Window"), state: "done" },
+            { label: t("Kedaluwarsa", "Expired"), state: "warn" },
+          ]}
+        />
+
+        {showOutcomeInvoice ? (
+          <OfficialAtelierInvoice order={liveOrder} showActions={false} />
+        ) : (
+          <>
+            <OrderedItemsPreview order={liveOrder} money={money} t={t} />
+            <div className="shopee-outcome-meta">
+              <div>
+                <span>{t("No. Pesanan", "Order No.")}</span>
+                <b>{receiptNo}</b>
+              </div>
+              <div>
+                <span>{t("Total Tagihan", "Order Total")}</span>
+                <b>{money(liveOrder.total, cur)}</b>
+              </div>
+              <div>
+                <span>{t("Metode Pembayaran", "Payment Method")}</span>
+                <div className="vco-meta-brand-line">
+                  <PaymentBrandLogo channelId={activeChannel.id} size="sm" />
+                  <b>{activeChannel.label}</b>
+                </div>
+              </div>
+              <div>
+                <span>{t("Status Transaksi", "Transaction Status")}</span>
+                <b className="status-tag-expired">{t("KEDALUWARSA", "EXPIRED")}</b>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="shopee-outcome-actions">
           <button
             type="button"
             className="button dark"
             onClick={handleReorder}
           >
-            <RefreshCw size={15} />
-            {t("Pesan Ulang", "Order Again")}
+            <RefreshCw size={15} aria-hidden="true" />
+            {t("Pesan Ulang Sekarang", "Order Again Now")}
+          </button>
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => setShowOutcomeInvoice((v) => !v)}
+          >
+            <FileText size={15} aria-hidden="true" />
+            {showOutcomeInvoice
+              ? t("Tutup Invoice", "Hide Invoice")
+              : t("Lihat Rincian Invoice", "View Invoice")}
           </button>
           <button type="button" className="button ghost" onClick={onDone}>
             {t("Lihat Pesanan Saya", "My Orders")}
@@ -1101,44 +1855,98 @@ export function InlinePaymentAndReceipt({
 
   if (outcome === "failed") {
     return (
-      <div className="shopee-outcome-card is-failed">
-        <div className="shopee-outcome-icon is-failed">
-          <AlertCircle size={26} />
-        </div>
-        <h3>{t("Pembayaran Tidak Berhasil", "Payment Declined")}</h3>
-        <p className="shopee-outcome-sub">
-          {liveOrder.payment?.statusReason ||
-            t(
-              "Pembayaran ditolak oleh penerbit kartu atau sistem gateway. Tidak ada dana yang dipotong dari akun Anda.",
-              "Payment was declined by your issuer or payment gateway. No funds were captured.",
-            )}
-        </p>
-        <div className="shopee-outcome-meta">
-          <div>
-            <span>{t("No. Pesanan", "Order No.")}</span>
-            <b>{receiptNo}</b>
+      <div className="vco-lifecycle-popup is-failed">
+        <div className="vco-lifecycle-banner is-failed">
+          <div className="vco-lifecycle-emblem is-failed" aria-hidden="true">
+            <AlertCircle size={26} />
           </div>
-          <div>
-            <span>{t("Nominal", "Amount")}</span>
-            <b>{money(liveOrder.total, cur)}</b>
+          <div className="vco-lifecycle-copy">
+            <span className="vco-lifecycle-kicker">
+              {t("OTORISASI DITOLAK · DANA AMAN", "AUTHORIZATION DECLINED · NO CHARGE")}
+            </span>
+            <h3>{t("Pembayaran Tidak Berhasil", "Payment Declined")}</h3>
+            <p>
+              {t(
+                "Transaksi belum dapat diselesaikan oleh penyedia pembayaran. Tidak ada saldo atau limit yang terpotong dari akun Anda.",
+                "The payment could not be authorized by your issuer or gateway. No funds were captured from your account.",
+              )}
+            </p>
           </div>
-          <div>
-            <span>{t("Metode", "Method")}</span>
-            <b>{liveOrder.payment?.method || activeChannel.label}</b>
-          </div>
-          <div>
-            <span>{t("Status", "Status")}</span>
-            <b className="status-tag-failed">{t("GAGAL", "FAILED")}</b>
+          <div className="vco-lifecycle-amount">
+            <small>{t("Nominal Gagal", "Declined Amount")}</small>
+            <strong>{money(liveOrder.total, cur)}</strong>
           </div>
         </div>
+
+        <LifecycleStepper
+          steps={[
+            { label: t("Pesanan Dibuat", "Order Created"), state: "done" },
+            { label: t("Otorisasi Gateway", "Gateway Check"), state: "done" },
+            { label: t("Pembayaran Gagal", "Payment Failed"), state: "danger" },
+          ]}
+        />
+
+        <div className="vco-diagnostic-box">
+          <AlertCircle size={16} aria-hidden="true" />
+          <div>
+            <b>{t("Keterangan Penolakan Sistem", "Gateway Diagnostic Note")}</b>
+            <p>
+              {liveOrder.payment?.statusReason ||
+                t(
+                  "Pembayaran ditolak oleh penerbit kartu, saldo tidak mencukupi, atau sesi 3D Secure dibatalkan.",
+                  "Declined by card issuer, insufficient funds, or 3D Secure authentication was not completed.",
+                )}
+            </p>
+          </div>
+        </div>
+
+        {showOutcomeInvoice ? (
+          <OfficialAtelierInvoice order={liveOrder} showActions={false} />
+        ) : (
+          <>
+            <OrderedItemsPreview order={liveOrder} money={money} t={t} />
+            <div className="shopee-outcome-meta">
+              <div>
+                <span>{t("No. Pesanan", "Order No.")}</span>
+                <b>{receiptNo}</b>
+              </div>
+              <div>
+                <span>{t("Ref Transaksi", "Transaction Ref")}</span>
+                <b>{txId}</b>
+              </div>
+              <div>
+                <span>{t("Metode Pembayaran", "Payment Method")}</span>
+                <div className="vco-meta-brand-line">
+                  <PaymentBrandLogo channelId={activeChannel.id} size="sm" />
+                  <b>{liveOrder.payment?.method || activeChannel.label}</b>
+                </div>
+              </div>
+              <div>
+                <span>{t("Status Transaksi", "Status")}</span>
+                <b className="status-tag-failed">{t("GAGAL", "FAILED")}</b>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="shopee-outcome-actions">
           <button
             type="button"
             className="button dark"
             onClick={handleReorder}
           >
-            <RefreshCw size={15} />
-            {t("Ganti Metode / Pesan Ulang", "Try Another Method")}
+            <RefreshCw size={15} aria-hidden="true" />
+            {t("Ganti Metode / Bayar Ulang", "Try Another Method")}
+          </button>
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => setShowOutcomeInvoice((v) => !v)}
+          >
+            <FileText size={15} aria-hidden="true" />
+            {showOutcomeInvoice
+              ? t("Tutup Invoice", "Hide Invoice")
+              : t("Lihat Rincian Invoice", "View Invoice")}
           </button>
           <button type="button" className="button ghost" onClick={onDone}>
             {t("Tutup", "Close")}
@@ -1156,57 +1964,106 @@ export function InlinePaymentAndReceipt({
           ? t("Sistem Pembayaran", "Payment Gateway")
           : t("Pembeli", "Buyer");
     return (
-      <div className="shopee-outcome-card is-cancelled">
-        <div className="shopee-outcome-icon is-cancelled">
-          <Ban size={26} />
-        </div>
-        <h3>{t("Pesanan Dibatalkan", "Order Cancelled")}</h3>
-        <p className="shopee-outcome-sub">
-          {t(
-            "Pesanan ini telah dibatalkan dan seluruh stok produk telah dikembalikan ke katalog.",
-            "This order has been cancelled and reserved inventory has been released.",
-          )}
-        </p>
-        <div className="shopee-outcome-meta">
-          <div>
-            <span>{t("No. Pesanan", "Order No.")}</span>
-            <b>{receiptNo}</b>
+      <div className="vco-lifecycle-popup is-cancelled">
+        <div className="vco-lifecycle-banner is-cancelled">
+          <div className="vco-lifecycle-emblem is-cancelled" aria-hidden="true">
+            <Ban size={26} />
           </div>
-          <div>
-            <span>{t("Dibatalkan Oleh", "Cancelled By")}</span>
-            <b>{actorLabel}</b>
-          </div>
-          <div>
-            <span>{t("Alasan", "Reason")}</span>
-            <b>
-              {liveOrder.payment?.cancelReason ||
-                liveOrder.payment?.statusReason ||
-                t("Dibatalkan oleh pembeli", "Cancelled by buyer")}
-            </b>
-          </div>
-          <div>
-            <span>{t("Waktu", "Timestamp")}</span>
-            <b>
-              {formatReceiptDateTime(
-                liveOrder.payment?.cancelledAt ||
-                  liveOrder.payment?.updatedAt ||
-                  liveOrder.date,
-                lang,
+          <div className="vco-lifecycle-copy">
+            <span className="vco-lifecycle-kicker">
+              {t("PESANAN DIBATALKAN · STOK DIKEMBALIKAN", "ORDER CANCELLED · STOCK RESTORED")}
+            </span>
+            <h3>{t("Pesanan Telah Dibatalkan", "Order Cancelled")}</h3>
+            <p>
+              {t(
+                "Pesanan ini telah dibatalkan secara resmi. Tidak ada dana yang ditagihkan dan seluruh stok sepatu telah dikembalikan.",
+                "This order has been officially cancelled. No funds were charged and reserved inventory has been restored.",
               )}
-            </b>
+            </p>
+          </div>
+          <div className="vco-lifecycle-amount">
+            <small>{t("Nilai Pesanan", "Order Value")}</small>
+            <strong>{money(liveOrder.total, cur)}</strong>
           </div>
         </div>
+
+        <LifecycleStepper
+          steps={[
+            { label: t("Pesanan Dibuat", "Order Created"), state: "done" },
+            { label: t("Menunggu Pembayaran", "Awaiting Payment"), state: "done" },
+            { label: t("Pesanan Dibatalkan", "Order Cancelled"), state: "muted" },
+          ]}
+        />
+
+        {showOutcomeInvoice ? (
+          <OfficialAtelierInvoice order={liveOrder} showActions={false} />
+        ) : (
+          <>
+            <OrderedItemsPreview order={liveOrder} money={money} t={t} />
+            <div className="shopee-outcome-meta">
+              <div>
+                <span>{t("No. Pesanan", "Order No.")}</span>
+                <b>{receiptNo}</b>
+              </div>
+              <div>
+                <span>{t("Metode Pembayaran", "Payment Method")}</span>
+                <div className="vco-meta-brand-line">
+                  <PaymentBrandLogo channelId={activeChannel.id} size="sm" />
+                  <b>{liveOrder.payment?.method || activeChannel.label}</b>
+                </div>
+              </div>
+              <div>
+                <span>{t("Dibatalkan Oleh", "Cancelled By")}</span>
+                <b>{actorLabel}</b>
+              </div>
+              <div>
+                <span>{t("Alasan Pembatalan", "Cancellation Reason")}</span>
+                <b>
+                  {liveOrder.payment?.cancelReason ||
+                    liveOrder.payment?.statusReason ||
+                    t("Dibatalkan oleh pembeli", "Cancelled by buyer")}
+                </b>
+              </div>
+              <div>
+                <span>{t("Waktu Pembatalan", "Cancelled At")}</span>
+                <b>
+                  {formatReceiptDateTime(
+                    liveOrder.payment?.cancelledAt ||
+                      liveOrder.payment?.updatedAt ||
+                      liveOrder.date,
+                    lang,
+                  )}
+                </b>
+              </div>
+              <div>
+                <span>{t("Status Akhir", "Final Status")}</span>
+                <b>{t("DIBATALKAN · STOK PULIH", "CANCELLED · STOCK RESTORED")}</b>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="shopee-outcome-actions">
           <button
             type="button"
             className="button dark"
             onClick={handleReorder}
           >
-            <RefreshCw size={15} />
-            {t("Beli Lagi / Pesan Ulang", "Reorder Items")}
+            <RefreshCw size={15} aria-hidden="true" />
+            {t("Beli Lagi / Checkout Ulang", "Reorder Items")}
+          </button>
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => setShowOutcomeInvoice((v) => !v)}
+          >
+            <FileText size={15} aria-hidden="true" />
+            {showOutcomeInvoice
+              ? t("Tutup Invoice Batal", "Hide Invoice")
+              : t("Lihat Invoice Batal", "View Cancelled Invoice")}
           </button>
           <button type="button" className="button ghost" onClick={onDone}>
-            {t("Lihat Pesanan Saya", "My Orders")}
+            {t("Tutup / Pesanan Saya", "My Orders")}
           </button>
         </div>
       </div>
@@ -1215,40 +2072,78 @@ export function InlinePaymentAndReceipt({
 
   if (outcome === "refunded") {
     return (
-      <div className="shopee-outcome-card is-refunded">
-        <div className="shopee-outcome-icon is-refunded">
-          <RotateCcw size={26} />
-        </div>
-        <h3>{t("Dana Telah Dikembalikan", "Payment Refunded")}</h3>
-        <p className="shopee-outcome-sub">
-          {t(
-            "Pengembalian dana untuk pesanan ini telah diproses ke rekening / metode pembayaran asal Anda.",
-            "A refund for this order has been issued to your original payment method.",
-          )}
-        </p>
-        <div className="shopee-outcome-meta">
-          <div>
-            <span>{t("No. Pesanan", "Order No.")}</span>
-            <b>{receiptNo}</b>
+      <div className="vco-lifecycle-popup is-refunded">
+        <div className="vco-lifecycle-banner is-refunded">
+          <div className="vco-lifecycle-emblem is-refunded" aria-hidden="true">
+            <RotateCcw size={26} />
           </div>
-          <div>
-            <span>{t("Nominal Refund", "Refund Amount")}</span>
-            <b>{money(liveOrder.refund?.amount || liveOrder.total, cur)}</b>
+          <div className="vco-lifecycle-copy">
+            <span className="vco-lifecycle-kicker">
+              {t("REFUND SELESAI · DANA DIKEMBALIKAN", "REFUND COMPLETED · FUNDS RETURNED")}
+            </span>
+            <h3>{t("Pengembalian Dana Berhasil", "Payment Refunded")}</h3>
+            <p>
+              {t(
+                "Pengembalian dana untuk pesanan ini telah diproses ke rekening / metode pembayaran asal Anda.",
+                "A refund for this order has been issued to your original payment method.",
+              )}
+            </p>
           </div>
-          <div>
-            <span>{t("Referensi Refund", "Reference")}</span>
-            <b>{liveOrder.refund?.reference || txId}</b>
-          </div>
-          <div>
-            <span>{t("Alasan", "Reason")}</span>
-            <b>
-              {liveOrder.refund?.reason ||
-                liveOrder.payment?.statusReason ||
-                t("Pengembalian dana diproses", "Refund processed")}
-            </b>
+          <div className="vco-lifecycle-amount">
+            <small>{t("Nominal Refund", "Refunded Amount")}</small>
+            <strong>{money(liveOrder.refund?.amount || liveOrder.total, cur)}</strong>
           </div>
         </div>
+
+        {showOutcomeInvoice ? (
+          <OfficialAtelierInvoice order={liveOrder} showActions={false} />
+        ) : (
+          <>
+            <OrderedItemsPreview order={liveOrder} money={money} t={t} />
+            <div className="shopee-outcome-meta">
+              <div>
+                <span>{t("No. Pesanan", "Order No.")}</span>
+                <b>{receiptNo}</b>
+              </div>
+              <div>
+                <span>{t("Nominal Refund", "Refund Amount")}</span>
+                <b>{money(liveOrder.refund?.amount || liveOrder.total, cur)}</b>
+              </div>
+              <div>
+                <span>{t("Referensi Refund", "Reference")}</span>
+                <b>{liveOrder.refund?.reference || txId}</b>
+              </div>
+              <div>
+                <span>{t("Alasan", "Reason")}</span>
+                <b>
+                  {liveOrder.refund?.reason ||
+                    liveOrder.payment?.statusReason ||
+                    t("Pengembalian dana diproses", "Refund processed")}
+                </b>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="shopee-outcome-actions">
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => downloadOfficialReceiptHtml(liveOrder, money, lang)}
+          >
+            <Download size={15} aria-hidden="true" />
+            {t("Unduh Bukti Refund / Invoice", "Download Refund Invoice")}
+          </button>
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => setShowOutcomeInvoice((v) => !v)}
+          >
+            <Receipt size={15} aria-hidden="true" />
+            {showOutcomeInvoice
+              ? t("Tutup Invoice", "Hide Invoice")
+              : t("Lihat Invoice Resmi", "View Official Invoice")}
+          </button>
           <button type="button" className="button dark" onClick={onDone}>
             {t("Lihat Pesanan Saya", "My Orders")}
           </button>
@@ -1311,217 +2206,417 @@ export function InlinePaymentAndReceipt({
 
         <div className="shopee-bill-card">
           <div className="shopee-bill-header">
-            <span className="inline-va-brand-title">
+            <span className="inline-va-brand-title" translate="no">
               <PaymentBrandLogo channelId={activeChannel.id} size="md" />
               <b>{activeChannel.label}</b>
             </span>
-            <span className="shopee-autosync-label">
-              {t("Verifikasi otomatis", "Auto-verification active")}
-            </span>
+            <div className="shopee-bill-header-right">
+              <span className="shopee-autosync-label">
+                {charging
+                  ? t("Memuat metode…", "Switching…")
+                  : t("Verifikasi otomatis", "Auto-verification active")}
+              </span>
+              {liveOrder.payment?.status === "pending" && (
+                <button
+                  type="button"
+                  className="shopee-change-method-btn"
+                  disabled={charging}
+                  onClick={() => setShowMethodSwitcher((v) => !v)}
+                >
+                  {showMethodSwitcher
+                    ? t("Tutup", "Close")
+                    : t("Ubah Metode", "Change Method")}
+                  <ChevronDown
+                    size={13}
+                    className={showMethodSwitcher ? "shopee-pay-chevron is-open" : "shopee-pay-chevron"}
+                    aria-hidden="true"
+                  />
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* 1. Direct QRIS / E-Wallet QR Bill */}
-          {liveQrImageUrl ? (
-            <div className="shopee-qr-stage">
-              <div className="shopee-qr-frame" aria-label={`QRIS ${activeChannel.label}`}>
-                <img
-                  src={liveQrImageUrl}
-                  alt={`QRIS ${activeChannel.label}`}
-                  className="inline-qris-live-img"
-                />
-              </div>
-              <div className="shopee-qr-caption">
-                <strong>VALERIE &amp; CO ATELIER</strong>
-                <span>{money(liveOrder.total, cur)}</span>
-              </div>
-              <div className="shopee-qr-actions">
-                <button
-                  type="button"
-                  className="button ghost small"
-                  onClick={() => void downloadQrisImage()}
-                >
-                  <Download size={14} />
-                  {t("Unduh QRIS", "Download QRIS")}
-                </button>
-                <button
-                  type="button"
-                  className="button ghost small"
-                  onClick={() =>
-                    copyText(
-                      "qrurl",
-                      liveQrImageUrl,
-                      "Kode QR disalin",
-                      "QR code copied",
+          {showMethodSwitcher && liveOrder.payment?.status === "pending" && (
+            <div className="shopee-inline-method-switcher">
+              <PaymentChannelOptions
+                selectedChannel={activeChannel.id}
+                onSelect={(ch) => void handleSwitchChannel(ch)}
+              />
+            </div>
+          )}
+
+          {/* 1. QRIS & E-Wallets */}
+          {activeChannel.category === "qris_ewallet" && (() => {
+            const qrCopyValue = liveQrImageUrl || liveDeeplinkUrl || activeQrString || "";
+            const qrTargetUrl =
+              liveDeeplinkUrl ||
+              (liveOrder.payment?.channel === activeChannel.id
+                ? liveOrder.payment?.url || ""
+                : "");
+            return (
+              <div className="shopee-qr-stage">
+                <div className="shopee-qr-frame" aria-label={`QRIS ${activeChannel.label}`}>
+                  {liveQrImageUrl && !qrImgError ? (
+                    <img
+                      src={liveQrImageUrl}
+                      alt={`QRIS ${activeChannel.label}`}
+                      className="inline-qris-live-img"
+                      onError={() => setQrImgError(true)}
+                    />
+                  ) : (
+                    renderFallbackQrSvg(
+                      activeQrString || liveDeeplinkUrl || `${liveOrder.id}-${activeChannel.id}`,
                     )
-                  }
-                >
-                  {copiedKey === "qrurl" ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedKey === "qrurl"
-                    ? t("Tersalin", "Copied")
-                    : t("Salin Kode QR", "Copy QR Code")}
-                </button>
-                {activeQrString && (
+                  )}
+                </div>
+                <div className="shopee-qr-caption">
+                  <strong>VALERIE &amp; CO ATELIER</strong>
+                  <span>{money(liveOrder.total, cur)}</span>
+                </div>
+                <div className="shopee-qr-actions">
+                  {liveQrImageUrl && !qrImgError && (
+                    <button
+                      type="button"
+                      className="button ghost small"
+                      onClick={() => void downloadQrisImage()}
+                    >
+                      <Download size={14} />
+                      {t("Unduh QRIS", "Download QRIS")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="button ghost small"
                     onClick={() =>
                       copyText(
-                        "qremv",
-                        activeQrString,
-                        "String EMV QRIS disalin",
-                        "EMV QRIS string copied",
+                        "qrurl",
+                        qrCopyValue,
+                        "Kode QR disalin",
+                        "QR code copied",
                       )
                     }
                   >
-                    {copiedKey === "qremv" ? <Check size={14} /> : <Copy size={14} />}
-                    {copiedKey === "qremv"
+                    {copiedKey === "qrurl" ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedKey === "qrurl"
                       ? t("Tersalin", "Copied")
-                      : t("Salin String QRIS", "Copy EMV String")}
+                      : liveQrImageUrl
+                    ? t("Salin Link QR", "Copy QR Image URL")
+                    : liveDeeplinkUrl
+                      ? t("Salin Link Redirect", "Copy Redirect URL")
+                      : t("Salin Kode QR", "Copy QR Code")}
                   </button>
+                  {activeQrString && (
+                    <button
+                      type="button"
+                      className="button ghost small"
+                      onClick={() =>
+                        copyText(
+                          "qremv",
+                          activeQrString,
+                          "String EMV QRIS disalin",
+                          "EMV QRIS string copied",
+                        )
+                      }
+                    >
+                      {copiedKey === "qremv" ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedKey === "qremv"
+                        ? t("Tersalin", "Copied")
+                        : t("Salin String QRIS", "Copy EMV String")}
+                    </button>
+                  )}
+                </div>
+                {qrTargetUrl && (
+                  <a
+                    href={qrTargetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="button dark full"
+                  >
+                    <ExternalLink size={15} />
+                    {t(
+                      `Buka & Bayar di ${activeChannel.badge}`,
+                      `Open & Pay in ${activeChannel.badge}`,
+                    )}
+                  </a>
                 )}
               </div>
-              {liveDeeplinkUrl && (
-                <a
-                  href={liveDeeplinkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="button dark full"
-                >
-                  <ExternalLink size={15} />
-                  {t(`Bayar di Aplikasi ${activeChannel.badge}`, `Open ${activeChannel.badge} App`)}
-                </a>
-              )}
-            </div>
-          ) : virtualAccountNumber ? (
-            /* 2. Virtual Account Bill */
-            <div className="shopee-va-stage">
-              {effectiveBillerCode && (
-                <div className="shopee-bill-row">
+            );
+          })()}
+
+          {/* 2. Virtual Account */}
+          {activeChannel.category === "va" && (() => {
+            const displayVaNumber =
+              virtualAccountNumber ||
+              t("Menunggu VA resmi Midtrans...", "Waiting for Midtrans VA...");
+            return (
+              <div className="shopee-va-stage">
+                {effectiveBillerCode && (
+                  <div className="shopee-bill-row">
+                    <div>
+                      <small>{t("Kode Perusahaan / Biller", "Company / Biller Code")}</small>
+                      <code>{effectiveBillerCode}</code>
+                    </div>
+                    <button
+                      type="button"
+                      className="button ghost small"
+                      onClick={() =>
+                        copyText(
+                          "biller",
+                          effectiveBillerCode,
+                          "Kode Biller disalin",
+                          "Biller code copied",
+                        )
+                      }
+                    >
+                      {copiedKey === "biller" ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedKey === "biller" ? t("Tersalin", "Copied") : t("Salin", "Copy")}
+                    </button>
+                  </div>
+                )}
+                <div className="shopee-bill-row is-primary">
                   <div>
-                    <small>{t("Kode Perusahaan / Biller", "Company / Biller Code")}</small>
-                    <code>{effectiveBillerCode}</code>
+                    <small>{t("Nomor Virtual Account", "Virtual Account Number")}</small>
+                    <code>{displayVaNumber}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="button dark small"
+                    onClick={() =>
+                      copyText(
+                        "va",
+                        displayVaNumber,
+                        "Nomor Virtual Account disalin",
+                        "Virtual Account copied",
+                      )
+                    }
+                  >
+                    {copiedKey === "va" ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedKey === "va" ? t("Tersalin", "Copied") : t("Salin No. VA", "Copy VA")}
+                  </button>
+                </div>
+                {!virtualAccountNumber &&
+                  liveOrder.payment?.url &&
+                  liveOrder.payment?.channel === activeChannel.id && (
+                  <a
+                    href={liveOrder.payment.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="button ghost small full"
+                  >
+                    <ExternalLink size={14} />
+                    {t(
+                      `Buka Halaman Pembayaran ${activeChannel.badge}`,
+                      `Open ${activeChannel.badge} Payment Page`,
+                    )}
+                  </a>
+                )}
+                <p className="shopee-va-note">
+                  {t(
+                    "Transfer sesuai total tagihan hingga digit terakhir agar pembayaran terverifikasi otomatis.",
+                    "Transfer the exact amount shown above so our gateway verifies your payment automatically.",
+                  )}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 3. Retail Store Barcode & Code */}
+          {activeChannel.category === "retail" && (() => {
+            const displayRetailCode =
+              retailPaymentCode ||
+              t("Menunggu kode pembayaran Midtrans...", "Waiting for Midtrans code...");
+            const retailBars = buildBarcodeBars(displayRetailCode);
+            return (
+              <div className="shopee-va-stage">
+                <div className="shopee-retail-barcode" aria-hidden="true">
+                  <svg viewBox="0 0 180 42">
+                    {retailBars.map((bar, idx) => (
+                      <rect
+                        key={idx}
+                        x={bar.x}
+                        y="2"
+                        width={bar.w}
+                        height="34"
+                        fill="#171412"
+                      />
+                    ))}
+                  </svg>
+                  <small>{displayRetailCode}</small>
+                </div>
+                <div className="shopee-bill-row is-primary">
+                  <div>
+                    <small>{t(`Kode Pembayaran ${activeChannel.badge}`, `${activeChannel.badge} Payment Code`)}</small>
+                    <code>{displayRetailCode}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="button dark small"
+                    onClick={() =>
+                      copyText(
+                        "retail",
+                        displayRetailCode,
+                        "Kode pembayaran disalin",
+                        "Payment code copied",
+                      )
+                    }
+                  >
+                    {copiedKey === "retail" ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedKey === "retail" ? t("Tersalin", "Copied") : t("Salin Kode", "Copy Code")}
+                  </button>
+                </div>
+                <p className="shopee-va-note">
+                  {t(
+                    `Tunjukkan barcode / kode di atas kepada kasir ${activeChannel.badge} terdekat sebelum batas waktu berakhir.`,
+                    `Show the barcode or code above to any ${activeChannel.badge} cashier before the expiry time.`,
+                  )}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* 4. Credit / Debit Card 3DS & PayLater Installment Stage */}
+          {(activeChannel.category === "card" || activeChannel.category === "paylater") && (() => {
+            const authCode =
+              retailPaymentCode ||
+              `${activeChannel.id === "card" ? "3DS" : activeChannel.id.slice(0, 3).toUpperCase()}-${orderDigits.slice(0, 8)}`;
+            const authTargetUrl =
+              liveDeeplinkUrl ||
+              (liveOrder.payment?.channel === activeChannel.id
+                ? liveOrder.payment?.url || ""
+                : "");
+            return (
+              <div className="shopee-va-stage shopee-card-paylater-stage">
+                <div className="shopee-card-auth-banner">
+                  {activeChannel.category === "card" ? (
+                    <CreditCard size={16} aria-hidden="true" />
+                  ) : (
+                    <ShieldCheck size={16} aria-hidden="true" />
+                  )}
+                  <span>
+                    {activeChannel.category === "card"
+                      ? t(
+                          "Otorisasi Kartu 3D Secure 2.0 · Visa / Mastercard / JCB / Amex",
+                          "3D Secure 2.0 Card Authorization · Visa / Mastercard / JCB / Amex",
+                        )
+                      : t(
+                          `Cicilan Instan ${activeChannel.badge} · Terdaftar & Diawasi OJK`,
+                          `${activeChannel.badge} Instant Installment · OJK Licensed`,
+                        )}
+                  </span>
+                </div>
+                <div className="shopee-tenor-grid" role="group" aria-label={t("Pilih tenor cicilan", "Choose installment plan")}>
+                  {[1, 3, 6, 12].map((months) => {
+                    const active = selectedTenor === months;
+                    const monthly = Math.ceil(liveOrder.total / months);
+                    return (
+                      <button
+                        key={months}
+                        type="button"
+                        className={`shopee-tenor-pill ${active ? "is-selected" : ""}`}
+                        onClick={() => setSelectedTenor(months)}
+                      >
+                        <b>
+                          {months === 1
+                            ? activeChannel.category === "card"
+                              ? t("Bayar Penuh 0%", "Full Payment 0%")
+                              : t("30 Hari Bunga 0%", "30 Days 0%")
+                            : t(`Cicilan ${months}x`, `${months} Months`)}
+                        </b>
+                        <small>
+                          {months === 1
+                            ? money(liveOrder.total, cur)
+                            : `${money(monthly, cur)}/${t("bln", "mo")}`}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="shopee-bill-row is-primary">
+                  <div>
+                    <small>
+                      {activeChannel.category === "card"
+                        ? t("Kode Referensi Otorisasi 3DS", "3DS Authorization Reference")
+                        : t(`Referensi Tagihan ${activeChannel.badge}`, `${activeChannel.badge} Billing Reference`)}
+                    </small>
+                    <code>{authCode}</code>
                   </div>
                   <button
                     type="button"
                     className="button ghost small"
                     onClick={() =>
                       copyText(
-                        "biller",
-                        effectiveBillerCode,
-                        "Kode Biller disalin",
-                        "Biller code copied",
+                        "authcode",
+                        authCode,
+                        "Kode referensi disalin",
+                        "Reference code copied",
                       )
                     }
                   >
-                    {copiedKey === "biller" ? <Check size={14} /> : <Copy size={14} />}
-                    {copiedKey === "biller" ? t("Tersalin", "Copied") : t("Salin", "Copy")}
+                    {copiedKey === "authcode" ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedKey === "authcode" ? t("Tersalin", "Copied") : t("Salin Kode", "Copy Code")}
                   </button>
                 </div>
-              )}
-              <div className="shopee-bill-row is-primary">
-                <div>
-                  <small>{t("Nomor Virtual Account", "Virtual Account Number")}</small>
-                  <code>{virtualAccountNumber}</code>
-                </div>
-                <button
-                  type="button"
-                  className="button dark small"
-                  onClick={() =>
-                    copyText(
-                      "va",
-                      virtualAccountNumber,
-                      "Nomor Virtual Account disalin",
-                      "Virtual Account copied",
-                    )
-                  }
-                >
-                  {copiedKey === "va" ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedKey === "va" ? t("Tersalin", "Copied") : t("Salin No. VA", "Copy VA")}
-                </button>
+                {authTargetUrl ? (
+                  <a
+                    href={authTargetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="button dark full"
+                  >
+                    <ExternalLink size={15} />
+                    {t(
+                      `Lanjutkan Otorisasi ${activeChannel.badge}`,
+                      `Continue to ${activeChannel.badge} Authorization`,
+                    )}
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className="button dark full"
+                    disabled={isBusyChecking}
+                    onClick={() => void handleSyncStatus()}
+                  >
+                    <ShieldCheck size={15} />
+                    {t(
+                      `Verifikasi Otorisasi ${activeChannel.badge}`,
+                      `Verify ${activeChannel.badge} Authorization`,
+                    )}
+                  </button>
+                )}
               </div>
-              <p className="shopee-va-note">
-                {t(
-                  "Transfer sesuai total tagihan hingga digit terakhir agar pembayaran terverifikasi otomatis.",
-                  "Transfer the exact amount shown above so our gateway verifies your payment automatically.",
-                )}
-              </p>
-            </div>
-          ) : retailPaymentCode ? (
-            /* 3. Retail Store Barcode & Code */
-            <div className="shopee-va-stage">
-              <div className="shopee-bill-row is-primary">
-                <div>
-                  <small>{t(`Kode Pembayaran ${activeChannel.badge}`, `${activeChannel.badge} Payment Code`)}</small>
-                  <code>{retailPaymentCode}</code>
-                </div>
-                <button
-                  type="button"
-                  className="button dark small"
-                  onClick={() =>
-                    copyText(
-                      "retail",
-                      retailPaymentCode,
-                      "Kode pembayaran disalin",
-                      "Payment code copied",
-                    )
-                  }
-                >
-                  {copiedKey === "retail" ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedKey === "retail" ? t("Tersalin", "Copied") : t("Salin Kode", "Copy Code")}
-                </button>
-              </div>
-              <p className="shopee-va-note">
-                {t(
-                  `Tunjukkan kode di atas kepada kasir ${activeChannel.badge} terdekat sebelum batas waktu berakhir.`,
-                  `Show the code above to any ${activeChannel.badge} cashier before the expiry time.`,
-                )}
-              </p>
-            </div>
-          ) : liveOrder.payment?.url ? (
-            /* 4. Embedded Midtrans Snap Checkout (Card 3DS, DANA, OVO, PayLater, etc.) */
-            <div className="shopee-snap-embed">
-              <iframe
-                src={liveOrder.payment.url}
-                title={`Pembayaran ${activeChannel.label}`}
-                className="inline-gateway-iframe"
-              />
-            </div>
-          ) : (
-            /* 5. Direct Charge Initialization Trigger (if order created without direct bill) */
-            <div className="shopee-init-fallback">
-              <p>
-                {t(
-                  "Klik tombol di bawah untuk menerbitkan kode bayar resmi untuk pesanan ini.",
-                  "Click below to generate your official payment bill for this order.",
-                )}
-              </p>
-              {serverMode && (isCoreCapable || !liveOrder.payment?.url) && (
-                <button
-                  type="button"
-                  className="button dark small"
-                  disabled={charging}
-                  onClick={async () => {
-                    setCharging(true);
-                    try {
-                      await chargeOrderPayment(liveOrder.id, activeChannel.id);
-                    } catch (e) {
-                      notify((e as Error).message, (e as Error).message);
-                    } finally {
-                      setCharging(false);
-                    }
-                  }}
-                >
-                  {charging
-                    ? t("Memuat Tagihan…", "Generating Bill…")
-                    : t(`Tampilkan Kode ${activeChannel.badge}`, `Generate ${activeChannel.badge} Bill`)}
-                </button>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           <details className="shopee-howto-details">
             <summary>{t("Petunjuk Pembayaran", "Payment Instructions")}</summary>
             <ol>
+              {liveMerchantId && activeChannel.id === "indomaret" && (
+                <li>
+                  {t("Masukkan Merchant ID Midtrans:", "Enter Midtrans Merchant ID:")}{" "}
+                  <code>{liveMerchantId}</code>
+                </li>
+              )}
+              {isFallbackCharge && liveDeeplinkUrl && (
+                <li>
+                  {t(
+                    "Metode ini memakai halaman resmi Midtrans:",
+                    "This method uses the official Midtrans page:",
+                  )}{" "}
+                  <a href={liveDeeplinkUrl} target="_blank" rel="noopener noreferrer">
+                    {t("Buka Pembayaran Midtrans", "Open Midtrans Payment")}
+                  </a>
+                </li>
+              )}
+              {hasRealChannelCharge &&
+                activeChannel.id === "danamon_va" &&
+                directCharge?.bank === "permata" && (
+                  <li>
+                    {t(
+                      "Jika menguji di Midtrans Sandbox Simulator, pilih tab Permata VA (routing VA bersama Midtrans).",
+                      "When testing in Midtrans Sandbox Simulator, use the Permata VA simulator tab.",
+                    )}
+                  </li>
+                )}
               {howToSteps.map((stepText, idx) => (
                 <li key={idx}>{stepText}</li>
               ))}
@@ -1532,30 +2627,46 @@ export function InlinePaymentAndReceipt({
         {/* Cancel confirmation drawer */}
         {cancelPanelOpen ? (
           <div className="shopee-cancel-drawer">
-            <div className="shopee-cancel-drawer-head">
-              <b>{t("Batalkan Pesanan Ini?", "Cancel This Order?")}</b>
-              <small>
-                {t(
-                  "Pilih alasan pembatalan. Stok pesanan akan otomatis dikembalikan.",
-                  "Choose a cancellation reason. Reserved items will be returned to stock.",
-                )}
-              </small>
+            <div className="shopee-cancel-drawer-top">
+              <span className="shopee-cancel-badge" aria-hidden="true">
+                <Ban size={18} />
+              </span>
+              <div className="shopee-cancel-drawer-head">
+                <div className="shopee-cancel-head-row">
+                  <b>{t("Konfirmasi Pembatalan Pesanan", "Confirm Order Cancellation")}</b>
+                  <span className="shopee-cancel-ref-pill">{receiptNo}</span>
+                </div>
+                <small>
+                  {t(
+                    "Stok sepatu pada pesanan ini akan langsung dikembalikan ke katalog secara otomatis.",
+                    "Reserved footwear items for this order will be automatically returned to stock.",
+                  )}
+                </small>
+              </div>
             </div>
-            <div className="shopee-cancel-reasons">
-              {CANCEL_REASONS.map((r) => (
-                <label
-                  key={r}
-                  className={`shopee-cancel-reason ${cancelReason === r ? "is-selected" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="cancelReason"
-                    checked={cancelReason === r}
-                    onChange={() => setCancelReason(r)}
-                  />
-                  <span>{r}</span>
-                </label>
-              ))}
+            <div className="shopee-cancel-reasons" role="radiogroup" aria-label={t("Alasan pembatalan", "Cancellation reason")}>
+              {CANCEL_REASONS.map((r) => {
+                const selected = cancelReason === r;
+                return (
+                  <label
+                    key={r}
+                    className={`shopee-cancel-reason ${selected ? "is-selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="cancelReason"
+                      className="sr-only"
+                      checked={selected}
+                      onChange={() => setCancelReason(r)}
+                    />
+                    <span
+                      className={`shopee-radio-dot ${selected ? "checked" : ""}`}
+                      aria-hidden="true"
+                    />
+                    <span>{r}</span>
+                  </label>
+                );
+              })}
             </div>
             <div className="shopee-cancel-actions">
               <button
@@ -1564,7 +2675,7 @@ export function InlinePaymentAndReceipt({
                 disabled={cancelling}
                 onClick={() => setCancelPanelOpen(false)}
               >
-                {t("Kembali", "Keep Order")}
+                {t("Kembali ke Pembayaran", "Back to Payment")}
               </button>
               <button
                 type="button"
@@ -1572,9 +2683,10 @@ export function InlinePaymentAndReceipt({
                 disabled={cancelling}
                 onClick={() => void handleConfirmCancel()}
               >
+                {cancelling && <RefreshCw size={14} className="spin" aria-hidden="true" />}
                 {cancelling
                   ? t("Membatalkan…", "Cancelling…")
-                  : t("Ya, Batalkan Pesanan", "Confirm Cancellation")}
+                  : t("Ya, Batalkan Pesanan Sekarang", "Confirm Cancellation Now")}
               </button>
             </div>
           </div>
@@ -1611,170 +2723,158 @@ export function InlinePaymentAndReceipt({
     );
   }
 
+  // Paid / Completed Popup ("Pop-up Selesai") with Summary + Official Invoice switcher
+  const delivered = liveOrder.status === "delivered";
   return (
-    <div className="inline-receipt-shell" id="official-receipt-print-area">
-      <div className="inline-receipt-top-banner">
-        <div className="inline-receipt-brand">
-          <span className="eyebrow">VALERIE &amp; CO · OFFICIAL ATELIER RECEIPT</span>
-          <h2>{t("Struk Pembayaran Resmi", "Official Payment Receipt")}</h2>
+    <div className="vco-lifecycle-popup is-paid">
+      <div className="vco-lifecycle-banner is-paid">
+        <div className="vco-lifecycle-emblem is-paid" aria-hidden="true">
+          <CheckCircle2 size={28} />
+        </div>
+        <div className="vco-lifecycle-copy">
+          <span className="vco-lifecycle-kicker">
+            {delivered
+              ? t("PESANAN SELESAI · DITERIMA PELANGGAN", "ORDER DELIVERED · COMPLETED")
+              : t("TRANSAKSI SELESAI · TERVERIFIKASI OTOMATIS", "PAYMENT COMPLETED · VERIFIED")}
+          </span>
+          <h3>
+            {delivered
+              ? t("Pesanan Telah Selesai & Diterima", "Order Delivered & Completed")
+              : t("Pembayaran Berhasil Diterima", "Payment Confirmed")}
+          </h3>
           <p>
-            {t(
-              "Pembayaran Anda telah lunas dan diverifikasi secara otomatis. Pesanan sedang disiapkan oleh tim atelier.",
-              "Your payment is confirmed and verified automatically. Your order is now being prepared by our atelier team.",
-            )}
+            {delivered
+              ? t(
+                  "Terima kasih telah berbelanja di Valerie & CO Atelier. Faktur resmi tetap tersimpan untuk arsip & garansi.",
+                  "Thank you for shopping at Valerie & CO Atelier. Your official invoice remains saved for warranty & archive.",
+                )
+              : t(
+                  "Pembayaran Anda telah lunas dan diverifikasi secara otomatis. Sepatu pesanan sedang disiapkan oleh tim atelier.",
+                  "Your payment is confirmed and verified automatically. Your footwear order is now being prepared by our atelier team.",
+                )}
           </p>
         </div>
-        <div className="inline-receipt-status-pill">
-          <Check size={16} />
-          <span>{t("LUNAS · TERVERIFIKASI", "PAID · VERIFIED")}</span>
+        <div className="vco-lifecycle-amount is-paid">
+          <small>{t("Total Lunas", "Total Paid")}</small>
+          <strong>{money(liveOrder.total, cur)}</strong>
         </div>
       </div>
 
-      <div className="inline-receipt-meta-grid">
-        <div className="inline-receipt-meta-item">
-          <small>{t("No. Struk Resmi", "Receipt Number")}</small>
-          <strong>{receiptNo}</strong>
-        </div>
-        <div className="inline-receipt-meta-item">
-          <small>{t("ID Pesanan", "Order ID")}</small>
-          <strong>{liveOrder.id}</strong>
-        </div>
-        <div className="inline-receipt-meta-item">
-          <small>{t("No. Referensi Transaksi", "Transaction ID")}</small>
-          <strong>{txId}</strong>
-        </div>
-        <div className="inline-receipt-meta-item">
-          <small>{t("Waktu Transaksi (Real-Time)", "Transaction Timestamp")}</small>
-          <strong>
-            {formatReceiptDateTime(
-              liveOrder.payment?.paidAt || liveOrder.date,
-              lang,
-            )}
-          </strong>
-        </div>
-        <div className="inline-receipt-meta-item">
-          <small>{t("Metode Pembayaran", "Payment Method")}</small>
-          <strong>
-            {liveOrder.payment?.method ||
-              liveOrder.paymentMethod ||
-              activeChannel.label}
-          </strong>
-        </div>
-        <div className="inline-receipt-meta-item">
-          <small>{t("Status Pesanan", "Order Status")}</small>
-          <strong>{t("Diproses Atelier", "Atelier Processing")}</strong>
-        </div>
-      </div>
+      <LifecycleStepper
+        steps={[
+          { label: t("Pesanan Dibuat", "Order Placed"), state: "done" },
+          { label: t("Pembayaran Lunas", "Paid"), state: "done" },
+          {
+            label: t("Dikemas Atelier", "Atelier Prep"),
+            state:
+              liveOrder.status === "shipped" || liveOrder.status === "delivered"
+                ? "done"
+                : "active",
+          },
+          {
+            label: t("Dikirim ke Tujuan", "Delivered"),
+            state:
+              liveOrder.status === "delivered"
+                ? "done"
+                : liveOrder.status === "shipped"
+                  ? "active"
+                  : "upcoming",
+          },
+        ]}
+      />
 
-      <div className="inline-receipt-address-box">
-        <div>
-          <small>{t("Penerima & Tujuan Pengiriman", "Recipient & Delivery Destination")}</small>
-          <b>
-            {liveOrder.address.name} · {liveOrder.address.phone}
-          </b>
-          <p>
-            {liveOrder.address.street}, {liveOrder.address.city}{" "}
-            {liveOrder.address.postal}
-          </p>
-        </div>
+      <div className="vco-lifecycle-switch no-print" role="tablist">
         <button
           type="button"
-          className="button ghost small"
-          onClick={() => setShowReceiptMap((v) => !v)}
+          role="tab"
+          aria-selected={paidTab === "summary"}
+          className={paidTab === "summary" ? "active" : ""}
+          onClick={() => setPaidTab("summary")}
         >
-          <MapPin size={14} />
-          {showReceiptMap
-            ? t("Sembunyikan Peta", "Hide Map")
-            : t("Lihat Peta di Halaman Ini", "View Map Inline")}
+          <Package size={15} aria-hidden="true" />
+          <span>{t("Ringkasan Transaksi", "Transaction Summary")}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={paidTab === "invoice"}
+          className={paidTab === "invoice" ? "active" : ""}
+          onClick={() => setPaidTab("invoice")}
+        >
+          <Receipt size={15} aria-hidden="true" />
+          <span>{t("Faktur / Invoice Resmi", "Official Invoice")}</span>
         </button>
       </div>
 
-      {showReceiptMap && (
-        <div className="address-map-preview">
-          <iframe
-            title="Peta Lokasi Pengiriman Struk"
-            className="address-map-iframe"
-            loading="lazy"
-            src="https://www.openstreetmap.org/export/embed.html?bbox=106.7800%2C-6.2450%2C106.8400%2C-6.1950&layer=mapnik&marker=-6.2246%2C106.8096"
-          />
+      {paidTab === "invoice" ? (
+        <OfficialAtelierInvoice order={liveOrder} showActions={false} />
+      ) : (
+        <div className="vco-paid-summary-body">
+          <OrderedItemsPreview order={liveOrder} money={money} t={t} />
+          <div className="vco-paid-info-grid">
+            <div className="vco-paid-info-card">
+              <small>{t("Metode & Referensi Pembayaran", "Payment Method & Ref")}</small>
+              <div className="vco-meta-brand-line">
+                <PaymentBrandLogo channelId={activeChannel.id} size="sm" />
+                <b>
+                  {liveOrder.payment?.method ||
+                    liveOrder.paymentMethod ||
+                    activeChannel.label}
+                </b>
+              </div>
+              <span>
+                {receiptNo} · {txId}
+              </span>
+              <small>
+                {formatReceiptDateTime(
+                  liveOrder.payment?.paidAt || liveOrder.date,
+                  lang,
+                )}
+              </small>
+            </div>
+            <div className="vco-paid-info-card">
+              <small>{t("Penerima & Alamat Pengiriman", "Recipient & Delivery Address")}</small>
+              <b>
+                {liveOrder.address.name} · {liveOrder.address.phone}
+              </b>
+              <span>
+                {liveOrder.address.street}, {liveOrder.address.city}{" "}
+                {liveOrder.address.postal}
+              </span>
+              {liveOrder.tracking && (
+                <span className="vco-invoice-tracking-chip">
+                  <Truck size={12} aria-hidden="true" />
+                  <span>{liveOrder.tracking}</span>
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="inline-receipt-items-table">
-        <div className="inline-receipt-table-head">
-          <span>{t("Rincian Produk & SKU", "Product & SKU Breakdown")}</span>
-          <span>{t("Subtotal", "Subtotal")}</span>
-        </div>
-        {liveOrder.items.map((item, idx) => (
-          <div
-            className="inline-receipt-item-row"
-            key={`${item.productId}-${item.size}-${idx}`}
-          >
-            <img src={item.image} alt={item.name} />
-            <div className="inline-receipt-item-info">
-              <b>{item.name}</b>
-              <small>
-                SKU {item.productCode || item.productId.toUpperCase()} · EU{" "}
-                {item.size}
-                {item.color ? ` · ${item.color}` : ""} · Qty {item.quantity} ×{" "}
-                {money(item.price, cur)}
-              </small>
-            </div>
-            <strong>{money(item.price * item.quantity, cur)}</strong>
-          </div>
-        ))}
-      </div>
-
-      <div className="inline-receipt-totals">
-        <div>
-          <span>Subtotal</span>
-          <span>
-            {money(
-              liveOrder.items.reduce((s, i) => s + i.price * i.quantity, 0),
-              cur,
-            )}
-          </span>
-        </div>
-        {liveOrder.discount > 0 && (
-          <div>
-            <span>{t("Potongan Voucher", "Promo Discount")}</span>
-            <span>−{money(liveOrder.discount, cur)}</span>
-          </div>
-        )}
-        <div>
-          <span>{t("Biaya Pengiriman", "Shipping Fee")}</span>
-          <span>
-            {liveOrder.shipping
-              ? money(liveOrder.shipping, cur)
-              : t("Gratis", "Complimentary")}
-          </span>
-        </div>
-        <div className="inline-receipt-grand-total">
-          <b>{t("Total Dibayar", "Total Paid")}</b>
-          <b>{money(liveOrder.total, cur)}</b>
-        </div>
-      </div>
-
-      <div className="inline-receipt-actions">
+      <div className="vco-invoice-actions no-print">
         <button
           type="button"
-          className="button ghost"
-          onClick={() => window.print()}
+          className="button ghost small"
+          onClick={() => {
+            setPaidTab("invoice");
+            setTimeout(() => window.print(), 120);
+          }}
         >
-          <Printer size={16} />
-          {t("Cetak Struk / PDF", "Print Receipt / PDF")}
+          <Printer size={15} aria-hidden="true" />
+          {t("Cetak Invoice / PDF", "Print Invoice / PDF")}
         </button>
         <button
           type="button"
-          className="button ghost"
-          onClick={() => downloadOfficialReceiptHtml(liveOrder, money)}
+          className="button ghost small"
+          onClick={() => downloadOfficialReceiptHtml(liveOrder, money, lang)}
         >
-          <Download size={16} />
-          {t("Unduh Struk (.HTML)", "Download Receipt (.HTML)")}
+          <Download size={15} aria-hidden="true" />
+          {t("Unduh Invoice (.HTML)", "Download Invoice (.HTML)")}
         </button>
-        <button type="button" className="button dark" onClick={onDone}>
-          {t("Lihat & Lacak di Pesanan Saya", "Track in My Orders")}
-          <ArrowRight size={16} />
+        <button type="button" className="button dark small" onClick={onDone}>
+          {t("Selesai & Lacak Pesanan", "Track in My Orders")}
+          <ArrowRight size={15} aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -1792,6 +2892,7 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
     checkout,
     notify,
     applyCoupon,
+    activePromotions,
   } = useStore();
   const rates = SHIPPING_RATES[currency];
   const [code, setCode] = useState("");
@@ -1804,10 +2905,16 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
   );
   const busy = useRef(false);
   const checkoutKey = useRef(crypto.randomUUID());
-  const coupon = db.coupons.find((c) => c.code === applied && c.active);
+  const coupon = (
+    activePromotions.find((c) => c.code === applied && c.active) ||
+    db.coupons.find((c) => c.code === applied && c.active)
+  );
   const sum = totals(db.bag, db.products, coupon, express, currency);
   const savedAddress = member?.addresses.find((a) => a.id === addressId);
   const totalItems = db.bag.reduce((count, line) => count + line.quantity, 0);
+  const claimedSet = new Set(member?.claimedCoupons || []);
+  const claimedPromos = activePromotions.filter((c) => claimedSet.has(c.code));
+  const hasUnclaimedPromos = activePromotions.some((c) => !claimedSet.has(c.code));
   if (finished)
     return (
       <InlinePaymentAndReceipt
@@ -1818,9 +2925,22 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
       />
     );
   if (!member) return <MemberEntry onDone={() => {}} />;
-  const applyPromoCode = async () => {
+  const applyPromoCode = async (target?: string) => {
+    const nextCode = (target ?? code).trim().toUpperCase();
+    if (!nextCode) return;
+    if (
+      activePromotions.some((c) => c.code === nextCode) &&
+      !claimedSet.has(nextCode)
+    ) {
+      notify(
+        `Klaim voucher ${nextCode} di popup diskon member terlebih dahulu`,
+        `Please claim voucher ${nextCode} in the member discount popup first`,
+      );
+      return;
+    }
     try {
-      const found = await applyCoupon(code.trim().toUpperCase());
+      const found = await applyCoupon(nextCode);
+      setCode(found.code);
       setApplied(found.code);
       notify("Kode promo diterapkan", "Promo code applied");
     } catch (e) {
@@ -1850,6 +2970,8 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             applied,
             express,
             checkoutKey.current,
+            undefined,
+            selectedChannel,
           );
           setFinished(order);
         } catch {
@@ -2040,9 +3162,12 @@ function SimulationCheckout({ onDone }: { onDone: () => void }) {
             {t("Pakai", "Apply")}
           </button>
         </div>
-        <small className="checkout-coupon-hint">
-          {t("Masukkan kode voucher Valerie & CO bila tersedia.", "Have a Valerie & CO voucher code? Apply it before confirming.")}
-        </small>
+        <CheckoutVoucherBar
+          claimedPromos={claimedPromos}
+          activeCode={applied}
+          hasUnclaimed={hasUnclaimedPromos}
+          onSelect={(c) => void applyPromoCode(c)}
+        />
         <div className="order-totals">
           <div>
             <span>Subtotal</span>

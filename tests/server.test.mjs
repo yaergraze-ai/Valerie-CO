@@ -759,6 +759,57 @@ test("server authentication, authorization and commerce flow", async (t) => {
         }
       },
     );
+    await t.test(
+      "public state exposes active promotions only and persists member claimedCoupons",
+      async () => {
+        await call(
+          "patch",
+          {
+            changes: [
+              {
+                kind: "coupons",
+                data: { code: "HIDDEN50", percent: 50, active: false },
+              },
+            ],
+          },
+          admin,
+        );
+        const guestState = await call("state");
+        assert.equal(guestState.status, 200);
+        assert.deepEqual(guestState.data.coupons, []);
+        assert.ok(
+          guestState.data.promotions.some(
+            (c) => c.code === "WELCOME10" && c.percent === 10 && c.active,
+          ),
+        );
+        assert.equal(
+          guestState.data.promotions.some((c) => c.code === "HIDDEN50"),
+          false,
+        );
+
+        const meState = await call("state", undefined, member);
+        const own = meState.data.members[0];
+        const claimedRes = await call(
+          "patch",
+          {
+            changes: [
+              {
+                kind: "members",
+                data: {
+                  ...own,
+                  claimedCoupons: ["welcome10", "WELCOME10", "bad!!"],
+                },
+              },
+            ],
+          },
+          member,
+        );
+        assert.equal(claimedRes.status, 200);
+        assert.deepEqual(claimedRes.data.members[0].claimedCoupons, [
+          "WELCOME10",
+        ]);
+      },
+    );
   } finally {
     await new Promise((r) => app.server.close(r));
     app.sql.close();

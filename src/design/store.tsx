@@ -59,6 +59,7 @@ export type Member = {
     orderAlerts?: boolean;
   };
   security?: MemberSecurity;
+  claimedCoupons?: string[];
   addresses: Address[];
 };
 export type OrderRefund = {
@@ -74,8 +75,10 @@ export type OrderRefund = {
 };
 export type DirectCharge = {
   channel: string;
+  isFallback?: boolean;
   paymentType: string;
   transactionId?: string;
+  merchantId?: string;
   qrUrl?: string;
   deeplinkUrl?: string;
   qrString?: string;
@@ -118,6 +121,7 @@ export type Order = {
     url?: string;
     sandbox: boolean;
     channel?: string;
+    gatewayOrderId?: string;
     directCharge?: DirectCharge;
     method?: string;
     transactionId?: string;
@@ -213,6 +217,7 @@ type Database = {
   members: Member[];
   orders: Order[];
   coupons: Coupon[];
+  promotions?: Coupon[];
   tickets: Ticket[];
   subscribers: string[];
   settings: {
@@ -612,7 +617,7 @@ function useStoreState() {
     setDb((d) => ({ ...d, members: [...d.members, m] }));
     setMemberId(m.id);
   };
-  const saveMember = (value: Member) => {
+  const saveMember = (value: Member, silent = false) => {
     const normalizedPhone = value.phone ? normalizeWaPhone(value.phone) : "";
     setDb((d) => ({
       ...d,
@@ -627,7 +632,7 @@ function useStoreState() {
         };
       }),
     }));
-    notify("Perubahan tersimpan", "Changes saved");
+    if (!silent) notify("Perubahan tersimpan", "Changes saved");
   };
   const checkout = async (
     address: Address,
@@ -1004,7 +1009,25 @@ function useStoreState() {
     return updated;
   };
   const chargeOrderPayment = async (id: string, channel?: string) => {
-    if (!serverMode) return null;
+    if (!serverMode) {
+      const nextChannel = channel || "qris";
+      const target = dbRef.current.orders.find((o) => o.id === id);
+      if (!target || !target.payment) return null;
+      const nextOrder: Order = {
+        ...target,
+        payment: {
+          ...target.payment,
+          channel: nextChannel,
+          method: nextChannel.toUpperCase(),
+          directCharge: undefined,
+        },
+      };
+      setDb((d) => ({
+        ...d,
+        orders: d.orders.map((o) => (o.id === id ? nextOrder : o)),
+      }));
+      return nextOrder;
+    }
     const result = await api("payments/charge", { id, channel });
     if (result?.state) receive(result.state);
     if (result?.chargeNotice) notify(result.chargeNotice, result.chargeNotice);
@@ -1170,6 +1193,36 @@ function useStoreState() {
     receive(await api("admin/claim", data));
     notify("Akses Studio berhasil diaktifkan", "Studio access activated");
   };
+  const activePromotions = (
+    serverMode && Array.isArray(db.promotions) ? db.promotions : db.coupons
+  ).filter((c) => c.active);
+  const claimCoupon = (rawCode: string) => {
+    const upper = rawCode.trim().toUpperCase();
+    if (!activePromotions.some((c) => c.code === upper)) {
+      notify(
+        "Voucher tidak tersedia atau tidak aktif",
+        "Voucher is unavailable or inactive",
+      );
+      return false;
+    }
+    if (!memberId) return false;
+    const currentMember = dbRef.current.members.find((m) => m.id === memberId);
+    if (!currentMember) return false;
+    const existing = currentMember.claimedCoupons || [];
+    if (existing.includes(upper)) {
+      notify(
+        `Voucher ${upper} sudah Anda klaim`,
+        `Voucher ${upper} is already claimed`,
+      );
+      return true;
+    }
+    saveMember(
+      { ...currentMember, claimedCoupons: [...existing, upper] },
+      true,
+    );
+    notify(`Voucher ${upper} berhasil diklaim`, `Voucher ${upper} claimed`);
+    return true;
+  };
   const applyCoupon = async (code: string) => {
     if (serverMode) {
       const coupon = await api("coupon", { code });
@@ -1217,6 +1270,8 @@ function useStoreState() {
     requestVerification,
     confirmVerification,
     logout,
+    activePromotions,
+    claimCoupon,
     applyCoupon,
     db,
     setDb,

@@ -4,6 +4,7 @@ import { useStore, type Address, type Order } from "./store";
 import { api } from "./backend";
 import {
   AddressFields,
+  CheckoutVoucherBar,
   InlinePaymentAndReceipt,
   PAYMENT_CHANNELS,
   PaymentChannelOptions,
@@ -19,7 +20,8 @@ type Quote = {
 };
 
 export function MidtransCheckout({ onDone }: { onDone: () => void }) {
-  const { db, member, t, money, checkout, refresh, notify } = useStore();
+  const { db, member, t, money, checkout, refresh, notify, activePromotions } =
+    useStore();
   const [express, setExpress] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [code, setCode] = useState("");
@@ -98,8 +100,28 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
       />
     );
 
-  const applyPromoCode = () => {
-    setCode(promoInput.trim().toUpperCase());
+  const claimedSet = new Set(member?.claimedCoupons || []);
+  const claimedPromos = activePromotions.filter((c) => claimedSet.has(c.code));
+  const hasUnclaimedPromos = activePromotions.some((c) => !claimedSet.has(c.code));
+
+  const applyPromoCode = (target?: string) => {
+    const nextCode = (target ?? promoInput).trim().toUpperCase();
+    if (!nextCode) {
+      setCode("");
+      return;
+    }
+    if (
+      activePromotions.some((c) => c.code === nextCode) &&
+      !claimedSet.has(nextCode)
+    ) {
+      notify(
+        `Klaim voucher ${nextCode} di popup diskon member terlebih dahulu`,
+        `Please claim voucher ${nextCode} in the member discount popup first`,
+      );
+      return;
+    }
+    setPromoInput(nextCode);
+    setCode(nextCode);
   };
 
   return (
@@ -330,11 +352,17 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           <button
             className="button dark"
             type="button"
-            onClick={applyPromoCode}
+            onClick={() => applyPromoCode()}
           >
             {t("Pakai", "Apply")}
           </button>
         </div>
+        <CheckoutVoucherBar
+          claimedPromos={claimedPromos}
+          activeCode={code}
+          hasUnclaimed={hasUnclaimedPromos}
+          onSelect={(c) => applyPromoCode(c)}
+        />
         {quote && (
           <div className="order-totals">
             <div>
@@ -394,9 +422,11 @@ export function MidtransCheckout({ onDone }: { onDone: () => void }) {
           disabled={!quote || busy}
           type="submit"
         >
-          {busy
-            ? t("Membuat Pesanan…", "Placing Order…")
-            : t("Buat Pesanan & Bayar", "Place Order & Pay")}
+          <span>
+            {busy
+              ? t("Membuat Pesanan…", "Placing Order…")
+              : t("Buat Pesanan & Bayar", "Place Order & Pay")}
+          </span>
           {!busy && <ArrowRight size={16} />}
         </button>
         <div className="checkout-security-footnote">

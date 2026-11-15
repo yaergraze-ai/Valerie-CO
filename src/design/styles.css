@@ -6180,6 +6180,7 @@ button.editorial-divider:hover svg {
 }
 
 .modal-inner {
+  position: relative;
   padding: 28px 30px !important;
 }
 
@@ -6474,7 +6475,7 @@ button.editorial-divider:hover svg {
 
 /* Checkout Modal Compact Rhythm & Contained Scroll */
 .modal:has(.checkout-grid) {
-  overflow: hidden !important;
+  overflow: clip !important;
   max-height: min(90svh, 790px) !important;
 }
 
@@ -8867,10 +8868,16 @@ body:has(.member-landing) {
     display: none !important;
   }
 
-  /* Keep WhatsApp Concierge above floating mobile dock */
+  /* Keep WhatsApp Concierge & Discount Voucher trigger above floating mobile dock */
   .wa-concierge-float {
     bottom: 90px !important;
     right: 16px !important;
+    padding: 9px 14px !important;
+  }
+
+  .promo-float-trigger {
+    bottom: 90px !important;
+    left: 16px !important;
     padding: 9px 14px !important;
   }
 }
@@ -9433,7 +9440,8 @@ body {
     padding-bottom: 16px;
   }
 
-  .solere-app:has(.member-landing) .wa-concierge-float {
+  .solere-app:has(.member-landing) .wa-concierge-float,
+  .solere-app:has(.member-landing) .promo-float-trigger {
     display: none;
   }
 
@@ -13045,7 +13053,8 @@ button.editorial-divider:hover {
   }
 
   .dashboard-footnote,
-  .solere-app:has(.dashboard) .wa-concierge-float {
+  .solere-app:has(.dashboard) .wa-concierge-float,
+  .solere-app:has(.dashboard) .promo-float-trigger {
     display: none !important;
   }
 
@@ -13718,7 +13727,7 @@ button.editorial-divider:hover {
 }
 
 .modal:has(.order-modal-topbar) {
-  overflow: hidden !important;
+  overflow: clip !important;
   max-height: min(90svh, 800px) !important;
 }
 
@@ -14118,7 +14127,7 @@ button.editorial-divider:hover {
     max-width: 480px !important;
     border-radius: 22px !important;
     max-height: calc(100dvh - 16px) !important;
-    overflow: hidden !important;
+    overflow: clip !important;
   }
 
   .modal:has(.checkout-grid) .modal-inner,
@@ -16881,58 +16890,73 @@ body:has(.member-landing) {
   justify-content: center !important;
   border-radius: 8px;
   border: 1px solid rgba(23, 20, 18, 0.14);
-  padding: 0 9px;
-  min-width: 78px;
+  padding: 3px 7px;
+  width: 84px;
   height: 30px;
   box-shadow: 0 2px 6px rgba(17, 24, 39, 0.06);
   flex-shrink: 0;
   user-select: none;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .payment-logo-tile.size-sm {
-  min-width: 54px;
+  width: 64px;
   height: 24px;
-  padding: 0 7px;
+  padding: 2px 5px;
   border-radius: 6px;
 }
 
 .payment-logo-tile.size-md {
-  min-width: 82px;
+  width: 84px;
   height: 30px;
-  padding: 0 9px;
+  padding: 3px 7px;
 }
 
 .payment-logo-tile.size-lg {
-  min-width: 96px;
+  width: 98px;
   height: 34px;
-  padding: 0 11px;
+  padding: 3px 8px;
   border-radius: 9px;
 }
 
-.pay-logo-inner {
-  display: inline-flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 5px;
-  line-height: 1;
-}
-
-.pay-logo-mark {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
+.pay-brand-svg {
+  width: 100%;
+  height: 100%;
   display: block;
+  overflow: visible;
 }
 
-.payment-logo-tile.size-sm .pay-logo-mark {
-  width: 12px;
-  height: 12px;
+.pay-brand-img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
-.payment-logo-tile.size-lg .pay-logo-mark {
-  width: 17px;
-  height: 17px;
+.payment-logo-tile.ch-card {
+  gap: 4px;
+}
+
+.pay-brand-img.is-half {
+  max-width: calc(50% - 2px);
+  max-height: 82%;
+}
+
+.midtrans-brand-wordmark {
+  height: 14px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.midtrans-brand-badge.compact .midtrans-brand-wordmark {
+  height: 11px;
 }
 
 .pay-logo-word {
@@ -16945,88 +16969,12 @@ body:has(.member-landing) {
   white-space: nowrap;
 }
 
-.checkout-grid .delivery-option .payment-logo-tile .pay-logo-word {
-  color: inherit !important;
-}
-
 .payment-logo-tile.size-sm .pay-logo-word {
   font-size: 9.5px !important;
 }
 
 .payment-logo-tile.size-lg .pay-logo-word {
   font-size: 12.5px !important;
-}
-
-.pay-logo-wordmark-col {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5px;
-}
-
-.pay-logo-flag-bar {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr;
-  width: 100%;
-  height: 2px;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.pay-mandiri-ribbon {
-  width: 44px;
-  height: 5px;
-  display: block;
-}
-
-.payment-logo-tile.size-sm .pay-mandiri-ribbon {
-  width: 34px;
-}
-
-.pay-retail-bars {
-  display: inline-grid !important;
-  grid-template-columns: repeat(3, 3px);
-  gap: 1.5px;
-  height: 11px;
-}
-
-.pay-retail-bars i {
-  display: block;
-  border-radius: 1px;
-}
-
-.pay-logo-cards {
-  gap: 4px;
-}
-
-.pay-card-visa {
-  width: 24px;
-  height: 10px;
-}
-
-.pay-card-mc {
-  width: 16px;
-  height: 10px;
-}
-
-.pay-card-jcb {
-  width: 14px;
-  height: 10px;
-}
-
-.payment-logo-tile.size-lg .pay-card-visa {
-  width: 28px;
-  height: 12px;
-}
-
-.payment-logo-tile.size-lg .pay-card-mc {
-  width: 19px;
-  height: 12px;
-}
-
-.payment-logo-tile.size-lg .pay-card-jcb {
-  width: 16px;
-  height: 12px;
 }
 
 .midtrans-brand-badge {
@@ -17290,8 +17238,8 @@ body:has(.member-landing) {
   }
 
   .checkout-grid .delivery-option.payment-channel-row .payment-logo-tile.size-md {
-    min-width: 72px;
-    padding: 0 6px;
+    width: 74px;
+    padding: 2px 5px;
     height: 27px;
   }
 
@@ -17358,6 +17306,7 @@ body:has(.member-landing) {
 }
 
 .shopee-pay-group-row {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
@@ -17386,6 +17335,7 @@ body:has(.member-landing) {
   display: flex;
   align-items: center;
   gap: 11px;
+  flex: 1;
   min-width: 0;
 }
 
@@ -17403,16 +17353,27 @@ body:has(.member-landing) {
 
 .shopee-pay-group-text {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.shopee-pay-group-title-line {
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 8px;
   min-width: 0;
 }
 
+.shopee-pay-group-title-line b,
 .shopee-pay-group-text b {
   font-size: 13.8px;
   font-weight: 600;
   color: var(--ink, #171412);
+  line-height: 1.3;
 }
 
 .shopee-pay-chosen-pill {
@@ -17430,8 +17391,28 @@ body:has(.member-landing) {
 .shopee-pay-group-right {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.shopee-pay-group-logos {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.shopee-pay-more-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: #f3ece2;
+  color: #5a4636;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .shopee-pay-tag {
@@ -17460,7 +17441,7 @@ body:has(.member-landing) {
   justify-content: center;
   flex-shrink: 0;
   background: #ffffff;
-  transition: all 0.16s ease;
+  transition: border-color 0.1s ease, background-color 0.1s ease;
 }
 
 .shopee-radio-dot.checked {
@@ -17477,6 +17458,7 @@ body:has(.member-landing) {
 }
 
 .shopee-pay-subrow {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -17485,6 +17467,14 @@ body:has(.member-landing) {
   border-bottom: 1px solid #f2ece4;
   cursor: pointer;
   transition: background-color 0.15s ease;
+}
+
+.shopee-pay-group-row > input.sr-only,
+.shopee-pay-subrow > input.sr-only,
+.shopee-cancel-reason > input.sr-only {
+  top: 50%;
+  left: 16px;
+  pointer-events: none;
 }
 
 .shopee-pay-subrow:last-child {
@@ -17684,6 +17674,132 @@ body:has(.member-landing) {
   border-bottom: 1px solid #f0eae1;
 }
 
+.shopee-bill-header-right {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shopee-change-method-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid #d6c8b6;
+  background: #faf6ef;
+  color: #2f2219;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.shopee-change-method-btn:hover:not(:disabled) {
+  background: #f3ece2;
+  border-color: #bfa98e;
+}
+
+.shopee-change-method-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.shopee-inline-method-switcher {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e6dfd5;
+  background: #faf8f4;
+}
+
+.inline-qris-fallback-svg {
+  width: 210px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.shopee-retail-barcode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #ede6db;
+  background: #ffffff;
+}
+
+.shopee-retail-barcode svg {
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.shopee-retail-barcode small {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #171412;
+}
+
+.shopee-card-auth-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f5efe6;
+  border: 1px solid #e4d8c8;
+  color: #3a2a1d;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.shopee-tenor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shopee-tenor-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e6dfd5;
+  background: #fdfbf8;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.shopee-tenor-pill:hover {
+  background: #f8f3eb;
+  border-color: #cbbba7;
+}
+
+.shopee-tenor-pill.is-selected {
+  border-color: #2f2219;
+  background: #f3ece2;
+}
+
+.shopee-tenor-pill b {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #171412;
+}
+
+.shopee-tenor-pill small {
+  font-size: 11.5px;
+  color: #6d6258;
+}
+
 .shopee-autosync-label {
   font-size: 12px;
   font-weight: 500;
@@ -17864,24 +17980,74 @@ body:has(.member-landing) {
 
 /* ── Cancel Drawer ──────────────────────────────────────────────── */
 .shopee-cancel-drawer {
-  border: 1px solid #f3c6c6;
-  border-radius: 16px;
-  background: #fff9f9;
-  padding: 16px 18px;
+  border: 1px solid #efc9c6;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffbfb 0%, #fff4f3 100%);
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 12px 28px rgba(127, 29, 29, 0.06);
+}
+
+.shopee-cancel-drawer-top {
+  display: flex;
+  align-items: flex-start;
   gap: 12px;
+}
+
+.shopee-cancel-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.shopee-cancel-drawer-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shopee-cancel-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .shopee-cancel-drawer-head b {
   display: block;
   font-size: 14.5px;
   color: #7f1d1d;
+  line-height: 1.3;
+}
+
+.shopee-cancel-ref-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #efc9c6;
+  color: #7f1d1d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .shopee-cancel-drawer-head small {
   font-size: 12.5px;
   color: #7c5c5c;
+  line-height: 1.45;
 }
 
 .shopee-cancel-reasons {
@@ -17891,22 +18057,30 @@ body:has(.member-landing) {
 }
 
 .shopee-cancel-reason {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 12px;
-  border-radius: 10px;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 11px;
   border: 1px solid #eedbdb;
   background: #ffffff;
   font-size: 13px;
+  color: #3f2828;
   cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.shopee-cancel-reason:hover {
+  border-color: #d6a2a2;
+  background: #fffafa;
 }
 
 .shopee-cancel-reason.is-selected {
   border-color: #991b1b;
   background: #fef2f2;
   color: #7f1d1d;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .shopee-cancel-actions {
@@ -17915,16 +18089,23 @@ body:has(.member-landing) {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+  padding-top: 2px;
 }
 
 .button.danger {
-  background: #991b1b;
-  color: #ffffff;
-  border-color: #991b1b;
+  background: #991b1b !important;
+  color: #ffffff !important;
+  border-color: #991b1b !important;
 }
 
-.button.danger:hover {
-  background: #7f1d1d;
+.button.danger:hover:not(:disabled) {
+  background: #7f1d1d !important;
+  border-color: #7f1d1d !important;
+}
+
+.button.danger:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 /* ── Dedicated Outcome Cards (Expired / Failed / Cancelled / Refunded) */
@@ -18010,6 +18191,23 @@ body:has(.member-landing) {
   font-size: 13px;
   color: var(--ink, #171412);
   overflow-wrap: anywhere;
+}
+
+.shopee-outcome-meta .payment-logo-tile {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.shopee-outcome-meta .payment-logo-tile .pay-logo-inner,
+.shopee-outcome-meta .payment-logo-tile .pay-logo-wordmark-col,
+.shopee-outcome-meta .payment-logo-tile .pay-logo-word {
+  color: inherit !important;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.shopee-outcome-meta .payment-logo-tile .pay-logo-wordmark-col {
+  display: inline-flex;
 }
 
 .status-tag-expired {
@@ -18106,6 +18304,18 @@ body:has(.member-landing) {
     display: none;
   }
 
+  .shopee-pay-group-logos .payment-logo-tile.size-sm {
+    width: 54px;
+    height: 21px;
+    padding: 1px 4px;
+  }
+
+  .shopee-pay-more-count {
+    height: 21px;
+    font-size: 10.5px;
+    padding: 0 6px;
+  }
+
   .shopee-outcome-meta {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -18113,5 +18323,1304 @@ body:has(.member-landing) {
   .shopee-pay-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+/* ==========================================================================
+   VALERIE & CO — LUXURY LIFECYCLE POPUPS & OFFICIAL ATELIER INVOICE
+   ========================================================================== */
+.vco-lifecycle-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.vco-lifecycle-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid #e7ddd0;
+  background: linear-gradient(135deg, #fffdf9 0%, #f8f2e8 100%);
+  box-shadow: 0 12px 28px rgba(36, 23, 15, 0.05);
+}
+
+.vco-lifecycle-banner.is-paid {
+  border-color: #bfe0cd;
+  background: linear-gradient(135deg, #f9fdfb 0%, #eef8f2 100%);
+}
+
+.vco-lifecycle-banner.is-cancelled {
+  border-color: #e6d6d6;
+  background: linear-gradient(135deg, #fdfbfb 0%, #f7f0f0 100%);
+}
+
+.vco-lifecycle-banner.is-expired {
+  border-color: #ecd5aa;
+  background: linear-gradient(135deg, #fffdf8 0%, #fdf5e6 100%);
+}
+
+.vco-lifecycle-banner.is-failed {
+  border-color: #efc4c4;
+  background: linear-gradient(135deg, #fffbfb 0%, #fef0f0 100%);
+}
+
+.vco-lifecycle-banner.is-refunded {
+  border-color: #d6cee8;
+  background: linear-gradient(135deg, #fcfbff 0%, #f3effa 100%);
+}
+
+.vco-lifecycle-emblem {
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid rgba(36, 23, 15, 0.08);
+  box-shadow: 0 6px 16px rgba(36, 23, 15, 0.08);
+}
+
+.vco-lifecycle-emblem.is-paid,
+.vco-lifecycle-banner.is-paid .vco-lifecycle-emblem {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.vco-lifecycle-emblem.is-cancelled {
+  background: #f5eded;
+  color: #7f1d1d;
+  border-color: #ebd6d6;
+}
+
+.vco-lifecycle-emblem.is-expired {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.vco-lifecycle-emblem.is-failed {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.vco-lifecycle-emblem.is-refunded {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #ddd6fe;
+}
+
+.vco-lifecycle-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vco-lifecycle-kicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #8b5e3c;
+}
+
+.vco-lifecycle-banner.is-paid .vco-lifecycle-kicker {
+  color: #15803d;
+}
+
+.vco-lifecycle-banner.is-cancelled .vco-lifecycle-kicker,
+.vco-lifecycle-banner.is-failed .vco-lifecycle-kicker {
+  color: #991b1b;
+}
+
+.vco-lifecycle-banner.is-expired .vco-lifecycle-kicker {
+  color: #b45309;
+}
+
+.vco-lifecycle-banner.is-refunded .vco-lifecycle-kicker {
+  color: #5b21b6;
+}
+
+.vco-lifecycle-copy h3,
+.vco-lifecycle-copy strong {
+  margin: 0;
+  font-family: var(--serif, "Cormorant Garamond", Georgia, serif);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #24170f;
+}
+
+.vco-lifecycle-copy strong {
+  font-size: 20px;
+}
+
+.vco-lifecycle-copy p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #5b4c41;
+}
+
+.vco-lifecycle-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(36, 23, 15, 0.08);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.vco-lifecycle-amount small {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7c6858;
+}
+
+.vco-lifecycle-amount strong {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #24170f;
+  white-space: nowrap;
+}
+
+.vco-lifecycle-amount.is-paid strong {
+  color: #15803d;
+}
+
+/* ── Lifecycle Stepper ──────────────────────────────────────────── */
+.vco-lifecycle-stepper {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 15px;
+  border: 1px solid #e9e0d3;
+  background: #faf6ef;
+}
+
+.vco-step-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vco-step-node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 13px;
+  left: calc(50% + 16px);
+  width: calc(100% - 32px);
+  height: 2px;
+  background: #dfd3c3;
+}
+
+.vco-step-node.done:not(:last-child)::after {
+  background: #22c55e;
+}
+
+.vco-step-node.warn:not(:last-child)::after {
+  background: #f59e0b;
+}
+
+.vco-step-node.danger:not(:last-child)::after {
+  background: #ef4444;
+}
+
+.vco-step-dot {
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1.5px solid #d5c7b6;
+  background: #ffffff;
+  color: #7c6858;
+}
+
+.vco-step-node.done .vco-step-dot {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+
+.vco-step-node.active .vco-step-dot {
+  background: #24170f;
+  border-color: #24170f;
+  color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(36, 23, 15, 0.1);
+}
+
+.vco-step-node.warn .vco-step-dot {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #b45309;
+}
+
+.vco-step-node.danger .vco-step-dot {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #b91c1c;
+}
+
+.vco-step-node.muted .vco-step-dot {
+  background: #f1eded;
+  border-color: #d1bcbc;
+  color: #7f1d1d;
+}
+
+.vco-step-node small {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #5e4f44;
+}
+
+.vco-step-node.upcoming small {
+  color: #9c8c7e;
+  font-weight: 500;
+}
+
+/* ── Lifecycle Ordered Items & Meta ─────────────────────────────── */
+.vco-lifecycle-items {
+  border: 1px solid #e8dfd3;
+  border-radius: 15px;
+  background: #ffffff;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vco-lifecycle-items-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f2ebe1;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b584b;
+}
+
+.vco-lifecycle-items-head small {
+  font-size: 11.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #8b5e3c;
+}
+
+.vco-lifecycle-item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vco-lifecycle-item-row img {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid #eee5d9;
+  flex-shrink: 0;
+  background: #faf6ef;
+}
+
+.vco-lifecycle-item-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vco-lifecycle-item-copy b {
+  font-size: 13.5px;
+  color: #24170f;
+  line-height: 1.3;
+}
+
+.vco-lifecycle-item-copy small {
+  font-size: 12px;
+  color: #7c6858;
+}
+
+.vco-lifecycle-item-row strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #24170f;
+  white-space: nowrap;
+}
+
+.vco-diagnostic-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  border: 1px solid #efc6c6;
+  background: #fff7f7;
+  color: #991b1b;
+}
+
+.vco-diagnostic-box b {
+  display: block;
+  font-size: 13px;
+  color: #7f1d1d;
+  margin-bottom: 2px;
+}
+
+.vco-diagnostic-box p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #7c4d4d;
+}
+
+.vco-meta-brand-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vco-lifecycle-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 13px;
+  background: #efe7db;
+  border: 1px solid #e4d8c8;
+}
+
+.vco-lifecycle-switch button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #6b584b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.vco-lifecycle-switch button.active {
+  background: #ffffff;
+  color: #24170f;
+  box-shadow: 0 3px 10px rgba(36, 23, 15, 0.08);
+}
+
+.vco-paid-summary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vco-paid-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vco-paid-info-card {
+  border: 1px solid #e8dfd3;
+  border-radius: 14px;
+  background: #fcfaf7;
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vco-paid-info-card small {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8b5e3c;
+}
+
+.vco-paid-info-card b {
+  font-size: 13.5px;
+  color: #24170f;
+  word-break: break-word;
+}
+
+.vco-paid-info-card span,
+.vco-paid-info-card code {
+  font-size: 12.5px;
+  color: #5e4f44;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+/* ── Official Luxury Atelier Invoice ────────────────────────────── */
+.vco-invoice-sheet {
+  border: 1px solid #ded2c2;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 24px 26px;
+  box-shadow: 0 14px 36px rgba(36, 23, 15, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: #24170f;
+}
+
+.vco-invoice-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #24170f;
+}
+
+.vco-invoice-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vco-invoice-kicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8b5e3c;
+}
+
+.vco-invoice-brand h3 {
+  margin: 0;
+  font-family: var(--serif, "Cormorant Garamond", Georgia, serif);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #24170f;
+}
+
+.vco-invoice-brand p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #6b584b;
+}
+
+.vco-invoice-head-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.vco-invoice-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid #d5c7b6;
+  background: #faf6ef;
+  color: #442c1d;
+}
+
+.vco-invoice-stamp.is-paid,
+.vco-invoice-stamp.is-delivered {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.vco-invoice-stamp.is-cancelled,
+.vco-invoice-stamp.is-failed {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.vco-invoice-stamp.is-expired,
+.vco-invoice-stamp.is-pending {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.vco-invoice-stamp.is-refunded {
+  background: #ede9fe;
+  border-color: #c4b5fd;
+  color: #5b21b6;
+}
+
+.vco-invoice-no {
+  font-size: 15px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #24170f;
+  letter-spacing: 0.03em;
+}
+
+.vco-invoice-subref {
+  font-size: 11.5px;
+  color: #7c6858;
+}
+
+.vco-invoice-parties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.vco-invoice-party-card {
+  border: 1px solid #ece3d6;
+  border-radius: 14px;
+  background: #fcfaf7;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vco-invoice-party-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vco-invoice-party-head small {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #8b5e3c;
+}
+
+.vco-invoice-map-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #dfd3c3;
+  background: #ffffff;
+  color: #442c1d;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vco-invoice-map-btn:hover {
+  border-color: #8b5e3c;
+  background: #faf6ef;
+}
+
+.vco-invoice-party-card > b {
+  font-size: 14.5px;
+  color: #24170f;
+}
+
+.vco-invoice-party-meta {
+  font-size: 12px;
+  color: #7c6858;
+  word-break: break-word;
+}
+
+.vco-invoice-party-card > p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #442c1d;
+}
+
+.vco-invoice-tracking-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f3ece2;
+  border: 1px solid #e1d4c1;
+  color: #442c1d;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.vco-invoice-pay-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.vco-invoice-pay-brand b {
+  font-size: 13.5px;
+  color: #24170f;
+}
+
+.vco-invoice-pay-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: #5e4f44;
+}
+
+.vco-invoice-pay-meta code {
+  font-size: 11.5px;
+  background: #f3ece2;
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: #24170f;
+  word-break: break-all;
+}
+
+.vco-invoice-table-wrap {
+  border: 1px solid #ebe3d6;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.vco-invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.vco-invoice-table th {
+  padding: 10px 12px;
+  background: #faf6ef;
+  border-bottom: 1px solid #e6dccf;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b584b;
+}
+
+.vco-invoice-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #f2ebe1;
+  vertical-align: middle;
+  color: #24170f;
+}
+
+.vco-invoice-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.vco-invoice-table th:nth-child(n + 2),
+.vco-invoice-table td:nth-child(n + 2) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vco-invoice-table th:nth-child(2),
+.vco-invoice-table td:nth-child(2) {
+  text-align: left;
+}
+
+.vco-invoice-sku-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.vco-invoice-sku-cell img {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid #ebe3d6;
+  flex-shrink: 0;
+  background: #faf6ef;
+}
+
+.vco-invoice-sku-cell > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vco-invoice-sku-cell b {
+  font-size: 13.5px;
+  color: #24170f;
+  line-height: 1.25;
+}
+
+.vco-invoice-sku-pill {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: #f5efe6;
+  color: #6b584b;
+}
+
+.vco-invoice-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.vco-invoice-seal-card {
+  border: 1px solid #ece3d6;
+  border-radius: 14px;
+  background: #fcfaf7;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vco-invoice-seal-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.vco-invoice-seal-emblem {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #24170f;
+  color: #f8f2e8;
+}
+
+.vco-invoice-seal-head b {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  color: #24170f;
+}
+
+.vco-invoice-seal-head small {
+  display: block;
+  font-size: 11.5px;
+  color: #7c6858;
+  line-height: 1.35;
+}
+
+.vco-invoice-barcode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px dashed #d8cab8;
+}
+
+.vco-invoice-barcode svg {
+  width: 100%;
+  max-width: 210px;
+  height: 34px;
+}
+
+.vco-invoice-barcode code {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #442c1d;
+}
+
+.vco-invoice-refund-box {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #d7c7e8;
+  background: #f6f3fb;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vco-invoice-refund-box.requested {
+  border-color: #ecd5aa;
+  background: #fff9eb;
+}
+
+.vco-invoice-refund-box.rejected {
+  border-color: #efc4c4;
+  background: #fff5f5;
+}
+
+.vco-invoice-refund-box b {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #4c1d95;
+}
+
+.vco-invoice-refund-box.rejected b {
+  color: #991b1b;
+}
+
+.vco-invoice-refund-box span,
+.vco-invoice-refund-box small {
+  font-size: 12px;
+  color: #3f314f;
+}
+
+.vco-invoice-totals-card {
+  border: 1px solid #e4d8c8;
+  border-radius: 14px;
+  background: #faf6ef;
+  padding: 15px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vco-invoice-totals-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #5e4f44;
+  font-variant-numeric: tabular-nums;
+}
+
+.vco-invoice-totals-card > div.discount-row span:last-child {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.vco-invoice-grand-row {
+  border-top: 1.5px solid #24170f;
+  padding-top: 10px;
+  margin-top: 4px;
+  color: #24170f !important;
+  font-size: 15.5px !important;
+}
+
+.vco-invoice-grand-row b {
+  font-weight: 700;
+  color: #24170f;
+}
+
+.vco-invoice-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .vco-lifecycle-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 15px 14px;
+    gap: 12px;
+  }
+
+  .vco-lifecycle-emblem {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vco-lifecycle-copy h3 {
+    font-size: 20px;
+  }
+
+  .vco-lifecycle-amount {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+  }
+
+  .vco-lifecycle-stepper {
+    padding: 12px 10px;
+    gap: 4px;
+  }
+
+  .vco-step-node small {
+    font-size: 10.5px;
+  }
+
+  .vco-paid-info-grid,
+  .vco-invoice-parties,
+  .vco-invoice-bottom-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vco-lifecycle-switch {
+    flex-direction: column;
+  }
+
+  .vco-lifecycle-switch button {
+    width: 100%;
+  }
+
+  .vco-invoice-sheet {
+    padding: 16px 14px;
+    gap: 14px;
+  }
+
+  .vco-invoice-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .vco-invoice-head-right {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .vco-invoice-table-wrap {
+    overflow: visible;
+  }
+
+  .vco-invoice-table,
+  .vco-invoice-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .vco-invoice-table thead {
+    display: none;
+  }
+
+  .vco-invoice-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    padding: 12px;
+    border-bottom: 1px solid #f2ebe1;
+    align-items: center;
+  }
+
+  .vco-invoice-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .vco-invoice-table td {
+    padding: 0;
+    border: none;
+    font-size: 12px;
+    text-align: left !important;
+  }
+
+  .vco-invoice-table td:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .vco-invoice-table td:nth-child(2) {
+    color: #7c6858;
+  }
+
+  .vco-invoice-table td:nth-child(3) {
+    text-align: right !important;
+    font-weight: 600;
+    color: #442c1d;
+  }
+
+  .vco-invoice-table td:nth-child(3)::before {
+    content: "Qty: ";
+    color: #7c6858;
+    font-weight: 500;
+  }
+
+  .vco-invoice-table td:nth-child(4) {
+    color: #7c6858;
+  }
+
+  .vco-invoice-table td:nth-child(4)::before {
+    content: "@ ";
+  }
+
+  .vco-invoice-table td:nth-child(5) {
+    text-align: right !important;
+    font-weight: 700;
+    font-size: 13px;
+    color: #24170f;
+  }
+
+  .vco-invoice-sku-cell img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .vco-invoice-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media print {
+  #official-receipt-print-area,
+  #official-receipt-print-area * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #official-receipt-print-area {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 20px !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+}
+
+/* ==========================================================================
+   MEMBER DISCOUNT VOUCHER POPUP & CHECKOUT CHIPS
+   ========================================================================== */
+.promo-float-trigger {
+  position: fixed;
+  left: 22px;
+  bottom: 22px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2b1a10 0%, #583a24 100%);
+  color: #fcfaf7;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  box-shadow: 0 18px 36px -12px rgba(36, 23, 15, 0.45);
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s ease;
+}
+
+.promo-float-trigger:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 22px 42px -12px rgba(36, 23, 15, 0.55);
+}
+
+.promo-modal {
+  display: grid;
+  gap: 18px;
+}
+
+.promo-modal-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #5b493a;
+}
+
+.promo-voucher-list {
+  display: grid;
+  gap: 10px;
+}
+
+.promo-voucher-card {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px dashed #c8b5a0;
+  background: linear-gradient(135deg, #fcfaf7 0%, #f5efe7 100%);
+}
+
+.promo-voucher-card.claimed {
+  border-style: solid;
+  border-color: #b7d2be;
+  background: linear-gradient(135deg, #f8fbf8 0%, #edf5ef 100%);
+}
+
+.promo-voucher-discount {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 6px;
+  border-radius: 10px;
+  background: #24170f;
+  color: #fcfaf7;
+  line-height: 1;
+}
+
+.promo-voucher-discount strong {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.promo-voucher-discount span {
+  margin-top: 3px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  opacity: 0.8;
+}
+
+.promo-voucher-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.promo-voucher-info b {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #24170f;
+}
+
+.promo-voucher-info small {
+  font-size: 12px;
+  color: #6b5748;
+  line-height: 1.4;
+}
+
+.promo-claim-btn {
+  padding: 9px 16px !important;
+  font-size: 11px !important;
+  white-space: nowrap;
+}
+
+.promo-claimed-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #e1f0e5;
+  color: #1e5f34;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.promo-modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.promo-claimed-bar {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.promo-claimed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.promo-claimed-label {
+  font-size: 11px;
+  color: #6e5948;
+}
+
+.promo-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #cbb9a4;
+  background: #fcfaf7;
+  color: #362418;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.promo-chip:hover,
+.promo-chip.active {
+  background: #24170f;
+  border-color: #24170f;
+  color: #fcfaf7;
+}
+
+.promo-claim-link {
+  justify-self: start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #5b3b23;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .promo-voucher-card {
+    grid-template-columns: 62px minmax(0, 1fr);
+  }
+
+  .promo-claim-btn,
+  .promo-claimed-pill {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: center;
   }
 }

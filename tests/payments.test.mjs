@@ -607,11 +607,18 @@ test("Transient gateway errors enter retry queue and recover on staff queue drai
 
 test("Midtrans Core API direct charge populates custom checkout data and falls back to Snap", async (t) => {
   assert.equal(supportsCoreCharge("qris"), true);
+  assert.equal(supportsCoreCharge("dana"), true);
+  assert.equal(supportsCoreCharge("ovo"), true);
+  assert.equal(supportsCoreCharge("linkaja"), true);
   assert.equal(supportsCoreCharge("bca_va"), true);
+  assert.equal(supportsCoreCharge("bsi_va"), true);
+  assert.equal(supportsCoreCharge("danamon_va"), true);
   assert.equal(supportsCoreCharge("mandiri_va"), true);
   assert.equal(supportsCoreCharge("indomaret"), true);
+  assert.equal(supportsCoreCharge("kredivo"), true);
+  assert.equal(supportsCoreCharge("akulaku"), true);
   assert.equal(supportsCoreCharge("card"), false);
-  assert.equal(supportsCoreCharge("kredivo"), false);
+  assert.equal(supportsCoreCharge("indodana"), false);
 
   const origFetch = globalThis.fetch;
   const recordedRequests = [];
@@ -874,6 +881,266 @@ test("Midtrans Core API direct charge populates custom checkout data and falls b
   assert.equal(upgraded.status, 200);
   assert.equal(upgraded.data.order.payment.directCharge.vaNumber, "77889900112");
   assert.equal(upgraded.data.order.payment.directCharge.channel, "bca_va");
+
+  // Pending order supports switching across all 20 payment channels (Core API & Snap fallback) via /api/payments/charge
+  const allChannels = [
+    "qris",
+    "gopay",
+    "dana",
+    "ovo",
+    "shopeepay",
+    "linkaja",
+    "bca_va",
+    "mandiri_va",
+    "bni_va",
+    "bri_va",
+    "bsi_va",
+    "permata_va",
+    "cimb_va",
+    "danamon_va",
+    "card",
+    "alfamart",
+    "indomaret",
+    "kredivo",
+    "akulaku",
+    "indodana",
+  ];
+  for (const ch of allChannels) {
+    const switched = await call(
+      "payments/charge",
+      { id: resFallback.data.order.id, channel: ch },
+      member.cookie,
+    );
+    assert.equal(switched.status, 200);
+    assert.equal(switched.data.order.payment.status, "pending");
+    assert.equal(switched.data.order.payment.channel, ch);
+    assert.equal(switched.data.order.payment.directCharge?.channel, ch);
+  }
+});
+
+test("Channel switch clamps Midtrans order_id <= 50 chars, heals stale fallback & trims server key", async (t) => {
+  const {
+    midtransClient,
+    buildSwitchOrderId,
+    isFallbackDirectCharge,
+    buildFallbackDirectCharge,
+  } = await import("../server/midtrans.mjs");
+
+  const baseId = "SOL-93262ad8-1257-49e0-a2f5-33b6ccc58d0f";
+  for (const ch of ["qris", "bca_va", "mandiri_va", "indomaret", "danamon_va"]) {
+    const switchedId = buildSwitchOrderId(baseId, ch);
+    assert.ok(switchedId.length <= 50, `${ch} gatewayOrderId exceeded 50 chars: ${switchedId}`);
+    assert.equal(switchedId.split("--")[0], baseId);
+  }
+
+  assert.equal(
+    isFallbackDirectCharge({ channel: "qris", statusMessage: "Tagihan siap dibayar" }),
+    true,
+  );
+  assert.equal(
+    isFallbackDirectCharge({ channel: "qris", qrUrl: "", deeplinkUrl: "", statusMessage: "Ok" }),
+    true,
+  );
+  assert.equal(
+    isFallbackDirectCharge({
+      channel: "qris",
+      isFallback: false,
+      qrUrl: "https://api.sandbox.midtrans.com/v2/qris/123/qr-code",
+      statusMessage: "Qris transaction is created",
+    }),
+    false,
+  );
+
+  // Trimmed server key + clean ShopeePay/Indomaret extraction via real midtransClient.charge
+  const origFetch = globalThis.fetch;
+  const mockOrder = {
+    id: baseId,
+    total: 150000,
+    subtotal: 150000,
+    shipping: 0,
+    discount: 0,
+    email: "buyer@example.com",
+    address: {
+      name: "Buyer",
+      phone: "08123456789",
+      street: "Jl Test 1",
+      city: "Jakarta",
+      postal: "12345",
+    },
+    items: [{ productId: "sku-1", name: "Heels", price: 150000, quantity: 1 }],
+  };
+  try {
+    let lastAuth = "";
+    globalThis.fetch = async (_url, opts) => {
+      lastAuth = opts.headers.Authorization;
+      const body = JSON.parse(opts.body);
+      if (body.payment_type === "shopeepay") {
+        return new Response(
+          JSON.stringify({
+            status_code: "201",
+            status_message: "Shopeepay transaction is created",
+            payment_type: "shopeepay",
+            transaction_id: "sp-tx-1",
+            merchant_id: "M477889061",
+            actions: [
+              {
+                name: "deeplink-redirect",
+                url: "https://simulator.sandbox.midtrans.com/shopeepay/payment-pin?referenceId=sp1",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          status_code: "201",
+          status_message: "Success, cstore transaction is successful",
+          payment_type: "cstore",
+          transaction_id: "idm-tx-1",
+          merchant_id: "M477889061",
+          payment_code: "991089027215",
+        }),
+        { status: 200 },
+      );
+    };
+    const gw = midtransClient("  SB-Mid-trimmed-key\n", false);
+    assert.ok(gw);
+    const sp = await gw.charge(mockOrder, "shopeepay");
+    assert.equal(lastAuth, `Basic ${Buffer.from("SB-Mid-trimmed-key:").toString("base64")}`);
+    assert.equal(sp.isFallback, false);
+    assert.equal(sp.qrString, "");
+    assert.ok(sp.deeplinkUrl.startsWith("https://simulator.sandbox.midtrans.com/shopeepay/"));
+    const idm = await gw.charge(mockOrder, "indomaret");
+    assert.equal(idm.merchantId, "M477889061");
+    assert.equal(idm.paymentCode, "991089027215");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+
+  // Stale fallback in DB self-heals on /api/payments/charge and enforces <= 50-char gatewayOrderId
+  let failCharge = true;
+  const seenGatewayOrderIds = [];
+  const app = createApp({
+    dbPath: ":memory:",
+    setupToken: "setup-heal",
+    midtransKey: "heal-key",
+    gateway: {
+      create: async () => "https://app.sandbox.midtrans.com/snap/heal-1",
+      charge: async (_order, ch, opts) => {
+        seenGatewayOrderIds.push(opts?.gatewayOrderId || _order.payment?.gatewayOrderId || _order.id);
+        if (failCharge) throw Error("Transient Core API error");
+        return {
+          channel: ch,
+          isFallback: false,
+          paymentType: ch === "bca_va" ? "bank_transfer" : "qris",
+          transactionId: `tx-real-${ch}`,
+          qrUrl: ch === "qris" ? "https://api.sandbox.midtrans.com/v2/qris/real/qr-code" : "",
+          deeplinkUrl: "",
+          qrString: ch === "qris" ? "000201..." : "",
+          vaNumber: ch === "bca_va" ? "112233445566" : "",
+          bank: ch === "bca_va" ? "bca" : "",
+          billerCode: "",
+          billKey: "",
+          paymentCode: "",
+          expiryTime: "",
+          statusMessage: ch === "qris" ? "Qris transaction is created" : "Success, Bank Transfer transaction is created",
+        };
+      },
+      status: async () => ({}),
+      refund: async () => ({}),
+    },
+  });
+  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
+  t.after(() => app.close());
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const call = async (path, body, cookie = "") => {
+    const r = await fetch(base + "/api/" + path, {
+      method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json", cookie },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return {
+      status: r.status,
+      data: await r.json(),
+      cookie: r.headers.get("set-cookie")?.split(";")[0] || "",
+    };
+  };
+
+  const admin = await call("auth/setup", {
+    name: "Admin",
+    email: "admin-heal@test.com",
+    password: "test-password",
+    setupToken: "setup-heal",
+  });
+  const member = await call("auth/register", {
+    name: "Member",
+    email: "member-heal@test.com",
+    password: "test-password",
+  });
+  const prod = { ...member.data.products[0], priceIdr: 150000, stock: 5 };
+  await call("patch", { changes: [{ kind: "products", data: prod }] }, admin.cookie);
+  const resCreated = await call(
+    "orders/create",
+    {
+      payment: "midtrans",
+      channel: "qris",
+      expectedTotal: 175000,
+      key: "heal-order-1",
+      lines: [
+        {
+          productId: prod.id,
+          size: prod.sizes[0],
+          color: prod.colors[0].name,
+          quantity: 1,
+        },
+      ],
+      address: {
+        id: "addr-heal-1",
+        label: "Home",
+        ...mockOrder.address,
+      },
+    },
+    member.cookie,
+  );
+  assert.equal(resCreated.status, 200);
+  const createdOrder = resCreated.data.order;
+  assert.equal(
+    isFallbackDirectCharge(
+      createdOrder.payment.directCharge ||
+        buildFallbackDirectCharge(createdOrder, "qris"),
+    ),
+    true,
+  );
+
+  // Simulate recovered Core API: calling same channel ("qris") self-heals instead of returning stale fallback
+  failCharge = false;
+  const healed = await call(
+    "payments/charge",
+    { id: createdOrder.id, channel: "qris" },
+    member.cookie,
+  );
+  assert.equal(healed.status, 200);
+  assert.equal(healed.data.order.payment.directCharge.isFallback, false);
+  assert.equal(
+    healed.data.order.payment.directCharge.qrUrl,
+    "https://api.sandbox.midtrans.com/v2/qris/real/qr-code",
+  );
+  assert.ok(healed.data.order.payment.gatewayOrderId.length <= 50);
+
+  // Switching to BCA VA preserves <= 50-char gatewayOrderId
+  const switched = await call(
+    "payments/charge",
+    { id: createdOrder.id, channel: "bca_va" },
+    member.cookie,
+  );
+  assert.equal(switched.status, 200);
+  assert.equal(switched.data.order.payment.directCharge.vaNumber, "112233445566");
+  assert.ok(switched.data.order.payment.gatewayOrderId.length <= 50);
+  assert.equal(switched.data.order.payment.gatewayOrderId.split("--")[0], createdOrder.id);
+  for (const gid of seenGatewayOrderIds) {
+    assert.ok(gid.length <= 50, `Observed gatewayOrderId > 50 chars: ${gid}`);
+  }
 });
 
 

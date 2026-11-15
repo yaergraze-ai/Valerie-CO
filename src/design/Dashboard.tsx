@@ -30,6 +30,7 @@ import {
   Truck,
   ArrowRight,
   BarChart3,
+  Ban,
   Mail,
   CheckCircle2,
   Upload,
@@ -74,6 +75,8 @@ import {
   AddressFields,
   InlinePaymentAndReceipt,
   MemberEntry,
+  OfficialAtelierInvoice,
+  downloadOfficialReceiptHtml,
 } from "./Shopping";
 import { api } from "./backend";
 import { ProductCard } from "./Experience";
@@ -2225,149 +2228,16 @@ function OrderModal({
           <button
             type="button"
             className="button outline small"
-            onClick={() => downloadReceiptHtml(o, receiptNo, storeName, lang, money)}
+            onClick={() => downloadOfficialReceiptHtml(o, money, lang)}
           >
             <Download size={14} />
-            {t("Unduh Struk", "Download Receipt")}
+            {t("Unduh Invoice", "Download Invoice")}
           </button>
         </div>
       </div>
 
       {view === "receipt" ? (
-        <div className="printable-receipt receipt-sheet">
-          <div className="receipt-header">
-            <div>
-              <span className="eyebrow">{storeName.toUpperCase()}</span>
-              <h3>{t("Struk Pembelian Resmi", "Official Purchase Receipt")}</h3>
-              <p>Atelier &amp; Curated Footwear · {db.settings.email}</p>
-            </div>
-            <div className="receipt-meta-right">
-              <b>{receiptNo}</b>
-              <small>{o.id}</small>
-              <small>{new Date(o.date).toLocaleString()}</small>
-            </div>
-          </div>
-
-          <div className="receipt-parties">
-            <div>
-              <small>{t("Pelanggan & Pengiriman", "Customer & Delivery")}</small>
-              <b>{o.address.name || o.name}</b>
-              <p>
-                {o.email} · {o.address.phone}
-                <br />
-                {o.address.street}, {o.address.city} {o.address.postal}
-              </p>
-            </div>
-            <div>
-              <small>{t("Informasi Pembayaran", "Payment Information")}</small>
-              <b>
-                {o.payment
-                  ? `Midtrans (${o.payment.method || "QRIS / VA"}${o.payment.sandbox ? " · Sandbox" : ""})`
-                  : t("Checkout Langsung", "Direct Checkout")}
-              </b>
-              <p>
-                Status:{" "}
-                <b>
-                  {(o.payment?.status || (o.status === "cancelled" ? "cancelled" : "paid")).toUpperCase()}
-                </b>
-                {o.payment?.transactionId && (
-                  <>
-                    <br />
-                    Tx ID: {o.payment.transactionId}
-                  </>
-                )}
-                {o.payment?.paidAt && (
-                  <>
-                    <br />
-                    {t("Lunas", "Paid")}: {new Date(o.payment.paidAt).toLocaleString()}
-                  </>
-                )}
-                {o.tracking && (
-                  <>
-                    <br />
-                    {t("Resi", "Tracking")}: {o.tracking}
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-
-          <table className="receipt-items-table">
-            <thead>
-              <tr>
-                <th>{t("Produk & Kode SKU", "Product & SKU")}</th>
-                <th>{t("Varian", "Variant")}</th>
-                <th>Qty</th>
-                <th>{t("Harga", "Price")}</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {o.items.map((i, idx) => (
-                <tr key={idx}>
-                  <td>
-                    <b>{i.name}</b>
-                    <small className="receipt-sku">
-                      {i.productCode || i.productId.toUpperCase()}
-                    </small>
-                  </td>
-                  <td>EU {i.size}</td>
-                  <td>{i.quantity}</td>
-                  <td>{money(i.price, o.currency || "USD")}</td>
-                  <td>{money(i.price * i.quantity, o.currency || "USD")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="order-totals receipt-totals">
-            <div>
-              <span>Subtotal</span>
-              <span>{money(subtotal, o.currency || "USD")}</span>
-            </div>
-            <div>
-              <span>{t("Diskon", "Discount")}</span>
-              <span>−{money(o.discount, o.currency || "USD")}</span>
-            </div>
-            <div>
-              <span>{t("Pengiriman", "Shipping")}</span>
-              <span>{money(o.shipping, o.currency || "USD")}</span>
-            </div>
-            <div className="grand-total">
-              <b>{t("Total Dibayar", "Total Paid")}</b>
-              <b>{money(o.total, o.currency || "USD")}</b>
-            </div>
-          </div>
-
-          {o.refund && (
-            <div className={`receipt-refund-stamp ${o.refund.status}`}>
-              <b>
-                {o.refund.status === "refunded"
-                  ? t("BUKTI REFUND RESMI / DANA DIKEMBALIKAN", "OFFICIAL REFUND RECORD")
-                  : o.refund.status === "requested"
-                    ? t("PENGAJUAN REFUND SEDANG DIPROSES", "REFUND REQUEST PENDING")
-                    : t("PENGAJUAN REFUND DITOLAK", "REFUND REQUEST DECLINED")}
-              </b>
-              <p>
-                {t("Nominal", "Amount")}:{" "}
-                <b>{money(o.refund.amount, o.refund.currency || o.currency || "USD")}</b>
-                {o.refund.reference && ` · Ref: ${o.refund.reference}`}
-                {o.refund.refundedAt &&
-                  ` · ${new Date(o.refund.refundedAt).toLocaleString()}`}
-                <br />
-                {t("Alasan", "Reason")}: {o.refund.reason}
-                {o.refund.refundedBy && ` · By ${o.refund.refundedBy}`}
-              </p>
-            </div>
-          )}
-
-          <p className="receipt-footer-note">
-            {t(
-              `Simpan struk digital ini (${receiptNo}) sebagai bukti pembelian sah di ${storeName} untuk klaim garansi, penukaran ukuran, atau proses refund.`,
-              `Keep this digital receipt (${receiptNo}) as valid proof of purchase at ${storeName} for warranty claims, exchanges, or refunds.`,
-            )}
-          </p>
-        </div>
+        <OfficialAtelierInvoice order={o} showActions={false} />
       ) : (
         <>
           <div className="order-detail-heading">
@@ -2387,6 +2257,30 @@ function OrderModal({
               {receiptNo} · {new Date(o.date).toLocaleString()}
             </span>
           </div>
+          {o.status === "delivered" && !isRefunded && (
+            <div className="vco-lifecycle-banner is-paid">
+              <div className="vco-lifecycle-emblem" aria-hidden="true">
+                <CheckCircle2 size={22} />
+              </div>
+              <div className="vco-lifecycle-copy">
+                <span className="vco-lifecycle-kicker">
+                  {t("PESANAN SELESAI DITERIMA", "ORDER DELIVERED & COMPLETED")}
+                </span>
+                <strong>
+                  {t(
+                    "Paket Telah Sampai di Tujuan",
+                    "Package Safely Received",
+                  )}
+                </strong>
+                <p>
+                  {t(
+                    "Terima kasih telah berbelanja di Valerie & CO. Anda dapat mencetak atau mengunduh invoice resmi kapan saja.",
+                    "Thank you for shopping with Valerie & CO. You can print or download your official invoice anytime.",
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
           {o.status !== "cancelled" && (
             <div className="order-steps">
               {[
@@ -2688,28 +2582,56 @@ function OrderModal({
             o.status === "processing" &&
             !isRefunded &&
             (cancel ? (
-              <div className="notice">
-                <span>
-                  {t(
-                    "Batalkan pesanan ini? Stok akan dikembalikan.",
-                    "Cancel this order? Stock will be restored.",
-                  )}
-                </span>
-                <button
-                  className="button dark small"
-                  onClick={() => {
-                    updateOrder(o.id, "cancelled");
-                    onClose();
-                  }}
-                >
-                  {t("Ya, batalkan", "Yes, cancel")}
-                </button>
-                <button onClick={() => setCancel(false)}>
-                  {t("Kembali", "Back")}
-                </button>
+              <div className="shopee-cancel-drawer">
+                <div className="shopee-cancel-drawer-top">
+                  <span className="shopee-cancel-badge" aria-hidden="true">
+                    <Ban size={18} />
+                  </span>
+                  <div className="shopee-cancel-drawer-head">
+                    <div className="shopee-cancel-head-row">
+                      <b>
+                        {t(
+                          "Konfirmasi Batalkan Pesanan",
+                          "Confirm Order Cancellation",
+                        )}
+                      </b>
+                      <span className="shopee-cancel-ref-pill">{receiptNo}</span>
+                    </div>
+                    <small>
+                      {t(
+                        "Pesanan yang dibatalkan akan mengembalikan stok produk ke katalog secara otomatis.",
+                        "Cancelled orders will automatically restore item stock to the catalog.",
+                      )}
+                    </small>
+                  </div>
+                </div>
+                <div className="shopee-cancel-actions">
+                  <button
+                    type="button"
+                    className="button outline small"
+                    onClick={() => setCancel(false)}
+                  >
+                    {t("Lanjutkan Pesanan", "Keep Order")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button danger small"
+                    onClick={() => {
+                      updateOrder(o.id, "cancelled");
+                      onClose();
+                    }}
+                  >
+                    <Ban size={14} />
+                    {t("Ya, Batalkan Sekarang", "Yes, Cancel Now")}
+                  </button>
+                </div>
               </div>
             ) : (
-              <button className="text-link danger" onClick={() => setCancel(true)}>
+              <button
+                type="button"
+                className="text-link danger"
+                onClick={() => setCancel(true)}
+              >
                 {t("Batalkan pesanan", "Cancel order")}
               </button>
             ))}
@@ -6130,37 +6052,6 @@ function PasswordForm({
       </button>
     </form>
   );
-}
-
-function escHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] || c);
-}
-
-function downloadReceiptHtml(
-  o: Order,
-  receiptNo: string,
-  storeName: string,
-  lang: "id" | "en",
-  money: (n: number, currency?: "USD" | "IDR") => string,
-) {
-  const subtotal = o.items.reduce((n, i) => n + i.price * i.quantity, 0);
-  const orderCurrency = o.currency || "USD";
-  const rows = o.items
-    .map(
-      (i) =>
-        `<tr><td><strong>${escHtml(i.name)}</strong><br><small>${escHtml(i.productCode || i.productId.toUpperCase())}</small></td><td>EU ${i.size}</td><td>${i.quantity}</td><td>${escHtml(money(i.price, orderCurrency))}</td><td>${escHtml(money(i.price * i.quantity, orderCurrency))}</td></tr>`,
-    )
-    .join("");
-  const refundBlock = o.refund
-    ? `<div style="margin-top:16px;padding:12px 14px;border:1px solid #c9a7a2;background:#fdf6f5;border-radius:8px;"><strong>${lang === "id" ? "CATATAN REFUND" : "REFUND RECORD"} (${escHtml(o.refund.status.toUpperCase())})</strong><br>${escHtml(money(o.refund.amount, o.refund.currency || orderCurrency))}${o.refund.reference ? ` · Ref: ${escHtml(o.refund.reference)}` : ""}<br>${escHtml(o.refund.reason)}</div>`
-    : "";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(receiptNo)} — ${escHtml(storeName)}</title><style>body{font-family:system-ui,-apple-system,sans-serif;color:#1b1612;margin:32px auto;max-width:720px;padding:0 16px;line-height:1.5}header{display:flex;justify-content:space-between;border-bottom:2px solid #1b1612;padding-bottom:14px;margin-bottom:18px}table{width:100%;border-collapse:collapse;margin:18px 0}th,td{padding:10px 8px;border-bottom:1px solid #e5ded6;text-align:left}th:last-child,td:last-child{text-align:right}.totals{margin-left:auto;max-width:280px}.totals div{display:flex;justify-content:space-between;padding:4px 0}.grand{border-top:2px solid #1b1612;margin-top:6px;padding-top:8px;font-weight:700;font-size:1.1em}</style></head><body><header><div><small>${escHtml(storeName.toUpperCase())}</small><h1 style="margin:4px 0">${lang === "id" ? "Struk Pembelian Resmi" : "Official Receipt"}</h1></div><div style="text-align:right"><strong>${escHtml(receiptNo)}</strong><br>${escHtml(o.id)}<br><small>${escHtml(new Date(o.date).toLocaleString())}</small></div></header><p><strong>${escHtml(o.address.name || o.name)}</strong> (${escHtml(o.email)})<br>${escHtml(o.address.street)}, ${escHtml(o.address.city)} ${escHtml(o.address.postal)} · ${escHtml(o.address.phone)}</p><p>Pembayaran / Payment: <strong>${o.payment ? `Midtrans (${escHtml(o.payment.method || "QRIS / VA")})` : "Direct Checkout"}</strong> · Status: <strong>${escHtml((o.payment?.status || o.status).toUpperCase())}</strong></p><table><thead><tr><th>Item &amp; SKU</th><th>Varian</th><th>Qty</th><th>Harga</th><th>Subtotal</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Subtotal</span><span>${escHtml(money(subtotal, orderCurrency))}</span></div><div><span>Discount</span><span>-${escHtml(money(o.discount, orderCurrency))}</span></div><div><span>Shipping</span><span>${escHtml(money(o.shipping, orderCurrency))}</span></div><div class="grand"><span>Total</span><span>${escHtml(money(o.total, orderCurrency))}</span></div></div>${refundBlock}<p style="margin-top:28px;font-size:12px;color:#6c6259">${escHtml(storeName)} · ${lang === "id" ? "Dokumen sah bukti pembelian & acuan refund." : "Official proof of purchase & refund reference."}</p></body></html>`;
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `Struk-${receiptNo}.html`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 function orderValues(

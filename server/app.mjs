@@ -6,6 +6,9 @@ import {
   paymentFailureReason,
   idrQuote,
   supportsCoreCharge,
+  buildFallbackDirectCharge,
+  buildSwitchOrderId,
+  isFallbackDirectCharge,
 } from "./midtrans.mjs";
 import { verifyGoogle, resetMailer, whatsappMailer } from "./auth-services.mjs";
 import { createSqliteStore } from "./db-sqlite.mjs";
@@ -216,8 +219,8 @@ export function createApp({
     process.env.VERCEL_ENV !== "production" &&
     process.env.VERCEL_ENV !== "preview",
   midtransKey = process.env.MIDTRANS_SERVER_KEY,
-  paymentProduction = process.env.MIDTRANS_PRODUCTION === "true",
-  gateway = midtransClient(midtransKey, paymentProduction),
+  paymentProduction = String(process.env.MIDTRANS_PRODUCTION || "").trim() === "true",
+  gateway = midtransClient(String(midtransKey || "").trim(), paymentProduction),
   turnstileSiteKey =
     process.env.TURNSTILE_SITE_KEY || process.env.VITE_TURNSTILE_SITE_KEY || "",
   turnstileSecretKey = process.env.TURNSTILE_SECRET_KEY || "",
@@ -569,13 +572,17 @@ export function createApp({
     const ownMember = u ? allMembers.find((m) => m.id === u.id) || null : null;
     const resolved = u ? await resolveEffectiveUser(u, ownMember) : null;
     const role = resolved?.role || null;
-    const [allCoupons, allSubscribers, paymentQueue] = await Promise.all([
-      isAdminRole(role) ? db.listCoupons() : Promise.resolve([]),
+    const [rawCoupons, allSubscribers, paymentQueue] = await Promise.all([
+      db.listCoupons(),
       isAdminRole(role) ? db.listSubscribers() : Promise.resolve([]),
       isStaffRole(role) && typeof db.listPaymentQueue === "function"
         ? db.listPaymentQueue(40)
         : Promise.resolve(undefined),
     ]);
+    const allCoupons = isAdminRole(role) ? rawCoupons : [];
+    const promotions = rawCoupons
+      .filter((c) => c.active)
+      .map((c) => ({ code: c.code, percent: c.percent, active: true }));
     return {
       paymentConfig: {
         enabled: !!gateway,
@@ -610,6 +617,7 @@ export function createApp({
         ? allOrders.filter((o) => isStaffRole(role) || o.memberId === resolved.id)
         : [],
       coupons: allCoupons,
+      promotions,
       tickets: resolved
         ? allTickets.filter((t) => isStaffRole(role) || t.memberId === resolved.id)
         : [],
@@ -746,12 +754,14 @@ export function createApp({
         const existing = await db.getOrder(id);
         if (!existing?.payment) fail(404, "Payment order not found");
         if (existing.payment.status === "refunded") return existing;
-        const remote = await gateway.status(id);
+        const gatewayOrderId = existing.payment.gatewayOrderId || id;
+        const remote = await gateway.status(gatewayOrderId);
         if (String(remote.status_code) === "404") return existing;
         const order = (await db.getOrder(id)) || existing;
         if (!order?.payment) fail(404, "Payment order not found");
         if (
-          remote.order_id !== id ||
+          (remote.order_id !== id &&
+            remote.order_id !== (order.payment.gatewayOrderId || id)) ||
           Number(remote.gross_amount) !== order.total ||
           remote.currency !== "IDR"
         )
@@ -916,11 +926,12 @@ export function createApp({
         });
       };
       if (webhook) {
-        if (!verifyNotification(body, midtransKey))
+        if (!verifyNotification(body, String(midtransKey || "").trim()))
           fail(403, "Invalid payment signature");
-        const orderId = str(body.order_id, 80);
+        const rawOrderId = str(body.order_id, 80);
+        const orderId = rawOrderId.split("--")[0];
         const dedupeKey = [
-          orderId,
+          rawOrderId,
           String(body.status_code || ""),
           String(body.transaction_status || ""),
           String(body.gross_amount || ""),
@@ -1151,9 +1162,13 @@ export function createApp({
               "Payment page unavailable. Retry with the same checkout or contact the store; stock is reserved.",
             );
           }
+          const snapPatch = {
+            ...(ch ? { channel: ch } : {}),
+            url,
+          };
           return typeof db.setOrderPaymentInitAtomic === "function"
-            ? await db.setOrderPaymentInitAtomic(latest.id, { url })
-            : await db.saveOrder({ ...latest, payment: { ...latest.payment, url } });
+            ? await db.setOrderPaymentInitAtomic(latest.id, snapPatch)
+            : await db.saveOrder({ ...latest, payment: { ...latest.payment, ...snapPatch } });
         });
       };
       if (path === "/api/payments/charge") {
@@ -1171,43 +1186,81 @@ export function createApp({
           if (!latest.payment || latest.payment.status !== "pending")
             fail(409, "Order payment is no longer pending");
           const ch = requestedChannel || latest.payment.channel || "qris";
-          if (latest.payment.directCharge) {
-            if (latest.payment.directCharge.channel === ch) return latest;
-            fail(
-              409,
-              "Tagihan langsung Midtrans sudah dibuat untuk metode sebelumnya. Selesaikan pembayaran atau buat pesanan baru untuk mengganti metode.",
-            );
+          const existingCharge = latest.payment.directCharge;
+          const shouldRetryFallback =
+            supportsCoreCharge(ch) && isFallbackDirectCharge(existingCharge);
+          if (
+            existingCharge &&
+            existingCharge.channel === ch &&
+            !shouldRetryFallback
+          ) {
+            return latest;
           }
           if (!gateway) fail(503, "Midtrans is not configured");
+          const hasPriorAttempt = Boolean(
+            existingCharge || latest.payment.url || latest.payment.transactionId,
+          );
+          const isSwitching = Boolean(
+            hasPriorAttempt &&
+              (existingCharge?.channel !== ch ||
+                shouldRetryFallback ||
+                String(latest.payment.gatewayOrderId || "").length > 50),
+          );
+          const gatewayOrderId = isSwitching
+            ? buildSwitchOrderId(latest.id, ch)
+            : latest.payment.gatewayOrderId || latest.id;
+
+          let directCharge = null;
           if (supportsCoreCharge(ch) && typeof gateway.charge === "function") {
             try {
-              const directCharge = await gateway.charge(latest, ch, { finishUrl });
-              const patch = {
-                channel: ch,
-                outcome: "pending",
-                method: directCharge.paymentType || ch,
-                transactionId:
-                  directCharge.transactionId || latest.payment.transactionId || "",
-                ...(directCharge.expiryTime ? { expiryTime: directCharge.expiryTime } : {}),
-                directCharge,
-              };
-              return typeof db.setOrderPaymentInitAtomic === "function"
-                ? await db.setOrderPaymentInitAtomic(latest.id, patch)
-                : await db.saveOrder({ ...latest, payment: { ...latest.payment, ...patch } });
+              directCharge = await gateway.charge(latest, ch, {
+                finishUrl,
+                gatewayOrderId,
+              });
             } catch (err) {
               chargeNotice = err?.message || "Direct Core API unavailable; using Snap.";
             }
           }
-          if (!latest.payment.url) {
-            const url = await gateway.create(
-              { ...latest, payment: { ...latest.payment, channel: ch } },
-              { finishUrl },
-            );
-            return typeof db.setOrderPaymentInitAtomic === "function"
-              ? await db.setOrderPaymentInitAtomic(latest.id, { channel: ch, url })
-              : await db.saveOrder({ ...latest, payment: { ...latest.payment, channel: ch, url } });
+
+          let snapUrl = !isSwitching ? latest.payment.url || "" : "";
+          if (!directCharge && (!snapUrl || isSwitching)) {
+            try {
+              snapUrl = await gateway.create(
+                {
+                  ...latest,
+                  payment: { ...latest.payment, channel: ch, gatewayOrderId },
+                },
+                { finishUrl, gatewayOrderId },
+              );
+            } catch (err) {
+              if (!chargeNotice) {
+                chargeNotice = err?.message || "Snap fallback unavailable; using reference bill.";
+              }
+            }
           }
-          return latest;
+
+          const resolvedDirect =
+            directCharge || buildFallbackDirectCharge(latest, ch, snapUrl);
+          const fresh = (await db.getOrder(orderId)) || latest;
+          if (!fresh.payment || fresh.payment.status !== "pending") return fresh;
+          const nextOrder = {
+            ...fresh,
+            payment: {
+              ...fresh.payment,
+              channel: ch,
+              gatewayOrderId,
+              outcome: "pending",
+              method: resolvedDirect.paymentType || ch,
+              transactionId:
+                resolvedDirect.transactionId || fresh.payment.transactionId || "",
+              ...(resolvedDirect.expiryTime
+                ? { expiryTime: resolvedDirect.expiryTime }
+                : {}),
+              ...(snapUrl ? { url: snapUrl } : {}),
+              directCharge: resolvedDirect,
+            },
+          };
+          return db.saveOrder(nextOrder);
         });
         send(200, {
           order: updatedOrder,
@@ -1867,6 +1920,15 @@ export function createApp({
                         : m.security?.lastPasswordChange || "",
                   }
                 : m.security;
+            const claimedCoupons = Array.isArray(data.claimedCoupons)
+              ? [
+                  ...new Set(
+                    data.claimedCoupons
+                      .map((c) => str(c, 20).toUpperCase())
+                      .filter((c) => /^[A-Z0-9]{3,20}$/.test(c)),
+                  ),
+                ].slice(0, 50)
+              : m.claimedCoupons;
             const nextPhone = normalizePhone(data.phone || "");
             const phoneChanged = nextPhone !== (m.phone || "");
             if (phoneChanged && nextPhone) {
@@ -1885,6 +1947,7 @@ export function createApp({
               ...(preferredSize !== undefined ? { preferredSize } : {}),
               ...(preferences ? { preferences } : {}),
               ...(security ? { security } : {}),
+              ...(claimedCoupons ? { claimedCoupons } : {}),
               addresses: data.addresses.map(address),
             };
             ops.push({ kind: "members", data: virtualMember });
@@ -2115,7 +2178,7 @@ export function createApp({
             }
             if (typeof gateway.cancel === "function") {
               try {
-                await gateway.cancel(o.id);
+                await gateway.cancel(o.payment?.gatewayOrderId || o.id);
               } catch {
                 // Snap redirect orders that were never opened on Midtrans return 404/412 on /cancel; safe to proceed locally
               }
